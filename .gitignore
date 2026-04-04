@@ -1,0 +1,5 @@
+build/
+data/
+build_config.rb.lock
+src/.gen/
+src/encoding/.gen/

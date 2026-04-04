@@ -1,0 +1,101 @@
+# V=0 quiet, V=1 verbose. Other values don't work.
+V = 0
+V0 = $(V:0=)
+Q1 = $(V:1=)
+Q = $(Q1:0=@)
+ECHO1 = $(V:1=@ :)
+ECHO = $(ECHO1:0=@ echo)
+
+# Utility commands.
+MAKEDIRS ?= mkdir -p
+RMALL ?= rm -f -r
+
+# Source and artifact files.
+HEADERS := $(wildcard include/*.h include/encoding/*.h)
+SOURCES := $(wildcard src/*.c src/encoding/*.c)
+STATIC_OBJECTS := $(subst src/,build/static/,$(SOURCES:.c=.o))
+
+UNICODE_RUBY_SOURCES := $(wildcard tools/unicode/*.rb)
+
+# Compilers.
+CC ?= cc
+AR ?= ar
+
+# Compiler flags.
+CPPFLAGS := -Iinclude $(CPPFLAGS)
+CFLAGS := -g -O2 -std=c99 -Wall -Werror -Wextra -Wpedantic -Wundef -Wconversion -Wno-missing-braces -fPIC -fvisibility=hidden -Wimplicit-fallthrough $(CFLAGS)
+ARFLAGS ?= -r$(V0:1=v)
+
+# A path to mruby build config file (relative to the mruby directory).
+MRUBY_CONFIG ?= ../../build_config.rb
+
+UNICODE_VERSION := 17.0.0
+
+build/libnaraku.a: $(STATIC_OBJECTS)
+	$(ECHO) "building $@ with $(AR)"
+	$(Q) $(AR) $(ARFLAGS) $@ $(STATIC_OBJECTS)
+
+build/static/%.o: src/%.c Makefile $(HEADERS)
+	$(ECHO) "compiling $@"
+	$(Q) $(MAKEDIRS) $(@D)
+	$(Q) $(CC) $(DEBUG_FLAGS) $(CPPFLAGS) $(CFLAGS) -c -o $@ $<
+
+src/ctype.o: src/.gen/ctype_names.gen.h
+src/encoding_ascii.o: src/.gen/ctype_range_ascii.gen.h src/.gen/case_map_ascii.gen.h
+src/encoding_unicode.o: src/.gen/ctype_range_unicode.gen.h src/.gen/case_map_unicode.gen.h
+src/encoding/iso_8859_1.o: src/encoding/.gen/ctype_range_iso_8859_1.gen.h src/encoding/.gen/case_map_iso_8859_1.gen.h
+src/encoding/shift_jis.o: src/encoding/.gen/ctype_range_shift_jis.gen.h src/encoding/.gen/case_map_shift_jis.gen.h
+
+include/encoding/ctype_names.h: tools/gen-ctype-names.rb $(UNICODE_RUBY_SOURCES)
+	$(ECHO) "generating $@ with tools/gen-ctype-names.rb"
+	$(Q) ruby tools/gen-ctype-names.rb --header $(UNICODE_VERSION) > $@
+
+src/.gen/ctype_names.gen.h: tools/gen-ctype-names.rb $(UNICODE_RUBY_SOURCES)
+	$(ECHO) "generating $@ with tools/gen-ctype-names.rb"
+	$(Q) ruby tools/gen-ctype-names.rb $(UNICODE_VERSION) > $@
+
+src/.gen/ctype_range_ascii.gen.h: tools/gen-ctype-range.rb $(UNICODE_RUBY_SOURCES)
+	$(ECHO) "generating $@ with tools/gen-ctype-range.rb"
+	$(Q) ruby tools/gen-ctype-range.rb $(UNICODE_VERSION) --ascii > $@
+
+src/.gen/case_map_ascii.gen.h: tools/gen-case-map.rb $(UNICODE_RUBY_SOURCES)
+	$(ECHO) "generating $@ with tools/gen-case-map.rb"
+	$(Q) ruby tools/gen-case-map.rb $(UNICODE_VERSION) --ascii > $@
+
+src/.gen/ctype_range_unicode.gen.h: tools/gen-ctype-range.rb $(UNICODE_RUBY_SOURCES)
+	$(ECHO) "generating $@ with tools/gen-ctype-range.rb"
+	$(Q) ruby tools/gen-ctype-range.rb $(UNICODE_VERSION) --unicode > $@
+
+src/.gen/case_map_ascii.gen.h: tools/gen-case-map.rb $(UNICODE_RUBY_SOURCES)
+src/.gen/case_map_unicode.gen.h: tools/gen-case-map.rb
+	$(ECHO) "generating $@ with tools/gen-case-map.rb"
+	$(Q) ruby tools/gen-case-map.rb $(UNICODE_VERSION) --unicode > $@
+
+src/.gen/case_map_ascii.gen.h: tools/gen-case-map.rb $(UNICODE_RUBY_SOURCES)
+src/encoding/.gen/ctype_range_iso_8859_1.gen.h: tools/gen-ctype-range.rb
+	$(ECHO) "generating $@ with tools/gen-ctype-range.rb"
+	$(Q) ruby tools/gen-ctype-range.rb $(UNICODE_VERSION) --single-byte ISO-8859-1 --prefix iso_8859_1 > $@
+
+src/encoding/.gen/case_map_iso_8859_1.gen.h: tools/gen-case-map.rb $(UNICODE_RUBY_SOURCES)
+	$(ECHO) "generating $@ with tools/gen-case-map.rb"
+	$(Q) ruby tools/gen-case-map.rb $(UNICODE_VERSION) --single-byte ISO-8859-1 --prefix iso_8859_1 > $@
+
+src/encoding/.gen/ctype_range_shift_jis.gen.h: tools/gen-ctype-range.rb $(UNICODE_RUBY_SOURCES)
+	$(ECHO) "generating $@ with tools/gen-ctype-range.rb"
+	$(Q) ruby tools/gen-ctype-range.rb $(UNICODE_VERSION) --multi-byte2 Shift_JIS --prefix shift_jis > $@
+
+src/encoding/.gen/case_map_shift_jis.gen.h: tools/gen-case-map.rb $(UNICODE_RUBY_SOURCES)
+	$(ECHO) "generating $@ with tools/gen-case-map.rb"
+	$(Q) ruby tools/gen-case-map.rb $(UNICODE_VERSION) --multi-byte2 Shift_JIS --prefix shift_jis > $@
+
+.PHONY: build-mruby
+build-mruby: build/libnaraku.a
+	$(ECHO) "building mruby"
+	$(Q) cd submodules/mruby && rake MRUBY_CONFIG=$(MRUBY_CONFIG)
+
+.PHONY: clean
+clean:
+	$(ECHO) "cleaning build artifacts"
+	$(Q) $(RMALL) build
+	$(ECHO) "cleaning mruby build artifacts"
+	$(Q) cd submodules/mruby && rake clean
