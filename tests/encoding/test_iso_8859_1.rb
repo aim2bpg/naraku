@@ -91,24 +91,24 @@ module Encoding
       end
     end
 
-    def test_ctype
-      ascii_ctype = Naraku::Encoding.propname_to_ctype("ASCII")
+    def test_cprop
+      ascii_cprop = Naraku::Encoding.name_to_cprop("ASCII")
       (0x00..0x7F).each do |code|
-        assert E.ctype?(code, ascii_ctype)
+        assert E.cprop?(code, ascii_cprop)
       end
 
-      alpha_ctype = Naraku::Encoding.propname_to_ctype("Alpha")
+      alpha_cprop = Naraku::Encoding.name_to_cprop("Alpha")
       [*(0x41..0x5A), *(0x61..0x7A), 0xAA, 0xB5, 0xBA, *(0xC0..0xD6), *(0xD8..0xF6), *(0xF8..0xFF)].each do |code|
-        assert E.ctype?(code, alpha_ctype)
+        assert E.cprop?(code, alpha_cprop)
       end
     end
 
-    def test_ctype_code_range
-      ascii_ctype = Naraku::Encoding.propname_to_ctype("ASCII")
-      assert_equal [0x00..0x7F], E.ctype_code_range(ascii_ctype)
+    def test_cprop_code_range
+      ascii_cprop = Naraku::Encoding.name_to_cprop("ASCII")
+      assert_equal [0x00..0x7F], E.cprop_code_range(ascii_cprop)
 
-      alpha_ctype = Naraku::Encoding.propname_to_ctype("Alpha")
-      assert_equal [0x41..0x5A, 0x61..0x7A, 0xAA..0xAA, 0xB5..0xB5, 0xBA..0xBA, 0xC0..0xD6, 0xD8..0xF6, 0xF8..0xFF], E.ctype_code_range(alpha_ctype)
+      alpha_cprop = Naraku::Encoding.name_to_cprop("Alpha")
+      assert_equal [0x41..0x5A, 0x61..0x7A, 0xAA..0xAA, 0xB5..0xB5, 0xBA..0xBA, 0xC0..0xD6, 0xD8..0xF6, 0xF8..0xFF], E.cprop_code_range(alpha_cprop)
     end
   end
 end

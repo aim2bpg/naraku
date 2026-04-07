@@ -168,32 +168,32 @@ module Encoding
       end
     end
 
-    def test_ctype
-      ascii_ctype = Naraku::Encoding.propname_to_ctype("ASCII")
+    def test_cprop
+      ascii_cprop = Naraku::Encoding.name_to_cprop("ASCII")
       (0x00..0x7F).each do |code|
-        assert E.ctype?(code, ascii_ctype)
+        assert E.cprop?(code, ascii_cprop)
       end
 
-      alpha_ctype = Naraku::Encoding.propname_to_ctype("Alpha")
+      alpha_cprop = Naraku::Encoding.name_to_cprop("Alpha")
       [*(0x41..0x5A), *(0x61..0x7A)].each do |code|
-        assert E.ctype?(code, alpha_ctype)
+        assert E.cprop?(code, alpha_cprop)
       end
 
-      sc_hira_ctype = Naraku::Encoding.propname_to_ctype("Script=Hira")
-      assert E.ctype?(0x3042, sc_hira_ctype) # "あ"
-      assert !E.ctype?(0x30FC, sc_hira_ctype) # "ー"
+      sc_hira_cprop = Naraku::Encoding.name_to_cprop("Script=Hira")
+      assert E.cprop?(0x3042, sc_hira_cprop) # "あ"
+      assert !E.cprop?(0x30FC, sc_hira_cprop) # "ー"
 
-      scx_hira_ctype = Naraku::Encoding.propname_to_ctype("Script_Extensions=Hira")
-      assert E.ctype?(0x3042, scx_hira_ctype) # "あ"
-      assert E.ctype?(0x30FC, scx_hira_ctype) # "ー"
+      scx_hira_cprop = Naraku::Encoding.name_to_cprop("Script_Extensions=Hira")
+      assert E.cprop?(0x3042, scx_hira_cprop) # "あ"
+      assert E.cprop?(0x30FC, scx_hira_cprop) # "ー"
     end
 
-    def test_ctype_code_range
-      ascii_ctype = Naraku::Encoding.propname_to_ctype("ASCII")
-      assert_equal [0x00..0x7F], E.ctype_code_range(ascii_ctype)
+    def test_cprop_code_range
+      ascii_cprop = Naraku::Encoding.name_to_cprop("ASCII")
+      assert_equal [0x00..0x7F], E.cprop_code_range(ascii_cprop)
 
-      alpha_ctype = Naraku::Encoding.propname_to_ctype("Alpha")
-      alpha_code_range = E.ctype_code_range(alpha_ctype)
+      alpha_cprop = Naraku::Encoding.name_to_cprop("Alpha")
+      alpha_code_range = E.cprop_code_range(alpha_cprop)
       [0x41..0x5A, 0x61..0x7A, 0x3041..0x3096].each do |range|
         assert alpha_code_range.include?(range)
       end

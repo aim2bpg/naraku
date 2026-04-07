@@ -33,23 +33,31 @@ module Naraku
       flags
     end
 
+    private :_get_case_fold
+
     def case_fold(code, *options)
       flags = parse_options(options)
       _get_case_fold(code, flags)
     end
+
+    private :_expand_case_unfold
 
     def expand_case_unfold(codes, *options)
       flags = parse_options(options)
       _expand_case_unfold(codes, flags)
     end
 
+    private :_iterate_case_fold
+
     def iterate_case_fold(*options, &block)
       flags = parse_options(options)
       _iterate_case_fold(flags, &block)
     end
 
-    def ctype_code_range(ctype)
-      result = _get_ctype_code_range(ctype)
+    private :_get_cprop_code_range
+
+    def cprop_code_range(cprop)
+      result = _get_cprop_code_range(cprop)
       case result
       when :'delegate_7bit'
         delegate_range = (0x00..0x7F)
@@ -63,7 +71,7 @@ module Naraku
       range_begin = nil
       range_end = nil
       delegate_range.each do |code|
-        if ctype?(code, ctype)
+        if cprop?(code, cprop)
           if range_begin != nil && code == range_end + 1
             range_end = code
           else

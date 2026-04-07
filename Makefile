@@ -40,52 +40,60 @@ build/static/%.o: src/%.c Makefile $(HEADERS)
 	$(Q) $(MAKEDIRS) $(@D)
 	$(Q) $(CC) $(DEBUG_FLAGS) $(CPPFLAGS) $(CFLAGS) -c -o $@ $<
 
-src/ctype.o: src/.gen/ctype_names.gen.h
-src/encoding_ascii.o: src/.gen/ctype_range_ascii.gen.h src/.gen/case_map_ascii.gen.h
-src/encoding_unicode.o: src/.gen/ctype_range_unicode.gen.h src/.gen/case_map_unicode.gen.h
-src/encoding/iso_8859_1.o: src/encoding/.gen/ctype_range_iso_8859_1.gen.h src/encoding/.gen/case_map_iso_8859_1.gen.h
-src/encoding/shift_jis.o: src/encoding/.gen/ctype_range_shift_jis.gen.h src/encoding/.gen/case_map_shift_jis.gen.h
+build/static/cprop.o: src/.gen/name2cprop.gen.h
+build/static/encoding_ascii.o: src/.gen/cprop_range_ascii.gen.h src/.gen/case_map_ascii.gen.h
+build/static/encoding_unicode.o: src/.gen/cprop_range_unicode.gen.h src/.gen/case_map_unicode.gen.h
+build/static/encoding/iso_8859_1.o: src/encoding/.gen/cprop_range_iso_8859_1.gen.h src/encoding/.gen/case_map_iso_8859_1.gen.h
+build/static/encoding/shift_jis.o: src/encoding/.gen/cprop_range_shift_jis.gen.h src/encoding/.gen/case_map_shift_jis.gen.h
 
-include/encoding/ctype_names.h: tools/gen-ctype-names.rb $(UNICODE_RUBY_SOURCES)
-	$(ECHO) "generating $@ with tools/gen-ctype-names.rb"
-	$(Q) ruby tools/gen-ctype-names.rb --header $(UNICODE_VERSION) > $@
+include/naraku_cprop_names.h: tools/gen-cprop-names.rb $(UNICODE_RUBY_SOURCES)
+	$(ECHO) "generating $@ with tools/gen-cprop-names.rb"
+	$(Q) $(MAKEDIRS) $(@D)
+	$(Q) ruby tools/gen-cprop-names.rb --header $(UNICODE_VERSION) > $@
 
-src/.gen/ctype_names.gen.h: tools/gen-ctype-names.rb $(UNICODE_RUBY_SOURCES)
-	$(ECHO) "generating $@ with tools/gen-ctype-names.rb"
-	$(Q) ruby tools/gen-ctype-names.rb $(UNICODE_VERSION) > $@
+src/.gen/name2cprop.gen.h: tools/gen-cprop-names.rb $(UNICODE_RUBY_SOURCES)
+	$(ECHO) "generating $@ with tools/gen-cprop-names.rb"
+	$(Q) $(MAKEDIRS) $(@D)
+	$(Q) ruby tools/gen-cprop-names.rb $(UNICODE_VERSION) > $@
 
-src/.gen/ctype_range_ascii.gen.h: tools/gen-ctype-range.rb $(UNICODE_RUBY_SOURCES)
-	$(ECHO) "generating $@ with tools/gen-ctype-range.rb"
-	$(Q) ruby tools/gen-ctype-range.rb $(UNICODE_VERSION) --ascii > $@
+src/.gen/cprop_range_ascii.gen.h: tools/gen-cprop-range.rb $(UNICODE_RUBY_SOURCES)
+	$(ECHO) "generating $@ with tools/gen-cprop-range.rb"
+	$(Q) $(MAKEDIRS) $(@D)
+	$(Q) ruby tools/gen-cprop-range.rb $(UNICODE_VERSION) --ascii > $@
 
 src/.gen/case_map_ascii.gen.h: tools/gen-case-map.rb $(UNICODE_RUBY_SOURCES)
 	$(ECHO) "generating $@ with tools/gen-case-map.rb"
+	$(Q) $(MAKEDIRS) $(@D)
 	$(Q) ruby tools/gen-case-map.rb $(UNICODE_VERSION) --ascii > $@
 
-src/.gen/ctype_range_unicode.gen.h: tools/gen-ctype-range.rb $(UNICODE_RUBY_SOURCES)
-	$(ECHO) "generating $@ with tools/gen-ctype-range.rb"
-	$(Q) ruby tools/gen-ctype-range.rb $(UNICODE_VERSION) --unicode > $@
+src/.gen/cprop_range_unicode.gen.h: tools/gen-cprop-range.rb $(UNICODE_RUBY_SOURCES)
+	$(ECHO) "generating $@ with tools/gen-cprop-range.rb"
+	$(Q) $(MAKEDIRS) $(@D)
+	$(Q) ruby tools/gen-cprop-range.rb $(UNICODE_VERSION) --unicode > $@
 
-src/.gen/case_map_ascii.gen.h: tools/gen-case-map.rb $(UNICODE_RUBY_SOURCES)
-src/.gen/case_map_unicode.gen.h: tools/gen-case-map.rb
+src/.gen/case_map_unicode.gen.h: tools/gen-case-map.rb $(UNICODE_RUBY_SOURCES)
 	$(ECHO) "generating $@ with tools/gen-case-map.rb"
+	$(Q) $(MAKEDIRS) $(@D)
 	$(Q) ruby tools/gen-case-map.rb $(UNICODE_VERSION) --unicode > $@
 
-src/.gen/case_map_ascii.gen.h: tools/gen-case-map.rb $(UNICODE_RUBY_SOURCES)
-src/encoding/.gen/ctype_range_iso_8859_1.gen.h: tools/gen-ctype-range.rb
-	$(ECHO) "generating $@ with tools/gen-ctype-range.rb"
-	$(Q) ruby tools/gen-ctype-range.rb $(UNICODE_VERSION) --single-byte ISO-8859-1 --prefix iso_8859_1 > $@
+src/encoding/.gen/cprop_range_iso_8859_1.gen.h: tools/gen-cprop-range.rb $(UNICODE_RUBY_SOURCES)
+	$(ECHO) "generating $@ with tools/gen-cprop-range.rb"
+	$(Q) $(MAKEDIRS) $(@D)
+	$(Q) ruby tools/gen-cprop-range.rb $(UNICODE_VERSION) --single-byte ISO-8859-1 --prefix iso_8859_1 > $@
 
 src/encoding/.gen/case_map_iso_8859_1.gen.h: tools/gen-case-map.rb $(UNICODE_RUBY_SOURCES)
 	$(ECHO) "generating $@ with tools/gen-case-map.rb"
+	$(Q) $(MAKEDIRS) $(@D)
 	$(Q) ruby tools/gen-case-map.rb $(UNICODE_VERSION) --single-byte ISO-8859-1 --prefix iso_8859_1 > $@
 
-src/encoding/.gen/ctype_range_shift_jis.gen.h: tools/gen-ctype-range.rb $(UNICODE_RUBY_SOURCES)
-	$(ECHO) "generating $@ with tools/gen-ctype-range.rb"
-	$(Q) ruby tools/gen-ctype-range.rb $(UNICODE_VERSION) --multi-byte2 Shift_JIS --prefix shift_jis > $@
+src/encoding/.gen/cprop_range_shift_jis.gen.h: tools/gen-cprop-range.rb $(UNICODE_RUBY_SOURCES)
+	$(ECHO) "generating $@ with tools/gen-cprop-range.rb"
+	$(Q) $(MAKEDIRS) $(@D)
+	$(Q) ruby tools/gen-cprop-range.rb $(UNICODE_VERSION) --multi-byte2 Shift_JIS --prefix shift_jis > $@
 
 src/encoding/.gen/case_map_shift_jis.gen.h: tools/gen-case-map.rb $(UNICODE_RUBY_SOURCES)
 	$(ECHO) "generating $@ with tools/gen-case-map.rb"
+	$(Q) $(MAKEDIRS) $(@D)
 	$(Q) ruby tools/gen-case-map.rb $(UNICODE_VERSION) --multi-byte2 Shift_JIS --prefix shift_jis > $@
 
 .PHONY: build-mruby

@@ -13,7 +13,7 @@
 #include <naraku_common.h>
 #include <naraku_error.h>
 
-#include "encoding/ctype_names.h"
+#include "naraku_cprop_names.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -101,9 +101,9 @@ typedef nk_error_t (*nk_case_fold_callback_t)(
 );
 
 /**
- * Type representing a character type (property).
+ * Type representing a character property.
  */
-typedef uint32_t nk_ctype_t;
+typedef uint32_t nk_cprop_t;
 
 typedef enum {
   NK_ENC_NO_DELEGATION = 0,
@@ -114,10 +114,10 @@ typedef enum {
 } nk_code_range_delegation_t;
 
 /**
- * Structure representing a code range for character types.
+ * Structure representing a code range for character properties.
  * 
  * The `codes` pointer points to an array of inversion lists of code points for
- * the character type (i.e., a list of non-overlapping, sorted code point ranges).
+ * the character property (i.e., a list of non-overlapping, sorted code point ranges).
  * Each range is represented by a pair of code points (start and end, inclusive).
  */
 typedef struct {
@@ -337,33 +337,33 @@ struct nk_encoding {
    * - the code point is invalid for the encoding, or
    * - the character type is not defined for the encoding.
    */
-  bool (*code_is_ctype)(
+  bool (*code_is_cprop)(
     const nk_encoding_t* enc,
     uint32_t code,
-    nk_ctype_t ctype
+    nk_cprop_t cprop
   );
 
   /**
-   * Function pointer to get the code range for a certain character type in the
+   * Function pointer to get the code range for a certain character property in the
    * encoding.
    * 
    * The function writes the code range to `code_range` and returns zero, or a
-   * positive value if the character type should be handled by delegation. The
+   * positive value if the character property should be handled by delegation. The
    * delegation values are:
    * 
-   * - `NK_ENC_7BIT_DELEGATE` if the character type can be handled by checking
+   * - `NK_ENC_7BIT_DELEGATE` if the character property can be handled by checking
    *   the code point against a 7-bit ASCII range (e.g., the encoding is US-ASCII).
-   * - `NK_ENC_8BIT_DELEGATE` if the character type can be handled by checking
-   *   the code point against an 8-bit range (e.g., for `ctype` values corresponding
+   * - `NK_ENC_8BIT_DELEGATE` if the character property can be handled by checking
+   *   the code point against an 8-bit range (e.g., for `cprop` values corresponding
    *   to Latin-1 character classes).
    * 
    * Otherwise, if the function returns a negative value, it means an error occurred:
    * 
-   * - `NK_ERR_UNSUPPORTED_CHAR_PROPERTY` if the character type is not supported by the encoding.
+   * - `NK_ERR_UNSUPPORTED_CHAR_PROPERTY` if the character property is not supported by the encoding.
    */
-  nk_code_range_delegation_t (*get_ctype_code_range)(
+  nk_code_range_delegation_t (*get_cprop_code_range)(
     const nk_encoding_t* enc,
-    nk_ctype_t ctype,
+    nk_cprop_t cprop,
     nk_static_code_range_t* code_range
   );
 };
@@ -415,23 +415,23 @@ nk_error_t nk_enc_ascii_iterate_case_fold(
 );
 
 NARAKU_EXPORTED_FUNCTION
-bool nk_enc_ascii_code_is_ctype(
+bool nk_enc_ascii_code_is_cprop(
     const nk_encoding_t* enc,
     uint32_t code,
-    uint32_t ctype
+    uint32_t cprop
 );
 
 NARAKU_EXPORTED_FUNCTION
-nk_code_range_delegation_t nk_enc_ascii_get_ctype_code_range(
+nk_code_range_delegation_t nk_enc_ascii_get_cprop_code_range(
     const nk_encoding_t* enc,
-    uint32_t ctype,
+    uint32_t cprop,
     nk_static_code_range_t* code_range
 );
 
 NARAKU_EXPORTED_FUNCTION
-nk_code_range_delegation_t nk_enc_ascii_8bit_get_ctype_code_range(
+nk_code_range_delegation_t nk_enc_ascii_8bit_get_cprop_code_range(
     const nk_encoding_t* enc,
-    uint32_t ctype,
+    uint32_t cprop,
     nk_static_code_range_t* code_range
 );
 
@@ -488,30 +488,30 @@ nk_error_t nk_enc_unicode_iterate_case_fold(
 );
 
 NARAKU_EXPORTED_FUNCTION
-bool nk_enc_unicode_code_is_ctype(
+bool nk_enc_unicode_code_is_cprop(
     const nk_encoding_t* enc,
     uint32_t code,
-    uint32_t ctype
+    uint32_t cprop
 );
 
 NARAKU_EXPORTED_FUNCTION
-nk_code_range_delegation_t nk_enc_unicode_get_ctype_code_range(
+nk_code_range_delegation_t nk_enc_unicode_get_cprop_code_range(
     const nk_encoding_t* enc,
-    uint32_t ctype,
+    uint32_t cprop,
     nk_static_code_range_t* code_range
 );
 
 // ==========================================================================
 //
-// src/ctype.c
+// src/cprop.c
 //
 // ==========================================================================
 
 /**
- * Converts a character type name to the corresponding `nk_ctype_t` value for
+ * Converts a character type name to the corresponding `nk_cprop_t` value for
  * the given encoding.
  *
- * The function returns the `nk_ctype_t` value if the name is valid for the encoding,
+ * The function returns the `nk_cprop_t` value if the name is valid for the encoding,
  * or a negative error code if the name is invalid. Such error values are:
  * 
  * - `NK_ERR_INVALID_CHAR_PROPERTY_NAME` if the name is not valid for any encoding.
@@ -519,7 +519,7 @@ nk_code_range_delegation_t nk_enc_unicode_get_ctype_code_range(
  * This function is used for resolving `\p{...}` and `\P{...}` character property escapes.
  */
 NARAKU_EXPORTED_FUNCTION
-int32_t nk_propname_to_ctype(
+int32_t nk_name_to_cprop(
   const nk_encoding_t* enc,
   const uint8_t* name_bytes,
   const uint8_t* name_bytes_end
@@ -665,28 +665,28 @@ static inline nk_error_t nk_enc_iterate_case_fold(
   return enc->iterate_case_fold(enc, flags, callback, user_data);
 }
 
-static inline bool nk_enc_code_is_ctype(
+static inline bool nk_enc_code_is_cprop(
     const nk_encoding_t* enc,
     uint32_t code,
-    nk_ctype_t ctype
+    nk_cprop_t cprop
 ) {
-  if (ctype == NK_CTYPE_ASCII) {
+  if (cprop == NK_CPROP_ASCII) {
     return code < 0x80;
   }
 
-  return enc->code_is_ctype(enc, code, ctype);
+  return enc->code_is_cprop(enc, code, cprop);
 }
 
-static inline nk_code_range_delegation_t nk_enc_get_ctype_code_range(
+static inline nk_code_range_delegation_t nk_enc_get_cprop_code_range(
     const nk_encoding_t* enc,
-    nk_ctype_t ctype,
+    nk_cprop_t cprop,
     nk_static_code_range_t* code_range
 ) {
-  if (ctype == NK_CTYPE_ASCII) {
+  if (cprop == NK_CPROP_ASCII) {
     return NK_ENC_7BIT_DELEGATE;
   }
 
-  return enc->get_ctype_code_range(enc, ctype, code_range);
+  return enc->get_cprop_code_range(enc, cprop, code_range);
 }
 
 // ==========================================================================

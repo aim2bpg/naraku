@@ -7,7 +7,7 @@
 #  define ARG_UNUSED
 #endif
 
-#include ".gen/ctype_range_shift_jis.gen.h"
+#include ".gen/cprop_range_shift_jis.gen.h"
 #include ".gen/case_map_shift_jis.gen.h"
 
 static const int8_t SHIFT_JIS_FIRST_BYTE_TABLE[] = {
@@ -189,6 +189,6 @@ const nk_encoding_t* nk_enc_shift_jis = &(const nk_encoding_t){
   .get_case_fold = shift_jis_get_case_fold,
   .expand_case_unfold = shift_jis_expand_case_unfold,
   .iterate_case_fold = shift_jis_iterate_case_fold,
-  .code_is_ctype = shift_jis_code_is_ctype,
-  .get_ctype_code_range = shift_jis_get_ctype_code_range,
+  .code_is_cprop = shift_jis_code_is_cprop,
+  .get_cprop_code_range = shift_jis_get_cprop_code_range,
 };

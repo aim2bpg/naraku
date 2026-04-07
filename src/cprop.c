@@ -6,11 +6,11 @@
 #  define ARG_UNUSED
 #endif
 
-#include ".gen/ctype_names.gen.h"
+#include ".gen/name2cprop.gen.h"
 
 #include <stdio.h>
 
-int32_t nk_propname_to_ctype(
+int32_t nk_name_to_cprop(
     const nk_encoding_t* enc,
     const uint8_t* name_bytes,
     const uint8_t* name_bytes_end
@@ -42,12 +42,12 @@ int32_t nk_propname_to_ctype(
     ascii_bytes[ascii_bytes_len++] = (uint8_t)folded_code;
   }
 
-  const struct propname2ctype_entry *entry = propname2ctype_lookup((const char*)ascii_bytes, (unsigned int)ascii_bytes_len);
+  const struct name2cprop_entry *entry = name2cprop_lookup((const char*)ascii_bytes, (unsigned int)ascii_bytes_len);
   if (entry == NULL) {
     return NK_ERR_INVALID_CHAR_PROPERTY_NAME;
   }
 
-  return (int32_t)entry->ctype;
+  return (int32_t)entry->cprop;
 }
 
 bool code_in_code_range(

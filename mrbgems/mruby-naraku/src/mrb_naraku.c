@@ -23,24 +23,24 @@ static void mrb_naraku_encoding_adjust_mbc_head_context_free(mrb_state* mrb, voi
 }
 struct mrb_data_type mrb_naraku_encoding_adjust_mbc_head_context_type = { "AdjustMbcHeadContext", mrb_naraku_encoding_adjust_mbc_head_context_free };
 
-static mrb_value mrb_naraku_encoding_propname_to_ctype(mrb_state *mrb, mrb_value self) {
+static mrb_value mrb_naraku_encoding_name_to_cprop(mrb_state *mrb, mrb_value self) {
   char* prop_name;
   mrb_int len;
   mrb_get_args(mrb, "s", &prop_name, &len);
 
-  int32_t ctype = nk_propname_to_ctype(nk_enc_ascii_8bit, (const uint8_t*)prop_name, (const uint8_t*)prop_name + len);
-  if (ctype < 0) {
-    switch (ctype) {
+  int32_t cprop = nk_name_to_cprop(nk_enc_ascii_8bit, (const uint8_t*)prop_name, (const uint8_t*)prop_name + len);
+  if (cprop < 0) {
+    switch (cprop) {
       case NK_ERR_INVALID_CHAR_PROPERTY_NAME:
         mrb_raisef(mrb, E_ARGUMENT_ERROR, "invalid character property name: %l", prop_name, len);
         break;
       default:
-        mrb_raisef(mrb, E_ARGUMENT_ERROR, "unknown error: %d", ctype);
+        mrb_raisef(mrb, E_ARGUMENT_ERROR, "unknown error: %d", cprop);
         break;
     }
   }
 
-  return mrb_fixnum_value((nk_ctype_t)ctype);
+  return mrb_fixnum_value((nk_cprop_t)cprop);
 }
 
 static mrb_value mrb_naraku_encoding_new(mrb_state *mrb, struct RClass* encoding_class, const nk_encoding_t* enc) {
@@ -288,27 +288,27 @@ static mrb_value mrb_naraku_encoding_iterate_case_fold(mrb_state *mrb, mrb_value
   return mrb_nil_value();
 }
 
-static mrb_value mrb_naraku_encoding_ctype_p(mrb_state *mrb, mrb_value self) {
+static mrb_value mrb_naraku_encoding_cprop_p(mrb_state *mrb, mrb_value self) {
   const nk_encoding_t* enc = (const nk_encoding_t*)mrb_data_get_ptr(mrb, self, &mrb_naraku_encoding_type);
   mrb_int code;
-  mrb_int ctype;
-  mrb_get_args(mrb, "ii", &code, &ctype);
+  mrb_int cprop;
+  mrb_get_args(mrb, "ii", &code, &cprop);
 
-  bool result = nk_enc_code_is_ctype(enc, (uint32_t)code, (nk_ctype_t)ctype);
+  bool result = nk_enc_code_is_cprop(enc, (uint32_t)code, (nk_cprop_t)cprop);
   return result ? mrb_true_value() : mrb_false_value();
 }
 
-static mrb_value mrb_naraku_encoding_get_ctype_code_range(mrb_state *mrb, mrb_value self) {
+static mrb_value mrb_naraku_encoding_get_cprop_code_range(mrb_state *mrb, mrb_value self) {
   const nk_encoding_t* enc = (const nk_encoding_t*)mrb_data_get_ptr(mrb, self, &mrb_naraku_encoding_type);
-  mrb_int ctype;
-  mrb_get_args(mrb, "i", &ctype);
+  mrb_int cprop;
+  mrb_get_args(mrb, "i", &cprop);
 
   nk_static_code_range_t code_range;
-  nk_code_range_delegation_t delegation = nk_enc_get_ctype_code_range(enc, (nk_ctype_t)ctype, &code_range);
+  nk_code_range_delegation_t delegation = nk_enc_get_cprop_code_range(enc, (nk_cprop_t)cprop, &code_range);
   if (delegation < 0) {
     switch (delegation) {
       case NK_ERR_UNSUPPORTED_CHAR_PROPERTY:
-        mrb_raisef(mrb, E_ARGUMENT_ERROR, "unsupported character property: %d", ctype);
+        mrb_raisef(mrb, E_ARGUMENT_ERROR, "unsupported character property: %d", cprop);
         break;
       default:
         mrb_raisef(mrb, E_ARGUMENT_ERROR, "unknown error: %d", delegation);
@@ -364,7 +364,7 @@ void mrb_mruby_naraku_gem_init(mrb_state *mrb) {
   mrb_undef_class_method_id(mrb, encoding_class, MRB_SYM(new));
   mrb_undef_class_method_id(mrb, encoding_class, MRB_SYM(allocate));
 
-  mrb_define_class_method(mrb, encoding_class, "propname_to_ctype", mrb_naraku_encoding_propname_to_ctype, MRB_ARGS_REQ(1));
+  mrb_define_class_method(mrb, encoding_class, "name_to_cprop", mrb_naraku_encoding_name_to_cprop, MRB_ARGS_REQ(1));
 
   mrb_define_method(mrb, encoding_class, "name", mrb_naraku_encoding_name, MRB_ARGS_NONE());
   mrb_define_method(mrb, encoding_class, "min_mbc_width", mrb_naraku_encoding_min_mbc_width, MRB_ARGS_NONE());
@@ -380,8 +380,8 @@ void mrb_mruby_naraku_gem_init(mrb_state *mrb) {
   mrb_define_method(mrb, encoding_class, "_get_case_fold", mrb_naraku_encoding_get_case_fold, MRB_ARGS_REQ(2));
   mrb_define_method(mrb, encoding_class, "_expand_case_unfold", mrb_naraku_encoding_expand_case_unfold, MRB_ARGS_REQ(2));
   mrb_define_method(mrb, encoding_class, "_iterate_case_fold", mrb_naraku_encoding_iterate_case_fold, MRB_ARGS_REQ(1) | MRB_ARGS_BLOCK());
-  mrb_define_method(mrb, encoding_class, "ctype?", mrb_naraku_encoding_ctype_p, MRB_ARGS_REQ(2));
-  mrb_define_method(mrb, encoding_class, "_get_ctype_code_range", mrb_naraku_encoding_get_ctype_code_range, MRB_ARGS_REQ(1));
+  mrb_define_method(mrb, encoding_class, "cprop?", mrb_naraku_encoding_cprop_p, MRB_ARGS_REQ(2));
+  mrb_define_method(mrb, encoding_class, "_get_cprop_code_range", mrb_naraku_encoding_get_cprop_code_range, MRB_ARGS_REQ(1));
 
   mrb_define_const(mrb, encoding_class, "ASCII_8BIT", mrb_naraku_encoding_new(mrb, encoding_class, nk_enc_ascii_8bit));
   mrb_define_const(mrb, encoding_class, "ISO_8859_1", mrb_naraku_encoding_new(mrb, encoding_class, nk_enc_iso_8859_1));

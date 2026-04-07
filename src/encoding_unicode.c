@@ -27,7 +27,7 @@
 #define UNICODE_SPECIAL_LENGTH(code) ((code) >> UNICODE_SPECIAL_LENGTH_SHIFT)
 #define UNICODE_SPECIAL_CODE(code) ((code) & UNICODE_SPECIAL_CODE_MASK)
 
-#include ".gen/ctype_range_unicode.gen.h"
+#include ".gen/cprop_range_unicode.gen.h"
 
 struct unicode_fold_item {
   uint32_t from_code;
@@ -364,31 +364,31 @@ nk_error_t nk_enc_unicode_iterate_case_fold(
   return 0;
 }
 
-bool nk_enc_unicode_code_is_ctype(
+bool nk_enc_unicode_code_is_cprop(
     const nk_encoding_t* enc ARG_UNUSED,
     uint32_t code,
-    uint32_t ctype
+    nk_cprop_t cprop
 ) {
-  if (ctype > NK_MAX_CTYPE) {
+  if (cprop > NK_MAX_CPROP) {
     return false;
   }
 
-  size_t len = (size_t)UNICODE_CTYPE_RANGES[ctype][0];
-  const uint32_t* intervals = &UNICODE_CTYPE_RANGES[ctype][1];
+  size_t len = (size_t)UNICODE_CPROP_RANGES[cprop][0];
+  const uint32_t* intervals = &UNICODE_CPROP_RANGES[cprop][1];
   return code_in_code_range(code, len, intervals);
 }
 
-nk_code_range_delegation_t nk_enc_unicode_get_ctype_code_range(
+nk_code_range_delegation_t nk_enc_unicode_get_cprop_code_range(
     const nk_encoding_t* enc ARG_UNUSED,
-    uint32_t ctype,
+    nk_cprop_t cprop,
     nk_static_code_range_t* code_range
 ) {
-  if (ctype > NK_MAX_CTYPE) {
+  if (cprop > NK_MAX_CPROP) {
     return NK_ERR_UNSUPPORTED_CHAR_PROPERTY;
   }
 
-  size_t len = (size_t)UNICODE_CTYPE_RANGES[ctype][0];
-  const uint32_t* intervals = &UNICODE_CTYPE_RANGES[ctype][1];
+  size_t len = (size_t)UNICODE_CPROP_RANGES[cprop][0];
+  const uint32_t* intervals = &UNICODE_CPROP_RANGES[cprop][1];
   code_range->len = len;
   code_range->intervals = intervals;
   return NK_ENC_NO_DELEGATION;

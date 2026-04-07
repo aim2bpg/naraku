@@ -169,31 +169,31 @@ module Encoding
       end
     end
 
-    def test_ctype
-      ascii_ctype = Naraku::Encoding.propname_to_ctype("ASCII")
+    def test_cprop
+      ascii_cprop = Naraku::Encoding.name_to_cprop("ASCII")
       (0x00..0x7F).each do |code|
-        assert E.ctype?(code, ascii_ctype)
+        assert E.cprop?(code, ascii_cprop)
       end
 
-      alpha_ctype = Naraku::Encoding.propname_to_ctype("Alpha")
+      alpha_cprop = Naraku::Encoding.name_to_cprop("Alpha")
       [*(0x41..0x5A), *(0x61..0x7A), *(0x8260..0x8279), *(0x8281..0x829A)].each do |code|
-        assert E.ctype?(code, alpha_ctype)
+        assert E.cprop?(code, alpha_cprop)
       end
 
-      han_ctype = Naraku::Encoding.propname_to_ctype("Script=Han")
-      assert E.ctype?(0x88EA, han_ctype) # "一"
-      assert E.ctype?(0x8B43, han_ctype) # "気"
-      assert E.ctype?(0x92CA, han_ctype) # "通"
-      assert E.ctype?(0x8AD1, han_ctype) # "貫"
-      assert !E.ctype?(0x82A0, han_ctype) # "あ"
+      han_cprop = Naraku::Encoding.name_to_cprop("Script=Han")
+      assert E.cprop?(0x88EA, han_cprop) # "一"
+      assert E.cprop?(0x8B43, han_cprop) # "気"
+      assert E.cprop?(0x92CA, han_cprop) # "通"
+      assert E.cprop?(0x8AD1, han_cprop) # "貫"
+      assert !E.cprop?(0x82A0, han_cprop) # "あ"
     end
 
-    def test_ctype_code_range
-      ascii_ctype = Naraku::Encoding.propname_to_ctype("ASCII")
-      assert_equal [0x00..0x7F], E.ctype_code_range(ascii_ctype)
+    def test_cprop_code_range
+      ascii_cprop = Naraku::Encoding.name_to_cprop("ASCII")
+      assert_equal [0x00..0x7F], E.cprop_code_range(ascii_cprop)
 
-      alpha_ctype = Naraku::Encoding.propname_to_ctype("Alpha")
-      alpha_code_range = E.ctype_code_range(alpha_ctype)
+      alpha_cprop = Naraku::Encoding.name_to_cprop("Alpha")
+      alpha_code_range = E.cprop_code_range(alpha_cprop)
       [0x41..0x5A, 0x61..0x7A, 0x8260..0x8279, 0x8281..0x829A, 0x829F..0x82F1].each do |range|
         assert alpha_code_range.include?(range)
       end

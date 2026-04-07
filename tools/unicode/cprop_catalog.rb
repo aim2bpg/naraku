@@ -15,14 +15,14 @@ require_relative './ucd'
 # - properties defined in emoji/emoji-data.txt (e.g., Emoji, Emoji_Presentation, etc.)
 
 module Unicode
-  class CTypeCatalog
-    # A list of names of character classes that are supported by Onigmo but
+  class CpropCatalog
+    # A list of names of character properties that are supported by Onigmo but
     # are not defined in the UCD.
     #
-    # `XPosixPunct` is a non-standard character class that matches not only Unicode
+    # `XPosixPunct` is a non-standard character property that matches not only Unicode
     # punctuation characters, but also punctuation characters defined in the POSIX
     # standard.
-    NON_STANDARD_CTYPE_NAMES = %w[
+    NON_STANDARD_CPROP_NAMES = %w[
       NEWLINE Alpha Blank Cntrl Digit Graph Lower Print XPosixPunct Space Upper XDigit Word Alnum ASCII Punct
       Any Assigned
     ]
@@ -44,7 +44,7 @@ module Unicode
       name.downcase(:fold).gsub(/[- _]+/, '')
     end
 
-    CType = Data.define(
+    Cprop = Data.define(
       :name,
       :id,
       :category,
@@ -56,7 +56,7 @@ module Unicode
       :other_names
     )
 
-    class CType
+    class Cprop
       def constant_name
         name.upcase.gsub(/[- =.]+/, '_')
       end
@@ -112,13 +112,13 @@ module Unicode
       @non_standards = setup_non_standards
 
       @id = 0
-      @ctypes = []
-      @max_default_support_ctype_id = 0
+      @cprops = []
+      @max_default_support_cprop_id = 0
 
-      setup_ctypes
+      setup_cprops
     end
 
-    attr_reader :ctypes, :max_default_support_ctype_id
+    attr_reader :cprops, :max_default_support_cprop_id
 
     def setup_non_standards
       non_standards = {}
@@ -137,88 +137,92 @@ module Unicode
       non_standards['XPosixPunct'] = @gc['P'] | RangeSet.new(0x24, 0x2b, 0x3c, 0x3d, 0x3e, 0x5e, 0x60, 0x7c, 0x7e)
       non_standards['Space'] = @props['White_Space']
       non_standards['Upper'] = @core_props['Uppercase']
+
       # NOTE(makenowjust): In the Onigmo implementation, this value is explicitly given.
       # However, this value is just the same as the `ASCII_Hex_Digit` property defined in
       # the UCD, so we can just use that instead.
       non_standards['XDigit'] = @props['ASCII_Hex_Digit']
+
       non_standards['Word'] = non_standards['Alpha'] | @gc['M'] | non_standards['Digit'] | @gc['Pc'] | @props['Join_Control']
       non_standards['Alnum'] = non_standards['Alpha'] | non_standards['Digit']
+
       # NOTE(makenowjust): This value is also explicitly given in the Onigmo implementation,
       # but it is just the same as the `Basic Latin` block (actually, it is aliased with `ASCII`),
       # so we can just use that instead.
       non_standards['ASCII'] = @blocks['Basic Latin']
+
       non_standards['Punct'] = @gc['P']
 
       non_standards
     end
 
-    def setup_ctypes
-      NON_STANDARD_CTYPE_NAMES.each do |name|
+    def setup_cprops
+      NON_STANDARD_CPROP_NAMES.each do |name|
         range_set = @non_standards[name]
-        add_ctype(
+        add_cprop(
           name:,
-          category: 'Non Standard Character Types',
+          category: 'Non Standard Character Properties',
           range_set:,
           prop_name: name,
         )
       end
 
       @sc.each do |value_name, range_set|
-        add_ctype_sc(value_name, range_set)
+        add_cprop_sc(value_name, range_set)
       end
 
-      @max_default_support_ctype_id = @id - 1
+      @max_default_support_cprop_id = @id - 1
 
       @scx.each do |value_name, range_set|
-        add_ctype_prop_value('Script_Extensions', value_name, range_set)
+        add_cprop_pv('Script_Extensions', value_name, range_set)
       end
 
       @gc.each do |short_value_name, range_set|
-        add_ctype_gc(short_value_name, range_set)
+        add_cprop_gc(short_value_name, range_set)
       end
 
       @blocks.each do |value_name, range_set|
         value_name = value_name.gsub(/[ -]/, '_')
         names = [value_name]
         names += @prop_value_aliases_inv['Block'][value_name] || []
-        names.map! { CTypeCatalog.normalize_name(_1) }.uniq!
-        add_ctype_prop_value('Block', value_name, range_set, names.map { "In_#{_1}" })
+        names.map! { CpropCatalog.normalize_name(_1) }.uniq!
+        add_cprop_pv('Block', value_name, range_set, names.map { "In_#{_1}" })
       end
 
       @ages.each do |value_name, range_set|
-        add_ctype_prop_value('Age', value_name, range_set)
+        add_cprop_pv('Age', value_name, range_set)
       end
 
       @gcb.each do |value_name, range_set|
-        add_ctype_prop_value('Grapheme_Cluster_Break', value_name, range_set)
+        add_cprop_pv('Grapheme_Cluster_Break', value_name, range_set)
       end
 
       @ccc.each do |value, range_set|
         value_name = @prop_value_aliases['ccc'][value] || value
-        add_ctype_prop_value('Canonical_Combining_Class', value_name, range_set)
+        add_cprop_pv('Canonical_Combining_Class', value_name, range_set)
       end
 
       @props.each do |prop_name, range_set|
-        add_ctype_prop(prop_name, range_set, category: 'Binary Properties')
+        add_cprop_p(prop_name, range_set, category: 'Binary Properties')
       end
 
       @core_props.each do |prop_name, range_set|
-        add_ctype_prop(prop_name, range_set, category: 'Derived Core Properties')
+        add_cprop_p(prop_name, range_set, category: 'Derived Core Properties')
       end
 
       @in_cb.each do |value_name, range_set|
-        add_ctype_prop_value('Indic_Conjunct_Break', value_name, range_set, category: 'Derived Core Properties')
+        add_cprop_pv('Indic_Conjunct_Break', value_name, range_set, category: 'Derived Core Properties')
       end
 
       @emoji_props.each do |prop_name, range_set|
-        add_ctype_prop(prop_name, range_set, category: 'Emoji Properties')
+        add_cprop_p(prop_name, range_set, category: 'Emoji Properties')
       end
     end
 
-    def setup_ctypes_non_standard
-      NON_STANDARD_CTYPE_NAMES.each do |name|
+    def setup_cprops_non_standard
+      NON_STANDARD_CPROP_NAMES.each do |name|
         range_set = @non_standards[name]
-        add_ctype(
+        add_cprop(
           name:,
           range_set: range_set,
           prop_name: name,
@@ -226,26 +230,26 @@ module Unicode
       end
     end
 
-    def add_ctype_gc(short_value_name, range_set)
+    def add_cprop_gc(short_value_name, range_set)
       value_name = @prop_value_aliases['gc'][short_value_name] || short_value_name
       value_name_aliases = @prop_value_aliases_inv['General_Category'][value_name] || []
       value_name_aliases << value_name
       # These aliases are conflict with non-standard character types, so we need to exclude them.
       value_name_aliases -= ['digit', 'cntrl', 'punct']
-      add_ctype_prop_value('General_Category', value_name, range_set, value_name_aliases)
+      add_cprop_pv('General_Category', value_name, range_set, value_name_aliases)
     end
 
-    def add_ctype_sc(value_name, range_set)
+    def add_cprop_sc(value_name, range_set)
       value_name_aliases = @prop_value_aliases_inv['Script'][value_name] || []
       value_name_aliases << value_name
       value_name_aliases.uniq!
-      add_ctype_prop_value('Script', value_name, range_set, value_name_aliases)
+      add_cprop_pv('Script', value_name, range_set, value_name_aliases)
     end
 
-    def add_ctype_prop_value(prop_name, value_name, range_set, other_names = [], category: prop_name)
+    def add_cprop_pv(prop_name, value_name, range_set, other_names = [], category: prop_name)
       prop_name_aliases = @prop_aliases_inv[prop_name] || []
       value_name_aliases = @prop_value_aliases_inv[prop_name == 'Script_Extensions' ? 'Script' : prop_name][value_name] || []
-      add_ctype(
+      add_cprop(
         name: "#{prop_name}=#{value_name}",
         category:,
         range_set:,
@@ -257,10 +261,10 @@ module Unicode
       )
     end
 
-    def add_ctype_prop(prop_name, range_set, category:)
+    def add_cprop_p(prop_name, range_set, category:)
       prop_name_aliases = @prop_aliases_inv[prop_name] || []
       prop_name_aliases -= ['space', 'Alpha', 'Lower', 'Upper']
-      add_ctype(
+      add_cprop(
         name: prop_name,
         category:,
         range_set:,
@@ -272,11 +276,11 @@ module Unicode
       )
     end
 
-    def add_ctype(name:, category:, range_set:, prop_name:, prop_name_aliases: [], value_name: nil, value_name_aliases: [], other_names: [])
+    def add_cprop(name:, category:, range_set:, prop_name:, prop_name_aliases: [], value_name: nil, value_name_aliases: [], other_names: [])
       id = @id
-      prop_name, *prop_name_aliases = [prop_name, *prop_name_aliases].uniq { CTypeCatalog.normalize_name(_1) }
-      value_name, *value_name_aliases = [value_name, *value_name_aliases].uniq { CTypeCatalog.normalize_name(_1) }
-      @ctypes << CType.new(
+      prop_name, *prop_name_aliases = [prop_name, *prop_name_aliases].uniq { CpropCatalog.normalize_name(_1) }
+      value_name, *value_name_aliases = [value_name, *value_name_aliases].uniq { CpropCatalog.normalize_name(_1) }
+      @cprops << Cprop.new(
         name:,
         id:,
         category:,

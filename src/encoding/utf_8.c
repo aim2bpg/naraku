@@ -317,6 +317,6 @@ const nk_encoding_t* nk_enc_utf_8 = &(nk_encoding_t){
   .get_case_fold = nk_enc_unicode_get_case_fold,
   .expand_case_unfold = nk_enc_unicode_expand_case_unfold,
   .iterate_case_fold = nk_enc_unicode_iterate_case_fold,
-  .code_is_ctype = nk_enc_unicode_code_is_ctype,
-  .get_ctype_code_range = nk_enc_unicode_get_ctype_code_range,
+  .code_is_cprop = nk_enc_unicode_code_is_cprop,
+  .get_cprop_code_range = nk_enc_unicode_get_cprop_code_range,
 };

@@ -6,27 +6,27 @@
 #  define ARG_UNUSED
 #endif
 
-#include ".gen/ctype_range_ascii.gen.h"
+#include ".gen/cprop_range_ascii.gen.h"
 #include ".gen/case_map_ascii.gen.h"
 
-nk_code_range_delegation_t nk_enc_ascii_get_ctype_code_range(
+nk_code_range_delegation_t nk_enc_ascii_get_cprop_code_range(
     const nk_encoding_t* enc ARG_UNUSED,
-    uint32_t ctype,
+    uint32_t cprop,
     nk_static_code_range_t* code_range ARG_UNUSED
 ) {
-  if (ctype <= NK_MAX_DEFAULT_SUPPORT_CTYPE) {
+  if (cprop <= NK_MAX_DEFAULT_SUPPORT_CPROP) {
     return NK_ENC_7BIT_DELEGATE;
   }
 
   return NK_ERR_UNSUPPORTED_CHAR_PROPERTY;
 }
 
-nk_code_range_delegation_t nk_enc_ascii_8bit_get_ctype_code_range(
+nk_code_range_delegation_t nk_enc_ascii_8bit_get_cprop_code_range(
     const nk_encoding_t* enc ARG_UNUSED,
-    uint32_t ctype,
+    uint32_t cprop,
     nk_static_code_range_t* code_range ARG_UNUSED
 ) {
-  if (ctype <= NK_MAX_DEFAULT_SUPPORT_CTYPE) {
+  if (cprop <= NK_MAX_DEFAULT_SUPPORT_CPROP) {
     return NK_ENC_8BIT_DELEGATE;
   }
 
