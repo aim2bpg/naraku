@@ -8,33 +8,43 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <stdio.h> // for debug
 
 #include <naraku_common.h>
 #include <naraku_error.h>
 
-#include "naraku_cprop_names.h"
+#include <naraku_cprop_names.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/** Flag indicating that the encoding is for Unicode code points. */
-#define NK_ENC_FLAG_UNICODE (1U << 0)
-
 /**
- * Flag indicating that the encoding supports self-synchronization.
- *
- * This means that the encoding can find a character boundary if a byte stream
- * starts in the middle of a multi-byte character.
+ * Bit flags for encoding properties and behaviors.
  */
-#define NK_ENC_FLAG_SELF_SYNC (1U << 1)
+typedef enum {
+
+  /**
+   * Flag indicating that the encoding is for Unicode code points.
+   */
+  NK_ENC_FLAG_UNICODE = 1U << 0,
+
+  /**
+   * Flag indicating that the encoding supports self-synchronization.
+   *
+   * This means that the encoding can find a character boundary if a byte stream
+   * starts in the middle of a multi-byte character.
+   */
+  NK_ENC_FLAG_SELF_SYNC = 1U << 1,
+} nk_encoding_flag_t;
+
 
 /**
- * The maximum width of a multi-byte character in any encoding supported by Naraku.
+ * The maximum width of a multi-byte character in any encoding supported by
+ * Naraku.
+ *
+ * The value `6` is for CESU-8.
  */
 #define NK_ENC_MAX_MBC_WIDTH 6
-// Note: 6 is for CESU-8, which can encode a surrogate pair in 6 bytes.
 
 /**
  * Context for `nk_enc_adjust_mbc_head`.
@@ -51,22 +61,40 @@ typedef struct {
   // the cache is not used and the function should perform linear scanning.
   size_t cache_start_offset;
 
-  size_t head_bits_capacity;
-  uint64_t* head_bits;
+  size_t head_bits_capacity; // in bytes (i.e., number of bits is `head_bits_capacity * 8`)
+  uint64_t* head_bits; // nullable
 } nk_adjust_mbc_head_context_t;
 
-#define NK_DONT_USE_CACHE_FOR_ADJUST_MBC_HEAD ((size_t)(-1))
+/**
+ * A special value for `cache_start_offset` indicating that the cache should
+ * not be used.
+ */
+#define NK_DONT_USE_CACHE_FOR_ADJUST_MBC_HEAD SIZE_MAX
 
-/** Flags for case folding behavior. */
+/**
+ * Flags for case folding behavior.
+ */
 typedef enum {
-  /** For simple 1-to-1 case folding. */
+  /**
+   * For simple 1-to-1 character case folding (the default behavior).
+   */
   NK_FOLD_DEFAULT = 0,
-  /** For full case folding (includes 1-to-many mappings like 'ß' to 'ss'). */
-  NK_FOLD_FULL = 1 << 0,
-  /** For using Turkish/Azeri specific case folding rules (e.g., `İ` to `i`). */
-  NK_FOLD_TURKISH_AZERI = 1 << 1,
-  /** For ASCII-only case folding. This flag cannot be combined with others. */
-  NK_FOLD_ASCII_ONLY = 1 << 2,
+
+  /**
+   * For full case folding (including 1-to-many characters case folding, such as
+   * `'ß'` to `'ss'`).
+   */
+  NK_FOLD_FULL = (1U << 0),
+
+  /**
+   * For Turkish/Azeri specific case folding rules (e.g., `İ` to `i`).
+   */
+  NK_FOLD_TURKISH_AZERI = (1U << 1),
+
+  /**
+   * For ASCII-only case folding. This flag cannot be combined with others.
+   */
+  NK_FOLD_ASCII_ONLY = (1U << 2),
 } nk_fold_flag_t;
 
 /**
@@ -79,13 +107,16 @@ typedef enum {
  * The maximum number of items returned by `nk_enc_expand_case_unfold` for any
  * folded code point sequence in any encoding supported by Naraku.
  */
-#define NK_ENC_MAX_UNFOLD_ITEMS 10
-// FIXME(makenowjust): This value is tentative. We will compute the actual maximum number.
+#define NK_ENC_MAX_UNFOLD_ITEMS 5
 
 /**
  * Structure representing a case-unfolded item for a folded code point sequence.
  */
 typedef struct {
+  // The length of the folded code point sequence corresponding to the unfolded
+  // code point. That is, `nk_enc_case_fold(item->unfolded_code, flags, folded_codes)`
+  // returns `folded_codes_len` and writes the folded code points
+  // (`folded_codes[0], ..., folded_codes[item->folded_codes_len - 1]`) to `folded_codes`.
   size_t folded_codes_len;
   uint32_t unfolded_code;
 } nk_unfold_item_t;
@@ -105,12 +136,20 @@ typedef nk_error_t (*nk_case_fold_callback_t)(
  */
 typedef uint32_t nk_cprop_t;
 
+/**
+ * Type for result of `nk_enc_get_cprop_code_range` indicating how to handle
+ * the character property.
+ */
 typedef enum {
-  NK_ENC_NO_DELEGATION = 0,
-  NK_ENC_7BIT_DELEGATE = 1,
-  NK_ENC_8BIT_DELEGATE = 2,
-
-  __nk_code_range_delegation_NK_ERR_UNSUPPORTED_CHAR_PROPERTY = NK_ERR_UNSUPPORTED_CHAR_PROPERTY,
+  // The code range for the character property is written to `code_range`,
+  // and no delegation is needed.
+  NK_ENC_NO_DELEGATION,
+  // The character property is delegated to checking the code point against a
+  // 7-bit ASCII range (e.g., for US-ASCII).
+  NK_ENC_7BIT_DELEGATE,
+  // The character property is delegated to checking the code point against an
+  // 8-bit range (e.g., for ISO-8859-1 character classes).
+  NK_ENC_8BIT_DELEGATE,
 } nk_code_range_delegation_t;
 
 /**
@@ -125,6 +164,10 @@ typedef struct {
   const uint32_t* intervals;
 } nk_static_code_range_t;
 
+/**
+ * Structure representing a character encoding and its associated functions
+ * for multi-byte character handling, case folding, and character properties.
+ */
 typedef struct nk_encoding nk_encoding_t;
 
 struct nk_encoding {
@@ -138,11 +181,11 @@ struct nk_encoding {
   /**
    * Function pointer to determine the width of a multi-byte character starting at `bytes`.
    * The function returns:
-   * 
+   *
    * - a positive value of the width in bytes of the multi-byte character if `bytes` is valid and complete,
-   * - zero if `bytes` is invalid,
+   * - `0` if `bytes` is invalid,
    * - a negative value of the remaining bytes needed to complete the character if `bytes` is incomplete.
-   * 
+   *
    * The function should not read beyond `bytes_end`, and `bytes < bytes_end` must hold.
    */
   int8_t (*scan_mbc_width)(
@@ -155,58 +198,69 @@ struct nk_encoding {
    * Function pointer to encode a code point into a multi-byte character
    * in the encoding.
    *
-   * The function writes the encoded bytes to `out_bytes` and returns the
-   * number of bytes written. If `out_bytes` is `NULL`, the function should
-   * return the number of bytes that would be written without actually writing
-   * anything.
-   * 
-   * `out_bytes` is guaranteed to have enough space for the maximum width of
-   * a multi-byte character in the encoding. Generally, `NK_ENC_MAX_MBC_WIDTH`
-   * bytes are sufficient for any encoding, but the function should not write
-   * more than `enc->max_mbc_width` bytes.
+   * The function writes the width of the encoded multi-byte character to
+   * `*out_width` and the bytes of the encoded multi-byte character to
+   * `out_bytes`, and returns `NK_SUCCESS` on success. If `out_bytes` is `NULL`,
+   * the function should only write the width to `*out_width` and not write
+   * to `out_bytes`.
    *
-   * The function should return a negative value if the code point is invalid for the encoding.
-   * Such error values are:
+   * `out_bytes` is guaranteed to have enough space for the maximum width of
+   * a multi-byte character in the encoding if it is not `NULL`. Generally,
+   * `NK_ENC_MAX_MBC_WIDTH` bytes are sufficient for any encoding, but the
+   * function should not write more than `enc->max_mbc_width` bytes.
+   *
+   * The function should return a negative value if the code point is invalid
+   * for the encoding. Such error values are:
    *
    * - `NK_ERR_INVALID_CODE_POINT` if the code point is not valid in the encoding
    *   (e.g., a surrogate code point for UTF-8).
    * - `NK_ERR_TOO_LARGE_CODE_POINT` if the code point is too large to be encoded
    *   in the encoding (e.g., above U+10FFFF for UTF-8).
    */
-  int32_t (*encode_mbc)(
+  nk_error_t (*encode_mbc)(
     const nk_encoding_t* enc,
     uint32_t code,
-    uint8_t* out_bytes
+    size_t* out_width,
+    uint8_t* out_bytes // nullable
   );
 
   /**
    * Function pointer to decode a multi-byte character in the encoding.
    * 
-   * The function reads bytes from `*bytes_to_decode` up to `bytes_to_decode_end`
-   * and returns the decoded cod e point. The function should update `*bytes_to_decode`
-   * to point to the byte immediately following the decoded character.
+   * The function reads bytes from `bytes` up to `bytes_end` and returns the
+   * decoded cod e point.
    * 
-   * The function assume `*bytes_to_decode < bytes_to_decode_end` holds and
-   * `*bytes_to_decode` points to the start of a valid multi-byte character.
+   * The function assume `bytes < bytes_end` holds and `bytes` points to the
+   * start of a valid multi-byte character
+   * (i.e., `enc->scan_mbc_width(enc, bytes, bytes_end) == 0`).
    */
   uint32_t (*decode_mbc)(
     const nk_encoding_t* enc,
-    const uint8_t** bytes_to_decode,
-    const uint8_t* bytes_to_decode_end
+    const uint8_t* bytes,
+    const uint8_t* bytes_end
   );
 
   /**
-   * Function pointer to adjust the head of a multi-byte character in the encoding.
+   * Function pointer to adjust the head of a multi-byte character in the
+   * encoding.
    *
-   * The function takes a pointer to a byte position `*bytes_to_adjust` and adjusts it.
+   * The function takes a pointer to a byte position `*bytes_to_adjust` and
+   * adjusts it.
    * 
-   * If the encoding does not support self-synchronization, this function should use
-   * the provided context to cache the positions of character boundaries to avoid linear
-   * scanning of the byte stream.
-   * 
-   * The function should return `0` on success, or a negative error code if an error occurs. Such error values are:
-   * 
-   * - `NK_ERR_MEMORY_ALLOCATION_FAILED` if memory allocation for the cache failed.
+   * If the encoding does not support self-synchronization, this function should
+   * use the provided context to cache the positions of character boundaries to
+   * avoid linear scanning of the byte stream if `context->cache_start_offset`
+   * is not `NK_DONT_USE_CACHE_FOR_ADJUST_MBC_HEAD`.
+   *
+   * The function assume `*bytes_to_adjust` points to a position in the
+   * **valid** multi-byte character sequence, so it does not fail with invalid
+   * byte sequences. However, it allocates cache bits, so it may fail with
+   * memory allocation (`NK_ERR_MEMORY_ALLOCATION_FAILED`).
+   *
+   * If `enc->flags & NK_ENC_FLAG_SELF_SYNC` is set and
+   * `enc->min_mbc_width == enc->max_mbc_width`, the function should not be
+   * called because such encoding can adjust the head without scanning.
+   * Therefore, in such case, `enc->adjust_mbc_head` can be `NULL`.
    */
   nk_error_t (*adjust_mbc_head)(
     const nk_encoding_t* enc,
@@ -217,10 +271,9 @@ struct nk_encoding {
   /**
    * Function pointer to check if a string is self-synchronizing.
    * 
-   * If `flags & NK_ENC_FLAG_SELF_SYNC` is set, this function should return `true`
-   * for any valid string in the encoding. If not, it should return `false`
-   * if the first byte of the string can be a trail byte of a multi-byte character,
-   * and `true` otherwise.
+   * If `enc->flags & NK_ENC_FLAG_SELF_SYNC` is set, the function should not
+   * be called because such an encoding is self-synchronizing by definition.
+   * Therefore, in such case, `enc->is_self_sync_string` can be `NULL`.
    */
   bool (*is_self_sync_string)(
     const nk_encoding_t* enc,
@@ -228,13 +281,19 @@ struct nk_encoding {
     const uint8_t* bytes_end
   );
 
-  /** The name of the encoding (e.g., "UTF-8", "Shift_JIS"). */
+  /**
+   * The name of the encoding (e.g., "UTF-8", "Shift_JIS").
+   */
   const char* name;
 
-  /** The minimum width of a multi-byte character in the encoding. */
+  /**
+   * The minimum width of a multi-byte character in the encoding.
+   */
   uint8_t min_mbc_width;
 
-  /** The maximum width of a multi-byte character in the encoding. */
+  /**
+   * The maximum width of a multi-byte character in the encoding.
+   */
   uint8_t max_mbc_width;
 
   /**
@@ -251,8 +310,10 @@ struct nk_encoding {
    */
   uint16_t single_byte_threshold;
 
-  /** Bit flags for the encoding (bitwise OR of `NK_ENC_FLAG_*` constants). */
-  uint32_t flags;
+  /**
+   * Bit flags for the encoding (bitwise OR of `NK_ENC_FLAG_*` constants).
+   */
+  nk_encoding_flag_t flags;
 
   // ==========================================================================
   //
@@ -268,9 +329,12 @@ struct nk_encoding {
    * the number of code points written.
    * 
    * `folded_codes` is guaranteed to have enough space for the maximum number of
-   * case-folded code points for any code point in the encoding. Generally, `NK_ENC_MAX_FOLDED_CODES`
-   * are sufficient for any encoding.
-   * 
+   * case-folded code points for any code point in the encoding. Generally,
+   * `NK_ENC_MAX_FOLDED_CODES` are sufficient for any encoding.
+   *
+   * The function assume `code` is valid for the encoding, so this function does
+   * not fail.
+   *
    * Note that `NK_FOLD_ASCII_ONLY` should not be handled by this function because
    * it is handled by the wrapper function `nk_enc_get_case_fold`.
    */
@@ -278,21 +342,21 @@ struct nk_encoding {
     const nk_encoding_t* enc,
     nk_fold_flag_t flags,
     uint32_t code,
-    uint32_t* folded_codes
+    uint32_t* out_folded_codes
   );
 
   /**
    * Function pointer to get the case-unfolded code points for a given sequence
    * of case-folded code points in the encoding.
    * 
-   * The function writes the case-unfolded code points to `unfold_items` and returns
+   * The function writes the case-unfolded code points to `out_unfold_items` and returns
    * the number of code points written.
    * 
    * `unfold_items` is guaranteed to have enough space for the maximum number of
    * case-unfolded code points for any folded code point sequence in the encoding.
    * 
    * This function assumes `folded_codes_len >= 1` and every code point in `folded_codes`
-   * is valid for the encoding.
+   * is valid and case-folded for the encoding.
    * 
    * Note that `NK_FOLD_ASCII_ONLY` should not be handled by this function because
    * it is handled by the wrapper function `nk_enc_expand_case_unfold`.
@@ -302,7 +366,7 @@ struct nk_encoding {
     nk_fold_flag_t flags,
     const uint32_t* folded_codes,
     size_t folded_codes_len,
-    nk_unfold_item_t* unfold_items
+    nk_unfold_item_t* out_unfold_items
   );
 
   /**
@@ -313,8 +377,8 @@ struct nk_encoding {
    * point sequence, passing the unfolded code point, the folded code points,
    * the number of folded code points, and the `user_data` pointer. If the callback
    * returns a negative value, the iteration should stop and the function should
-   * return that value. Otherwise, it should return `0` after iterating over all
-   * case-folded code point sequences.
+   * return that value. Otherwise, it should return `NK_SUCCESS` after iterating
+   * over all case-folded code point sequences.
    */
   nk_error_t (*iterate_case_fold)(
     const nk_encoding_t* enc,
@@ -330,12 +394,14 @@ struct nk_encoding {
   // ==========================================================================
 
   /**
-   * Function pointer to check if a code point is a character of a certain type in the encoding.
+   * Function pointer to check if a code point is a character of a certain
+   * property in the encoding.
    *
    * Note that this function returns `false` even if:
    *
+   * - the code point is valid but does not have the character property, or
    * - the code point is invalid for the encoding, or
-   * - the character type is not defined for the encoding.
+   * - the character property is not supported for the encoding.
    */
   bool (*code_is_cprop)(
     const nk_encoding_t* enc,
@@ -347,9 +413,10 @@ struct nk_encoding {
    * Function pointer to get the code range for a certain character property in the
    * encoding.
    * 
-   * The function writes the code range to `code_range` and returns zero, or a
-   * positive value if the character property should be handled by delegation. The
-   * delegation values are:
+   * The function returns `NK_SUCCESS` if the character property is supported and the
+   * delegation strategy is written to `*out_delegation`. If `*out_delegation` is
+   * `NK_ENC_NO_DELEGATION`, the code range for the character property is written to
+   * `out_code_range`. Otherwise, the following delegation strategies are possible:
    * 
    * - `NK_ENC_7BIT_DELEGATE` if the character property can be handled by checking
    *   the code point against a 7-bit ASCII range (e.g., the encoding is US-ASCII).
@@ -357,14 +424,16 @@ struct nk_encoding {
    *   the code point against an 8-bit range (e.g., for `cprop` values corresponding
    *   to Latin-1 character classes).
    * 
-   * Otherwise, if the function returns a negative value, it means an error occurred:
+   * If the function returns a negative value, it means an error occurred:
    * 
-   * - `NK_ERR_UNSUPPORTED_CHAR_PROPERTY` if the character property is not supported by the encoding.
+   * - `NK_ERR_UNSUPPORTED_CHAR_PROPERTY` if the character property is not supported
+   *   by the encoding.
    */
-  nk_code_range_delegation_t (*get_cprop_code_range)(
+  nk_error_t (*get_cprop_code_range)(
     const nk_encoding_t* enc,
     nk_cprop_t cprop,
-    nk_static_code_range_t* code_range
+    nk_code_range_delegation_t* out_delegation,
+    nk_static_code_range_t* out_code_range
   );
 };
 
@@ -394,7 +463,7 @@ size_t nk_enc_ascii_get_case_fold(
     const nk_encoding_t* enc,
     nk_fold_flag_t flags,
     uint32_t code,
-    uint32_t* folded_codes
+    uint32_t* out_folded_codes
 );
 
 NARAKU_EXPORTED_FUNCTION
@@ -403,7 +472,7 @@ size_t nk_enc_ascii_expand_case_unfold(
     nk_fold_flag_t flags,
     const uint32_t* folded_codes,
     size_t folded_codes_len,
-    nk_unfold_item_t* unfold_items
+    nk_unfold_item_t* out_unfold_items
 );
 
 NARAKU_EXPORTED_FUNCTION
@@ -422,17 +491,19 @@ bool nk_enc_ascii_code_is_cprop(
 );
 
 NARAKU_EXPORTED_FUNCTION
-nk_code_range_delegation_t nk_enc_ascii_get_cprop_code_range(
+nk_error_t nk_enc_ascii_get_cprop_code_range(
     const nk_encoding_t* enc,
     uint32_t cprop,
-    nk_static_code_range_t* code_range
+    nk_code_range_delegation_t* out_delegation,
+    nk_static_code_range_t* out_code_range
 );
 
 NARAKU_EXPORTED_FUNCTION
-nk_code_range_delegation_t nk_enc_ascii_8bit_get_cprop_code_range(
+nk_error_t nk_enc_ascii_8bit_get_cprop_code_range(
     const nk_encoding_t* enc,
     uint32_t cprop,
-    nk_static_code_range_t* code_range
+    nk_code_range_delegation_t* out_delegation,
+    nk_static_code_range_t* out_code_range
 );
 
 NARAKU_EXPORTED_FUNCTION
@@ -443,17 +514,18 @@ int8_t nk_enc_sb_scan_mbc_width(
 );
 
 NARAKU_EXPORTED_FUNCTION
-int32_t nk_enc_sb_encode_mbc(
+nk_error_t nk_enc_sb_encode_mbc(
     const nk_encoding_t* enc,
     uint32_t code,
+    size_t* out_width,
     uint8_t* out_bytes
 );
 
 NARAKU_EXPORTED_FUNCTION
 uint32_t nk_enc_sb_decode_mbc(
     const nk_encoding_t* enc,
-    const uint8_t** bytes_to_decode,
-    const uint8_t* bytes_to_decode_end
+    const uint8_t* bytes,
+    const uint8_t* bytes_end
 );
 
 // ==========================================================================
@@ -467,7 +539,7 @@ size_t nk_enc_unicode_get_case_fold(
     const nk_encoding_t* enc,
     nk_fold_flag_t flags,
     uint32_t code,
-    uint32_t* folded_codes
+    uint32_t* out_folded_codes
 );
 
 NARAKU_EXPORTED_FUNCTION
@@ -476,7 +548,7 @@ size_t nk_enc_unicode_expand_case_unfold(
     nk_fold_flag_t flags,
     const uint32_t* folded_codes,
     size_t folded_codes_len,
-    nk_unfold_item_t* unfold_items
+    nk_unfold_item_t* out_unfold_items
 );
 
 NARAKU_EXPORTED_FUNCTION
@@ -495,10 +567,11 @@ bool nk_enc_unicode_code_is_cprop(
 );
 
 NARAKU_EXPORTED_FUNCTION
-nk_code_range_delegation_t nk_enc_unicode_get_cprop_code_range(
+nk_error_t nk_enc_unicode_get_cprop_code_range(
     const nk_encoding_t* enc,
     uint32_t cprop,
-    nk_static_code_range_t* code_range
+    nk_code_range_delegation_t* out_delegation,
+    nk_static_code_range_t* out_code_range
 );
 
 // ==========================================================================
@@ -510,19 +583,22 @@ nk_code_range_delegation_t nk_enc_unicode_get_cprop_code_range(
 /**
  * Converts a character type name to the corresponding `nk_cprop_t` value for
  * the given encoding.
- *
- * The function returns the `nk_cprop_t` value if the name is valid for the encoding,
- * or a negative error code if the name is invalid. Such error values are:
+ * 
+ * If the name is valid, the function writes the corresponding `nk_cprop_t`
+ * value to `*out_cprop` and returns `NK_SUCCESS`. Otherwise, it returns a
+ * negative error code. Such error values are:
  * 
  * - `NK_ERR_INVALID_CHAR_PROPERTY_NAME` if the name is not valid for any encoding.
  * 
- * This function is used for resolving `\p{...}` and `\P{...}` character property escapes.
+ * This function is used for resolving `\p{...}` and `\P{...}` character property
+ * escapes.
  */
 NARAKU_EXPORTED_FUNCTION
-int32_t nk_name_to_cprop(
+nk_error_t nk_name_to_cprop(
   const nk_encoding_t* enc,
   const uint8_t* name_bytes,
-  const uint8_t* name_bytes_end
+  const uint8_t* name_bytes_end,
+  nk_cprop_t* out_cprop
 );
 
 // ==========================================================================
@@ -546,28 +622,30 @@ static inline int8_t nk_enc_scan_mbc_width(
 static inline int32_t nk_enc_encode_mbc(
     const nk_encoding_t* enc,
     uint32_t code,
+    size_t* out_width,
     uint8_t* out_bytes
 ) {
   if (code < enc->single_byte_threshold) {
+    *out_width = 1;
     if (out_bytes != NULL) {
       *out_bytes = (uint8_t)code;
     }
     return 1;
   }
     
-  return enc->encode_mbc(enc, code, out_bytes);
+  return enc->encode_mbc(enc, code, out_width, out_bytes);
 }
 
 static inline uint32_t nk_enc_decode_mbc(
     const nk_encoding_t* enc,
-    const uint8_t** bytes_to_decode,
-    const uint8_t* bytes_to_decode_end
+    const uint8_t* bytes,
+    const uint8_t* bytes_end
 ) {
-  if (**bytes_to_decode < enc->single_byte_threshold) {
-    return *(*bytes_to_decode)++;
+  if (*bytes < enc->single_byte_threshold) {
+    return *bytes;
   }
 
-  return enc->decode_mbc(enc, bytes_to_decode, bytes_to_decode_end);
+  return enc->decode_mbc(enc, bytes, bytes_end);
 }
 
 static inline nk_error_t nk_enc_adjust_mbc_head(
@@ -629,13 +707,13 @@ static inline size_t nk_enc_get_case_fold(
     const nk_encoding_t* enc,
     nk_fold_flag_t flags,
     uint32_t code,
-    uint32_t* folded_codes
+    uint32_t* out_folded_codes
 ) {
   if ((flags & NK_FOLD_ASCII_ONLY) != 0) {
-    return nk_enc_ascii_get_case_fold(enc, flags, code, folded_codes);
+    return nk_enc_ascii_get_case_fold(enc, flags, code, out_folded_codes);
   }
 
-  return enc->get_case_fold(enc, flags, code, folded_codes);
+  return enc->get_case_fold(enc, flags, code, out_folded_codes);
 }
 
 static inline size_t nk_enc_expand_case_unfold(
@@ -643,13 +721,13 @@ static inline size_t nk_enc_expand_case_unfold(
     nk_fold_flag_t flags,
     const uint32_t* folded_codes,
     size_t folded_codes_len,
-    nk_unfold_item_t* unfold_items
+    nk_unfold_item_t* out_unfold_items
 ) {
   if ((flags & NK_FOLD_ASCII_ONLY) != 0) {
-    return nk_enc_ascii_expand_case_unfold(enc, flags, folded_codes, folded_codes_len, unfold_items);
+    return nk_enc_ascii_expand_case_unfold(enc, flags, folded_codes, folded_codes_len, out_unfold_items);
   }
 
-  return enc->expand_case_unfold(enc, flags, folded_codes, folded_codes_len, unfold_items);
+  return enc->expand_case_unfold(enc, flags, folded_codes, folded_codes_len, out_unfold_items);
 }
 
 static inline nk_error_t nk_enc_iterate_case_fold(
@@ -677,16 +755,18 @@ static inline bool nk_enc_code_is_cprop(
   return enc->code_is_cprop(enc, code, cprop);
 }
 
-static inline nk_code_range_delegation_t nk_enc_get_cprop_code_range(
+static inline nk_error_t nk_enc_get_cprop_code_range(
     const nk_encoding_t* enc,
     nk_cprop_t cprop,
-    nk_static_code_range_t* code_range
+    nk_code_range_delegation_t* out_delegation,
+    nk_static_code_range_t* out_code_range
 ) {
   if (cprop == NK_CPROP_ASCII) {
-    return NK_ENC_7BIT_DELEGATE;
+    *out_delegation = NK_ENC_7BIT_DELEGATE;
+    return NK_SUCCESS;
   }
 
-  return enc->get_cprop_code_range(enc, cprop, code_range);
+  return enc->get_cprop_code_range(enc, cprop, out_delegation, out_code_range);
 }
 
 // ==========================================================================

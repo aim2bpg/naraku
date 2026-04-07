@@ -18,8 +18,8 @@ struct mrb_data_type mrb_naraku_encoding_type = { "Encoding", mrb_naraku_encodin
 static void mrb_naraku_encoding_adjust_mbc_head_context_free(mrb_state* mrb, void* ptr) {
   nk_adjust_mbc_head_context_t* context = (nk_adjust_mbc_head_context_t*)ptr;
   nk_enc_adjust_mbc_head_context_free(context);
-  mrb_free(mrb, context->bytes_begin);
-  mrb_free(mrb, context);
+  mrb_free(mrb, (void*)context->bytes_begin);
+  mrb_free(mrb, (void*)context);
 }
 struct mrb_data_type mrb_naraku_encoding_adjust_mbc_head_context_type = { "AdjustMbcHeadContext", mrb_naraku_encoding_adjust_mbc_head_context_free };
 
@@ -28,14 +28,15 @@ static mrb_value mrb_naraku_encoding_name_to_cprop(mrb_state *mrb, mrb_value sel
   mrb_int len;
   mrb_get_args(mrb, "s", &prop_name, &len);
 
-  int32_t cprop = nk_name_to_cprop(nk_enc_ascii_8bit, (const uint8_t*)prop_name, (const uint8_t*)prop_name + len);
-  if (cprop < 0) {
-    switch (cprop) {
-      case NK_ERR_INVALID_CHAR_PROPERTY_NAME:
+  nk_cprop_t cprop;
+  nk_error_t err = nk_name_to_cprop(nk_enc_ascii_8bit, (const uint8_t*)prop_name, (const uint8_t*)prop_name + len, &cprop);
+  if (err < NK_SUCCESS) {
+    switch (err) {
+      case NK_ERR_INVALID_CHAR_PROP_NAME:
         mrb_raisef(mrb, E_ARGUMENT_ERROR, "invalid character property name: %l", prop_name, len);
         break;
       default:
-        mrb_raisef(mrb, E_ARGUMENT_ERROR, "unknown error: %d", cprop);
+        mrb_raisef(mrb, E_ARGUMENT_ERROR, "unknown error: %d", err);
         break;
     }
   }
@@ -94,9 +95,10 @@ static mrb_value mrb_naraku_encoding_encode_mbc_width(mrb_state *mrb, mrb_value 
   mrb_int code;
   mrb_get_args(mrb, "i", &code);
 
-  int32_t result = nk_enc_encode_mbc(enc, (uint32_t)code, NULL);
-  if (result < 0) {
-    switch (result) {
+  size_t width;
+  nk_error_t err = nk_enc_encode_mbc(enc, (uint32_t)code, &width, NULL);
+  if (err < NK_SUCCESS) {
+    switch (err) {
       case NK_ERR_INVALID_CODE_POINT:
         mrb_raisef(mrb, E_ARGUMENT_ERROR, "invalid code point: %d", code);
         break;
@@ -104,12 +106,12 @@ static mrb_value mrb_naraku_encoding_encode_mbc_width(mrb_state *mrb, mrb_value 
         mrb_raisef(mrb, E_ARGUMENT_ERROR, "too large code point: %d", code);
         break;
       default:
-        mrb_raisef(mrb, E_ARGUMENT_ERROR, "unknown error: %d", result);
+        mrb_raisef(mrb, E_ARGUMENT_ERROR, "unknown error: %d", err);
         break;
     }
   }
 
-  return mrb_fixnum_value((mrb_int)result);
+  return mrb_fixnum_value((mrb_int)width);
 }
 
 static mrb_value mrb_naraku_encoding_encode_mbc(mrb_state *mrb, mrb_value self) {
@@ -117,10 +119,11 @@ static mrb_value mrb_naraku_encoding_encode_mbc(mrb_state *mrb, mrb_value self) 
   mrb_int code;
   mrb_get_args(mrb, "i", &code);
 
-  uint8_t out_bytes[NK_ENC_MAX_MBC_WIDTH];
-  int32_t result = nk_enc_encode_mbc(enc, (uint32_t)code, out_bytes);
-  if (result < 0) {
-    switch (result) {
+  size_t width;
+  uint8_t bytes[NK_ENC_MAX_MBC_WIDTH];
+  nk_error_t err = nk_enc_encode_mbc(enc, (uint32_t)code, &width, bytes);
+  if (err < NK_SUCCESS) {
+    switch (err) {
       case NK_ERR_INVALID_CODE_POINT:
         mrb_raisef(mrb, E_ARGUMENT_ERROR, "invalid code point: %d", code);
         break;
@@ -128,12 +131,12 @@ static mrb_value mrb_naraku_encoding_encode_mbc(mrb_state *mrb, mrb_value self) 
         mrb_raisef(mrb, E_ARGUMENT_ERROR, "too large code point: %d", code);
         break;
       default:
-        mrb_raisef(mrb, E_ARGUMENT_ERROR, "unknown error: %d", result);
+        mrb_raisef(mrb, E_ARGUMENT_ERROR, "unknown error: %d", err);
         break;
     }
   }
 
-  return mrb_str_new(mrb, (const char*)out_bytes, (size_t)result);
+  return mrb_str_new(mrb, (const char*)bytes, (size_t)width);
 }
 
 static mrb_value mrb_naraku_encoding_decode_mbc(mrb_state *mrb, mrb_value self) {
@@ -144,12 +147,7 @@ static mrb_value mrb_naraku_encoding_decode_mbc(mrb_state *mrb, mrb_value self) 
 
   const uint8_t* bytes_ptr = (const uint8_t*)bytes;
   const uint8_t* bytes_end = bytes_ptr + len;
-  uint32_t code = nk_enc_decode_mbc(enc, &bytes_ptr, bytes_end);
-
-  int32_t code_len = nk_enc_encode_mbc(enc, code, NULL);
-  if (code_len != (bytes_ptr - (const uint8_t*)bytes)) {
-    mrb_raisef(mrb, E_RUNTIME_ERROR, "inconsistent encode/decode result for code point: %d", code);
-  }
+  uint32_t code = nk_enc_decode_mbc(enc, bytes_ptr, bytes_end);
 
   return mrb_fixnum_value(code);
 }
@@ -303,27 +301,30 @@ static mrb_value mrb_naraku_encoding_get_cprop_code_range(mrb_state *mrb, mrb_va
   mrb_int cprop;
   mrb_get_args(mrb, "i", &cprop);
 
+  nk_code_range_delegation_t delegation;
   nk_static_code_range_t code_range;
-  nk_code_range_delegation_t delegation = nk_enc_get_cprop_code_range(enc, (nk_cprop_t)cprop, &code_range);
-  if (delegation < 0) {
-    switch (delegation) {
+  nk_error_t err = nk_enc_get_cprop_code_range(enc, (nk_cprop_t)cprop, &delegation, &code_range);
+  if (err < NK_SUCCESS) {
+    switch (err) {
       case NK_ERR_UNSUPPORTED_CHAR_PROPERTY:
         mrb_raisef(mrb, E_ARGUMENT_ERROR, "unsupported character property: %d", cprop);
         break;
       default:
-        mrb_raisef(mrb, E_ARGUMENT_ERROR, "unknown error: %d", delegation);
+        mrb_raisef(mrb, E_ARGUMENT_ERROR, "unknown error: %d", err);
         break;
     }
   }
 
   switch (delegation) {
     case NK_ENC_NO_DELEGATION:
-      mrb_value code_range_ary = mrb_ary_new_capa(mrb, code_range.len);
-      for (size_t i = 0; i < code_range.len; i++) {
-        mrb_value range = mrb_range_new(mrb, mrb_fixnum_value(code_range.intervals[i * 2]), mrb_fixnum_value(code_range.intervals[i * 2 + 1]), 0);
-        mrb_ary_push(mrb, code_range_ary, range);
+      {
+        mrb_value code_range_ary = mrb_ary_new_capa(mrb, code_range.len);
+        for (size_t i = 0; i < code_range.len; i++) {
+          mrb_value range = mrb_range_new(mrb, mrb_fixnum_value(code_range.intervals[i * 2]), mrb_fixnum_value(code_range.intervals[i * 2 + 1]), 0);
+          mrb_ary_push(mrb, code_range_ary, range);
+        }
+        return code_range_ary;
       }
-      return code_range_ary;
     case NK_ENC_7BIT_DELEGATE:
       return mrb_symbol_value(mrb_intern_cstr(mrb, "delegate_7bit"));
     case NK_ENC_8BIT_DELEGATE:

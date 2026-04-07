@@ -214,9 +214,10 @@ static int8_t utf_8_scan_mbc_width(
   return state == UTF_8_TRANS_FAILURE ? 0 : 4;
 }
 
-static int32_t utf_8_encode_mbc(
+static nk_error_t utf_8_encode_mbc(
     const nk_encoding_t* enc ARG_UNUSED,
     uint32_t code,
+    size_t* out_width,
     uint8_t* out_bytes
 ) {
   int32_t mbc_len = 0;
@@ -236,8 +237,9 @@ static int32_t utf_8_encode_mbc(
     return NK_ERR_TOO_LARGE_CODE_POINT;
   }
 
+  *out_width = (size_t)mbc_len;
   if (out_bytes == NULL) {
-    return mbc_len;
+    return NK_SUCCESS;
   }
 
   switch (mbc_len) {
@@ -261,34 +263,25 @@ static int32_t utf_8_encode_mbc(
       break;
   }
 
-  return mbc_len;
+  return NK_SUCCESS;
 }
 
 static uint32_t utf_8_decode_mbc(
     const nk_encoding_t* enc ARG_UNUSED,
-    const uint8_t** bytes_to_decode,
-    const uint8_t* bytes_to_decode_end ARG_UNUSED
+    const uint8_t* bytes,
+    const uint8_t* bytes_end ARG_UNUSED
 ) {
-  int8_t expected_width = UTF_8_EXPECTED_WIDTH[**bytes_to_decode];
-  const uint8_t* bytes = *bytes_to_decode;
-  uint32_t code;
+  int8_t expected_width = UTF_8_EXPECTED_WIDTH[bytes[0]];
   switch (expected_width) {
     case 2:
-      code = (uint32_t)(((bytes[0] & 0x1F) << 6) | ((bytes[1] & 0x3F)));
-      break;
+      return (uint32_t)(((bytes[0] & 0x1F) << 6) | ((bytes[1] & 0x3F)));
     case 3:
-      code = (uint32_t)(((bytes[0] & 0x0F) << 12) | (((bytes[1] & 0x3F) << 6) | (bytes[2] & 0x3F)));
-      break;
+      return (uint32_t)(((bytes[0] & 0x0F) << 12) | (((bytes[1] & 0x3F) << 6) | (bytes[2] & 0x3F)));
     case 4:
-      code = (uint32_t)(((bytes[0] & 0x07) << 18) | (((bytes[1] & 0x3F) << 12) | (((bytes[2] & 0x3F) << 6) | (bytes[3] & 0x3F))));
-      break;
+      return (uint32_t)(((bytes[0] & 0x07) << 18) | (((bytes[1] & 0x3F) << 12) | (((bytes[2] & 0x3F) << 6) | (bytes[3] & 0x3F))));
     default:
-      code = (uint32_t)bytes[0];
-      break;
+      return (uint32_t)bytes[0];
   }
-
-  (*bytes_to_decode) += expected_width;
-  return code;
 }
 
 nk_error_t utf_8_adjust_mbc_head(
@@ -300,7 +293,7 @@ nk_error_t utf_8_adjust_mbc_head(
     (*bytes_to_adjust)--;
   }
 
-  return 0;
+  return NK_SUCCESS;
 }
 
 const nk_encoding_t* nk_enc_utf_8 = &(nk_encoding_t){

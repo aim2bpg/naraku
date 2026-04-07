@@ -65,7 +65,7 @@ def gen_source(cat, debug:)
     io.puts '#include <string.h>'
     io.puts '#include <naraku_encoding.h>'
     io.puts
-    io.puts "#define PROPNAME_MAX_BYTES (#{max_name_bytes})"
+    io.puts "#define CPROP_NAME_MAX_BYTES (#{max_name_bytes})"
     io.puts
     io.puts 'struct name2cprop_entry {'
     io.puts '    int32_t name;'

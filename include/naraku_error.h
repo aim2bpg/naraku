@@ -11,39 +11,77 @@
 extern "C" {
 #endif
 
-typedef int32_t nk_error_t;
+/**
+ * Type representing an error code.
+ * 
+ * The error codes are negative integers.
+ */
+typedef enum {
+  // ============================================================================
+  //
+  // Normal cases:
+  //
+  // ============================================================================
 
-// ============================================================================
-//
-// General and internal errors:
-//
-// ============================================================================
+  /**
+   * Indicates success (i.e., no error).
+   */
+  NK_SUCCESS = 0,
 
-#define NK_ERR_INTERNAL_ERROR (-7)
-#define NK_ERR_MEMORY_ALLOCATION_FAILED (-5)
+  /**
+   * Indicates that a search operation did not find a match.
+   */
+  NK_NO_MATCH = -1,
 
-// ============================================================================
-//
-// Character property related errors:
-//
-// ============================================================================
+  // ============================================================================
+  //
+  // General and internal errors:
+  //
+  // ============================================================================
 
-#define NK_ERR_INVALID_CHAR_PROPERTY_NAME (-223)
-#define NK_ERR_UNSUPPORTED_CHAR_PROPERTY (-224)
+  /**
+   * Indicates that a memory allocation failed.
+   */
+  NK_ERR_MEMORY_ALLOCATION_FAILED = -5,
 
-// ============================================================================
-//
-// Code-points related errors:
-//
-// ============================================================================
+  /**
+   * Indicates an internal error.
+   */
+  NK_ERR_INTERNAL_ERROR = -7,
 
-#define NK_ERR_INVALID_CODE_POINT (-400)
+  // ============================================================================
+  //
+  // Character property related errors:
+  //
+  // ============================================================================
 
-#define NK_ERR_TOO_LARGE_CODE_POINT (-401)
+  /**
+   * Indicates an invalid character property name.
+   */
+  NK_ERR_INVALID_CHAR_PROP_NAME = -223,
 
-// TODO(makenowjust): Do we need to dinstinguish between them? In the most cases,
-// `NK_ERR_INVALID_CODE_POINT` is sufficient and `NK_ERR_TOO_LARGE_CODE_POINT`
-// is just a special case of `NK_ERR_INVALID_CODE_POINT`.
+  /**
+   * Indicates an unsupported character property.
+   */
+  NK_ERR_UNSUPPORTED_CHAR_PROPERTY = -224,
+
+  // ============================================================================
+  //
+  // Code-points related errors:
+  //
+  // ============================================================================
+
+  /**
+   * Indicates an invalid code point.
+   */
+  NK_ERR_INVALID_CODE_POINT = -400,
+
+  /**
+   * Indicates a code point that is too large to be encoded in the encoding
+   * (e.g. above U+10FFFF for UTF-8).
+   */
+  NK_ERR_TOO_LARGE_CODE_POINT = -401,
+} nk_error_t;
 
 #ifdef __cplusplus
 }

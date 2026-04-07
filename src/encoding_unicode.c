@@ -135,11 +135,11 @@ size_t nk_enc_unicode_get_case_fold(
     const nk_encoding_t* enc ARG_UNUSED,
     nk_fold_flag_t flags,
     uint32_t code,
-    uint32_t* folded_codes
+    uint32_t* out_folded_codes
 ) {
   struct unicode_fold_item* item = unicode_fold_item_lookup(code);
   if (item == NULL) {
-    folded_codes[0] = code;
+    out_folded_codes[0] = code;
     return 1;
   }
 
@@ -152,12 +152,12 @@ size_t nk_enc_unicode_get_case_fold(
 
   if ((flags & NK_FOLD_TURKISH_AZERI) != 0) {
     if (code == 0x0049) { // LATIN CAPITAL LETTER I
-      folded_codes[0] = 0x0131; // LATIN SMALL LETTER DOTLESS I
+      out_folded_codes[0] = 0x0131; // LATIN SMALL LETTER DOTLESS I
       return 1;
     }
 
     if (code == 0x0130) { // LATIN CAPITAL LETTER I WITH DOT ABOVE
-      folded_codes[0] = 0x0069; // LATIN SMALL LETTER I
+      out_folded_codes[0] = 0x0069; // LATIN SMALL LETTER I
       return 1;
     }
   }
@@ -167,7 +167,7 @@ size_t nk_enc_unicode_get_case_fold(
       if (item->to_codes[i] == 0) {
         return i;
       }
-      folded_codes[i] = item->to_codes[i];
+      out_folded_codes[i] = item->to_codes[i];
     }
     return NK_ENC_MAX_FOLDED_CODES;
   }
@@ -176,12 +176,12 @@ size_t nk_enc_unicode_get_case_fold(
     size_t special_index = SPECIAL_INDEX(item->to_type_flags);
     size_t len = UNICODE_SPECIAL_LENGTH(UNICODE_SPECIALS[special_index]);
     for (size_t i = 0; i < len; i++) {
-      folded_codes[i] = UNICODE_SPECIAL_CODE(UNICODE_SPECIALS[special_index + i]);
+      out_folded_codes[i] = UNICODE_SPECIAL_CODE(UNICODE_SPECIALS[special_index + i]);
     }
     return len;
   }
 
-  folded_codes[0] = code;
+  out_folded_codes[0] = code;
   return 1;
 }
 
@@ -190,7 +190,7 @@ size_t nk_enc_unicode_expand_case_unfold(
     nk_fold_flag_t flags,
     const uint32_t* folded_codes,
     size_t folded_codes_len,
-    nk_unfold_item_t* unfold_items
+    nk_unfold_item_t* out_unfold_items
 ) {
   uint32_t type_flags = 0;
   if ((flags & NK_FOLD_FULL) != 0) {
@@ -203,14 +203,14 @@ size_t nk_enc_unicode_expand_case_unfold(
 
   if ((flags & NK_FOLD_TURKISH_AZERI) != 0) {
     if (folded_codes[0] == 0x0131) { // LATIN SMALL LETTER DOTLESS I
-      unfold_items[unfold_items_len].folded_codes_len = 1;
-      unfold_items[unfold_items_len].unfolded_code = 0x0049; // LATIN CAPITAL LETTER I
+      out_unfold_items[unfold_items_len].folded_codes_len = 1;
+      out_unfold_items[unfold_items_len].unfolded_code = 0x0049; // LATIN CAPITAL LETTER I
       unfold_items_len++;
     }
 
     if (folded_codes[0] == 0x0069) { // LATIN SMALL LETTER I
-      unfold_items[unfold_items_len].folded_codes_len = 1;
-      unfold_items[unfold_items_len].unfolded_code = 0x0130; // LATIN CAPITAL LETTER I WITH DOT ABOVE
+      out_unfold_items[unfold_items_len].folded_codes_len = 1;
+      out_unfold_items[unfold_items_len].unfolded_code = 0x0130; // LATIN CAPITAL LETTER I WITH DOT ABOVE
       unfold_items_len++;
     }
   }
@@ -226,14 +226,14 @@ size_t nk_enc_unicode_expand_case_unfold(
       }
 
       if ((type_flags & fold_item->to_type_flags) != 0) {
-        unfold_items[unfold_items_len].folded_codes_len = 1;
-        unfold_items[unfold_items_len].unfolded_code = fold_item->from_code;
+        out_unfold_items[unfold_items_len].folded_codes_len = 1;
+        out_unfold_items[unfold_items_len].unfolded_code = fold_item->from_code;
         unfold_items_len++;
       }
 
       if ((type_flags & FOLD_FULL) != 0 && (fold_item->to_type_flags & SPECIAL_FOLD_FULL) != 0) {
-        unfold_items[unfold_items_len].folded_codes_len = 1;
-        unfold_items[unfold_items_len].unfolded_code = fold_item->from_code;
+        out_unfold_items[unfold_items_len].folded_codes_len = 1;
+        out_unfold_items[unfold_items_len].unfolded_code = fold_item->from_code;
         unfold_items_len++;
       }
     }
@@ -254,14 +254,14 @@ size_t nk_enc_unicode_expand_case_unfold(
       }
 
       if ((type_flags & fold_item->to_type_flags) != 0) {
-        unfold_items[unfold_items_len].folded_codes_len = 2;
-        unfold_items[unfold_items_len].unfolded_code = fold_item->from_code;
+        out_unfold_items[unfold_items_len].folded_codes_len = 2;
+        out_unfold_items[unfold_items_len].unfolded_code = fold_item->from_code;
         unfold_items_len++;
       }
 
       if ((type_flags & FOLD_FULL) != 0 && (fold_item->to_type_flags & SPECIAL_FOLD_FULL) != 0) {
-        unfold_items[unfold_items_len].folded_codes_len = 2;
-        unfold_items[unfold_items_len].unfolded_code = fold_item->from_code;
+        out_unfold_items[unfold_items_len].folded_codes_len = 2;
+        out_unfold_items[unfold_items_len].unfolded_code = fold_item->from_code;
         unfold_items_len++;
       }
     }
@@ -282,14 +282,14 @@ size_t nk_enc_unicode_expand_case_unfold(
       }
 
       if ((type_flags & fold_item->to_type_flags) != 0) {
-        unfold_items[unfold_items_len].folded_codes_len = 3;
-        unfold_items[unfold_items_len].unfolded_code = fold_item->from_code;
+        out_unfold_items[unfold_items_len].folded_codes_len = 3;
+        out_unfold_items[unfold_items_len].unfolded_code = fold_item->from_code;
         unfold_items_len++;
       }
 
       if ((type_flags & FOLD_FULL) != 0 && (fold_item->to_type_flags & SPECIAL_FOLD_FULL) != 0) {
-        unfold_items[unfold_items_len].folded_codes_len = 3;
-        unfold_items[unfold_items_len].unfolded_code = fold_item->from_code;
+        out_unfold_items[unfold_items_len].folded_codes_len = 3;
+        out_unfold_items[unfold_items_len].unfolded_code = fold_item->from_code;
         unfold_items_len++;
       }
     }
@@ -361,7 +361,7 @@ nk_error_t nk_enc_unicode_iterate_case_fold(
     }
   }
 
-  return 0;
+  return NK_SUCCESS;
 }
 
 bool nk_enc_unicode_code_is_cprop(
@@ -378,10 +378,11 @@ bool nk_enc_unicode_code_is_cprop(
   return code_in_code_range(code, len, intervals);
 }
 
-nk_code_range_delegation_t nk_enc_unicode_get_cprop_code_range(
+nk_error_t nk_enc_unicode_get_cprop_code_range(
     const nk_encoding_t* enc ARG_UNUSED,
     nk_cprop_t cprop,
-    nk_static_code_range_t* code_range
+    nk_code_range_delegation_t* out_delegation,
+    nk_static_code_range_t* out_code_range
 ) {
   if (cprop > NK_MAX_CPROP) {
     return NK_ERR_UNSUPPORTED_CHAR_PROPERTY;
@@ -389,7 +390,8 @@ nk_code_range_delegation_t nk_enc_unicode_get_cprop_code_range(
 
   size_t len = (size_t)UNICODE_CPROP_RANGES[cprop][0];
   const uint32_t* intervals = &UNICODE_CPROP_RANGES[cprop][1];
-  code_range->len = len;
-  code_range->intervals = intervals;
-  return NK_ENC_NO_DELEGATION;
+  out_code_range->len = len;
+  out_code_range->intervals = intervals;
+  *out_delegation = NK_ENC_NO_DELEGATION;
+  return NK_SUCCESS;
 }

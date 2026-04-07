@@ -10,24 +10,26 @@
 
 #include <stdio.h>
 
-int32_t nk_name_to_cprop(
+nk_error_t nk_name_to_cprop(
     const nk_encoding_t* enc,
     const uint8_t* name_bytes,
-    const uint8_t* name_bytes_end
+    const uint8_t* name_bytes_end,
+    nk_cprop_t* out_cprop
 ) {
-  uint8_t ascii_bytes[PROPNAME_MAX_BYTES];
+  uint8_t ascii_bytes[CPROP_NAME_MAX_BYTES];
   size_t ascii_bytes_len = 0;
 
   for (uint8_t* p = (uint8_t*)name_bytes; p < name_bytes_end;) {
     int8_t width = nk_enc_scan_mbc_width(enc, p, name_bytes_end);
     if (width <= 0) {
-      return NK_ERR_INVALID_CHAR_PROPERTY_NAME;
+      return NK_ERR_INVALID_CHAR_PROP_NAME;
     }
 
-    uint32_t code = nk_enc_decode_mbc(enc, (const uint8_t**)&p, name_bytes_end);
+    uint32_t code = nk_enc_decode_mbc(enc, p, name_bytes_end);
     if (code >= 0x80) {
-      return NK_ERR_INVALID_CHAR_PROPERTY_NAME;
+      return NK_ERR_INVALID_CHAR_PROP_NAME;
     }
+    p += width;
 
     if (code == '_' || code == '-' || code == ' ') {
       continue;
@@ -35,8 +37,8 @@ int32_t nk_name_to_cprop(
 
     uint32_t folded_code;
     nk_enc_ascii_get_case_fold(enc, NK_FOLD_ASCII_ONLY, code, &folded_code);
-    if (ascii_bytes_len >= PROPNAME_MAX_BYTES) {
-      return NK_ERR_INVALID_CHAR_PROPERTY_NAME;
+    if (ascii_bytes_len >= CPROP_NAME_MAX_BYTES) {
+      return NK_ERR_INVALID_CHAR_PROP_NAME;
     }
 
     ascii_bytes[ascii_bytes_len++] = (uint8_t)folded_code;
@@ -44,10 +46,11 @@ int32_t nk_name_to_cprop(
 
   const struct name2cprop_entry *entry = name2cprop_lookup((const char*)ascii_bytes, (unsigned int)ascii_bytes_len);
   if (entry == NULL) {
-    return NK_ERR_INVALID_CHAR_PROPERTY_NAME;
+    return NK_ERR_INVALID_CHAR_PROP_NAME;
   }
 
-  return (int32_t)entry->cprop;
+  *out_cprop = (nk_cprop_t)entry->cprop;
+  return NK_SUCCESS;
 }
 
 bool code_in_code_range(

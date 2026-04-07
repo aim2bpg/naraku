@@ -266,25 +266,28 @@ def gen_mb2(cat, enc, prefix)
   puts "}"
   puts
 
-  puts "nk_code_range_delegation_t #{prefix}_get_cprop_code_range("
+  puts "nk_error_t #{prefix}_get_cprop_code_range("
   puts "    const nk_encoding_t* enc ARG_UNUSED,"
   puts "    nk_cprop_t cprop,"
-  puts "    nk_static_code_range_t* code_range"
+  puts "    nk_code_range_delegation_t* out_delegation,"
+  puts "    nk_static_code_range_t* out_code_range"
   puts ") {"
   puts "  switch (cprop) {"
   valid_cprops.each do |cprop|
     puts "  case NK_CPROP_#{cprop.constant_name}:"
-    puts "    code_range->len = #{prefix.upcase}_CPROP_#{cprop.constant_name}_RANGE[0];"
-    puts "    code_range->intervals = &#{prefix.upcase}_CPROP_#{cprop.constant_name}_RANGE[1];"
-    puts "    return NK_ENC_NO_DELEGATION;"
+    puts "    out_code_range->len = #{prefix.upcase}_CPROP_#{cprop.constant_name}_RANGE[0];"
+    puts "    out_code_range->intervals = &#{prefix.upcase}_CPROP_#{cprop.constant_name}_RANGE[1];"
+    puts "    *out_delegation = NK_ENC_NO_DELEGATION;"
+    puts "    return NK_SUCCESS;"
   end
   puts "  }"
   puts "  if (cprop > NK_MAX_DEFAULT_SUPPORT_CPROP) {"
   puts "    return NK_ERR_UNSUPPORTED_CHAR_PROPERTY;"
   puts "  }"
-  puts "  code_range->len = 0;"
-  puts "  code_range->intervals = NULL;"
-  puts "  return NK_ENC_NO_DELEGATION;"
+  puts "  out_code_range->len = 0;"
+  puts "  out_code_range->intervals = NULL;"
+  puts "  *out_delegation = NK_ENC_NO_DELEGATION;"
+  puts "  return NK_SUCCESS;"
   puts "}"
 end
 
@@ -355,25 +358,28 @@ def gen_mb_full(cat, enc, prefix)
   puts "}"
   puts
 
-  puts "nk_code_range_delegation_t #{prefix}_get_cprop_code_range("
+  puts "nk_error_t #{prefix}_get_cprop_code_range("
   puts "    const nk_encoding_t* enc ARG_UNUSED,"
   puts "    nk_cprop_t cprop,"
-  puts "    nk_static_code_range_t* code_range"
+  puts "    nk_code_range_delegation_t* out_delegation,"
+  puts "    nk_static_code_range_t* out_code_range,"
   puts ") {"
   puts "  switch (cprop) {"
   valid_cprops.each do |cprop|
     puts "  case NK_CPROP_#{cprop.constant_name}:"
-    puts "    code_range->len = #{prefix.upcase}_CPROP_#{cprop.constant_name}_RANGE[0];"
-    puts "    code_range->intervals = &#{prefix.upcase}_CPROP_#{cprop.constant_name}_RANGE[1];"
-    puts "    return NK_ENC_NO_DELEGATION;"
+    puts "    out_code_range->len = #{prefix.upcase}_CPROP_#{cprop.constant_name}_RANGE[0];"
+    puts "    out_code_range->intervals = &#{prefix.upcase}_CPROP_#{cprop.constant_name}_RANGE[1];"
+    puts "    *out_delegation = NK_ENC_NO_DELEGATION;"
+    puts "    return NK_SUCCESS;"
   end
   puts "  }"
   puts "  if (cprop > NK_MAX_DEFAULT_SUPPORT_CPROP) {"
   puts "    return NK_ERR_UNSUPPORTED_CHAR_PROPERTY;"
   puts "  }"
-  puts "  code_range->len = 0;"
-  puts "  code_range->intervals = NULL;"
-  puts "  return NK_ENC_NO_DELEGATION;"
+  puts "  out_code_range->len = 0;"
+  puts "  out_code_range->intervals = NULL;"
+  puts "  *out_delegation = NK_ENC_NO_DELEGATION;"
+  puts "  return NK_SUCCESS;"
   puts "}"
 end
 

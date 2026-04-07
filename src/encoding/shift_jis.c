@@ -64,9 +64,10 @@ static int8_t shift_jis_scan_mbc_width(
   return SHIFT_JIS_SECOND_BYTE_TABLE[*bytes];
 }
 
-static int32_t shift_jis_encode_mbc(
+static nk_error_t shift_jis_encode_mbc(
     const nk_encoding_t* enc ARG_UNUSED,
     uint32_t code,
+    size_t* out_width,
     uint8_t* out_bytes
 ) {
   if (code > 0xFFFF) {
@@ -85,7 +86,8 @@ static int32_t shift_jis_encode_mbc(
       out_bytes[1] = second_byte;
     }
 
-    return 2;
+    *out_width = 2;
+    return NK_SUCCESS;
   }
 
   if (SHIFT_JIS_FIRST_BYTE_TABLE[code] != 1) {
@@ -96,28 +98,27 @@ static int32_t shift_jis_encode_mbc(
     *out_bytes = (uint8_t)code;
   }
 
-  return 1;
+  *out_width = 1;
+  return NK_SUCCESS;
 }
 
 static uint32_t shift_jis_decode_mbc(
     const nk_encoding_t* enc ARG_UNUSED,
-    const uint8_t** bytes_to_decode,
-    const uint8_t* bytes_to_decode_end ARG_UNUSED
+    const uint8_t* bytes,
+    const uint8_t* bytes_end ARG_UNUSED
 ) {
-  uint8_t first_byte = **bytes_to_decode;
+  uint8_t first_byte = bytes[0];
   int8_t width = SHIFT_JIS_FIRST_BYTE_TABLE[first_byte];
   if (width <= 1) {
     // We assume `width == 1` here because this function should be called only
-    // when `bytes_to_decode` points to the valid byte sequence of a multi-byte
+    // when `bytes` points to the valid byte sequence of a multi-byte
     // character (i.e., `shift_jis_scan_mbc_width` has returned a positive value).
-
-    (*bytes_to_decode)++;
     return first_byte;
   }
 
   uint32_t code = first_byte;
-  code = (code << 8) | (*bytes_to_decode)[1];
-  (*bytes_to_decode) += 2;
+  code = (code << 8) | bytes[1];
+  bytes += 2;
   return code;
 }
 

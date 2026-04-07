@@ -18,16 +18,18 @@ static int8_t us_ascii_scan_mbc_width(
   return 0;
 }
 
-static int32_t us_ascii_encode_mbc(
+static nk_error_t us_ascii_encode_mbc(
     const nk_encoding_t* enc ARG_UNUSED,
     uint32_t code,
+    size_t* out_width,
     uint8_t* out_bytes
 ) {
   if (code < 128) {
+    *out_width = 1;
     if (out_bytes != NULL) {
       *out_bytes = (uint8_t)code;
     }
-    return 1;
+    return NK_SUCCESS;
   }
 
   return NK_ERR_TOO_LARGE_CODE_POINT;
