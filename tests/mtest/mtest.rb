@@ -1,18 +1,39 @@
 # frozen_string_literal: true
 
-# `Mtest` is a testing framework for MRuby, a port of `Minitest` to MRuby.
+# `Mtest` is a testing framework, a port of `Minitest` to mruby.
 
 module Mtest
+
+  # The version constant.
   VERSION = '0.1.0'
 
+  # Shell special characters that need to be escaped when included in command-line arguments.
   SHELL_SPECIAL_CHARS = " \t|&<>$()".chars
 
   @@seed = nil
 
+  # Converts an absolute path to a relative path from the current working directory if it is under it.
   def self.relative_path(path)
     path.delete_prefix("#{Dir.pwd}/")
   end
 
+  OPTIONS = <<~HELP
+    Options:
+
+      -h, --help                    Show this help message and exit
+      -V, --version                 Show Mtest version and exit
+      -v, --verbose                 Run with verbose output
+      -s, --seed SEED               Set seed for RNG (integer)
+      -q, --quiet                   Run with minimal output
+      --show-skips                  Show skipped tests in the summary report
+      -i, --include STRING          Only run tests whose full name includes STRING
+      -n, --name STRING             Alias for --include
+      -e, -x, --exclude STRING      Exclude tests whose full name includes STRING
+      -S, --skips CHARS             Skip tests with result codes in CHARS (e.g. "FS" to skip failures and skips)
+      --no-filter-backtrace         Show full backtrace without filtering out Mtest internals
+  HELP
+
+  # Parses command-line arguments and returns a hash of option values.
   def self.process_args(cmd_path, args)
     original_args = args.dup
 
@@ -54,7 +75,9 @@ module Mtest
 
       case args[i]
       when '-h', '--help'
-        puts "Usage: #{relative_path(cmd_path)} [options]"
+        puts "Usage: bin/mruby #{relative_path(cmd_path)} [options]"
+        puts
+        puts OPTIONS
         exit 0
       when '-V', '--version'
         puts "MTest #{Mtest::VERSION}"
@@ -74,7 +97,7 @@ module Mtest
       when '-e', '-x', '--exclude'
         i += 1
         options[:exclude] = args[i]
-      when '-S', '--skip'
+      when '-S', '--skips'
         i += 1
         options[:skips] = args[i].chars
       when '--no-filter-backtrace'
@@ -421,7 +444,7 @@ module Mtest
       if show_dots?
         @io.print("\b#{result.colored_result_code}")
         @num_wrote_dots += 1
-        if @num_wrote_dots % 60 == 0
+        if @num_wrote_dots % 100 == 0
           @io.puts
         else
           @io.flush
@@ -445,7 +468,7 @@ module Mtest
     end
 
     def on_finish
-      if show_dots? && @num_wrote_dots > 0 && @num_wrote_dots % 60 != 0
+      if show_dots? && @num_wrote_dots > 0 && @num_wrote_dots % 100 != 0
         @io.puts
       end
     end
