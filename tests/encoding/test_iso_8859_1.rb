@@ -3,7 +3,7 @@ module Encoding
     E = Naraku::Encoding::ISO_8859_1
 
     def test_name
-      assert_equal "ISO-8859-1", E.name
+      assert_equal 'ISO-8859-1', E.name
     end
 
     def test_min_mbc_width
@@ -92,23 +92,19 @@ module Encoding
     end
 
     def test_cprop
-      ascii_cprop = Naraku::Encoding.name_to_cprop("ASCII")
       (0x00..0x7F).each do |code|
-        assert E.cprop?(code, ascii_cprop)
+        assert E.cprop?(code, 'ASCII')
       end
 
-      alpha_cprop = Naraku::Encoding.name_to_cprop("Alpha")
       [*(0x41..0x5A), *(0x61..0x7A), 0xAA, 0xB5, 0xBA, *(0xC0..0xD6), *(0xD8..0xF6), *(0xF8..0xFF)].each do |code|
-        assert E.cprop?(code, alpha_cprop)
+        assert E.cprop?(code, 'Alpha')
       end
     end
 
     def test_cprop_code_range
-      ascii_cprop = Naraku::Encoding.name_to_cprop("ASCII")
-      assert_equal [0x00..0x7F], E.cprop_code_range(ascii_cprop)
+      assert_equal [0x00..0x7F], E.cprop_code_range('ASCII')
 
-      alpha_cprop = Naraku::Encoding.name_to_cprop("Alpha")
-      assert_equal [0x41..0x5A, 0x61..0x7A, 0xAA..0xAA, 0xB5..0xB5, 0xBA..0xBA, 0xC0..0xD6, 0xD8..0xF6, 0xF8..0xFF], E.cprop_code_range(alpha_cprop)
+      assert_equal [0x41..0x5A, 0x61..0x7A, 0xAA..0xAA, 0xB5..0xB5, 0xBA..0xBA, 0xC0..0xD6, 0xD8..0xF6, 0xF8..0xFF], E.cprop_code_range('Alpha')
     end
   end
 end

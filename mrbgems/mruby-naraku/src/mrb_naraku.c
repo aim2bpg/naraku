@@ -380,7 +380,7 @@ void mrb_mruby_naraku_gem_init(mrb_state *mrb) {
   mrb_define_method(mrb, encoding_class, "_get_case_fold", mrb_naraku_encoding_get_case_fold, MRB_ARGS_REQ(2));
   mrb_define_method(mrb, encoding_class, "_expand_case_unfold", mrb_naraku_encoding_expand_case_unfold, MRB_ARGS_REQ(2));
   mrb_define_method(mrb, encoding_class, "_iterate_case_fold", mrb_naraku_encoding_iterate_case_fold, MRB_ARGS_REQ(1) | MRB_ARGS_BLOCK());
-  mrb_define_method(mrb, encoding_class, "cprop?", mrb_naraku_encoding_cprop_p, MRB_ARGS_REQ(2));
+  mrb_define_method(mrb, encoding_class, "_cprop?", mrb_naraku_encoding_cprop_p, MRB_ARGS_REQ(2));
   mrb_define_method(mrb, encoding_class, "_get_cprop_code_range", mrb_naraku_encoding_get_cprop_code_range, MRB_ARGS_REQ(1));
 
   mrb_define_const(mrb, encoding_class, "ASCII_8BIT", mrb_naraku_encoding_new(mrb, encoding_class, nk_enc_ascii_8bit));

@@ -3,7 +3,7 @@ module Encoding
     E = Naraku::Encoding::UTF_8
 
     def test_name
-      assert_equal "UTF-8", E.name
+      assert_equal 'UTF-8', E.name
     end
 
     def test_min_mbc_width
@@ -169,31 +169,25 @@ module Encoding
     end
 
     def test_cprop
-      ascii_cprop = Naraku::Encoding.name_to_cprop("ASCII")
       (0x00..0x7F).each do |code|
-        assert E.cprop?(code, ascii_cprop)
+        assert E.cprop?(code, 'ASCII')
       end
 
-      alpha_cprop = Naraku::Encoding.name_to_cprop("Alpha")
       [*(0x41..0x5A), *(0x61..0x7A)].each do |code|
-        assert E.cprop?(code, alpha_cprop)
+        assert E.cprop?(code, 'Alpha')
       end
 
-      sc_hira_cprop = Naraku::Encoding.name_to_cprop("Script=Hira")
-      assert E.cprop?(0x3042, sc_hira_cprop) # "あ"
-      assert !E.cprop?(0x30FC, sc_hira_cprop) # "ー"
+      assert E.cprop?(0x3042, 'Script=Hira') # "あ"
+      assert !E.cprop?(0x30FC, 'Script=Hira') # "ー"
 
-      scx_hira_cprop = Naraku::Encoding.name_to_cprop("Script_Extensions=Hira")
-      assert E.cprop?(0x3042, scx_hira_cprop) # "あ"
-      assert E.cprop?(0x30FC, scx_hira_cprop) # "ー"
+      assert E.cprop?(0x3042, 'Script_Extensions=Hira') # "あ"
+      assert E.cprop?(0x30FC, 'Script_Extensions=Hira') # "ー"
     end
 
     def test_cprop_code_range
-      ascii_cprop = Naraku::Encoding.name_to_cprop("ASCII")
-      assert_equal [0x00..0x7F], E.cprop_code_range(ascii_cprop)
+      assert_equal [0x00..0x7F], E.cprop_code_range('ASCII')
 
-      alpha_cprop = Naraku::Encoding.name_to_cprop("Alpha")
-      alpha_code_range = E.cprop_code_range(alpha_cprop)
+      alpha_code_range = E.cprop_code_range('Alpha')
       [0x41..0x5A, 0x61..0x7A, 0x3041..0x3096].each do |range|
         assert alpha_code_range.include?(range)
       end

@@ -54,9 +54,18 @@ module Naraku
       _iterate_case_fold(flags, &block)
     end
 
+    private :_cprop?
+
+    def cprop?(code, cprop)
+      cprop = Encoding.name_to_cprop(cprop) if cprop.is_a?(String)
+      _cprop?(code, cprop)
+    end
+
     private :_get_cprop_code_range
 
     def cprop_code_range(cprop)
+      cprop = Encoding.name_to_cprop(cprop) if cprop.is_a?(String)
+
       result = _get_cprop_code_range(cprop)
       case result
       when :'delegate_7bit'

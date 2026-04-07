@@ -3,7 +3,7 @@ module Encoding
     E = Naraku::Encoding::US_ASCII
 
     def test_name
-      assert_equal "US-ASCII", E.name
+      assert_equal 'US-ASCII', E.name
     end
 
     def test_min_mbc_width
@@ -92,24 +92,20 @@ module Encoding
     end
 
     def test_cprop
-      ascii_cprop = Naraku::Encoding.name_to_cprop("ASCII")
       (0x00..0x7F).each do |code|
-        assert E.cprop?(code, ascii_cprop)
+        assert E.cprop?(code, 'ASCII')
       end
 
-      alpha_cprop = Naraku::Encoding.name_to_cprop("Alpha")
       [*(0x41..0x5A), *(0x61..0x7A)].each do |code|
-        assert E.cprop?(code, alpha_cprop)
+        assert E.cprop?(code, 'Alpha')
       end
     end
 
 
     def test_cprop_code_range
-      ascii_cprop = Naraku::Encoding.name_to_cprop("ASCII")
-      assert_equal [0x00..0x7F], E.cprop_code_range(ascii_cprop)
+      assert_equal [0x00..0x7F], E.cprop_code_range('ASCII')
 
-      alpha_cprop = Naraku::Encoding.name_to_cprop("Alpha")
-      assert_equal [0x41..0x5A, 0x61..0x7A], E.cprop_code_range(alpha_cprop)
+      assert_equal [0x41..0x5A, 0x61..0x7A], E.cprop_code_range('Alpha')
     end
   end
 end

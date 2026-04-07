@@ -3,7 +3,7 @@ module Encoding
     E = Naraku::Encoding::SHIFT_JIS
 
     def test_name
-      assert_equal "Shift_JIS", E.name
+      assert_equal 'Shift_JIS', E.name
     end
 
     def test_min_mbc_width
@@ -170,30 +170,25 @@ module Encoding
     end
 
     def test_cprop
-      ascii_cprop = Naraku::Encoding.name_to_cprop("ASCII")
       (0x00..0x7F).each do |code|
-        assert E.cprop?(code, ascii_cprop)
+        assert E.cprop?(code, 'ASCII')
       end
 
-      alpha_cprop = Naraku::Encoding.name_to_cprop("Alpha")
       [*(0x41..0x5A), *(0x61..0x7A), *(0x8260..0x8279), *(0x8281..0x829A)].each do |code|
-        assert E.cprop?(code, alpha_cprop)
+        assert E.cprop?(code, 'Alpha')
       end
 
-      han_cprop = Naraku::Encoding.name_to_cprop("Script=Han")
-      assert E.cprop?(0x88EA, han_cprop) # "一"
-      assert E.cprop?(0x8B43, han_cprop) # "気"
-      assert E.cprop?(0x92CA, han_cprop) # "通"
-      assert E.cprop?(0x8AD1, han_cprop) # "貫"
-      assert !E.cprop?(0x82A0, han_cprop) # "あ"
+      assert E.cprop?(0x88EA, 'Script=Han') # "一"
+      assert E.cprop?(0x8B43, 'Script=Han') # "気"
+      assert E.cprop?(0x92CA, 'Script=Han') # "通"
+      assert E.cprop?(0x8AD1, 'Script=Han') # "貫"
+      assert !E.cprop?(0x82A0, 'Script=Han') # "あ"
     end
 
     def test_cprop_code_range
-      ascii_cprop = Naraku::Encoding.name_to_cprop("ASCII")
-      assert_equal [0x00..0x7F], E.cprop_code_range(ascii_cprop)
+      assert_equal [0x00..0x7F], E.cprop_code_range('ASCII')
 
-      alpha_cprop = Naraku::Encoding.name_to_cprop("Alpha")
-      alpha_code_range = E.cprop_code_range(alpha_cprop)
+      alpha_code_range = E.cprop_code_range('Alpha')
       [0x41..0x5A, 0x61..0x7A, 0x8260..0x8279, 0x8281..0x829A, 0x829F..0x82F1].each do |range|
         assert alpha_code_range.include?(range)
       end
