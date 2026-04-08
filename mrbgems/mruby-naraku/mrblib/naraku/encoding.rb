@@ -16,7 +16,7 @@ module Naraku
       (flags & NK_ENC_FLAG_SELF_SYNC) != 0
     end
 
-    def parse_options(options)
+    def self.parse_fold_flags(options)
       flags = NK_FOLD_DEFAULT
       options.each do |option|
         case option
@@ -36,21 +36,21 @@ module Naraku
     private :_get_case_fold
 
     def case_fold(code, *options)
-      flags = parse_options(options)
+      flags = Naraku::Encoding.parse_fold_flags(options)
       _get_case_fold(code, flags)
     end
 
     private :_expand_case_unfold
 
     def expand_case_unfold(codes, *options)
-      flags = parse_options(options)
+      flags = Naraku::Encoding.parse_fold_flags(options)
       _expand_case_unfold(codes, flags)
     end
 
     private :_iterate_case_fold
 
     def iterate_case_fold(*options, &block)
-      flags = parse_options(options)
+      flags = Naraku::Encoding.parse_fold_flags(options)
       _iterate_case_fold(flags, &block)
     end
 

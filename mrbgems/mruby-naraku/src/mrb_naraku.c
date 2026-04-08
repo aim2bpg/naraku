@@ -11,6 +11,7 @@
 
 #include <naraku_encoding.h>
 #include <naraku_encoding_internal.h>
+#include <naraku_syntax.h>
 
 static void mrb_naraku_encoding_free(mrb_state* mrb, void* ptr) {}
 struct mrb_data_type mrb_naraku_encoding_type = { "Encoding", mrb_naraku_encoding_free };
@@ -23,6 +24,13 @@ static void mrb_naraku_encoding_adjust_mbc_head_context_free(mrb_state* mrb, voi
 }
 struct mrb_data_type mrb_naraku_encoding_adjust_mbc_head_context_type = { "AdjustMbcHeadContext", mrb_naraku_encoding_adjust_mbc_head_context_free };
 
+static void mrb_naraku_parser_free(mrb_state* mrb, void* ptr) {
+  nk_parser_t* parser = (nk_parser_t*)ptr;
+  mrb_free(mrb, (void*)parser->pattern_bytes_begin);
+  nk_parser_free(parser);
+}
+struct mrb_data_type mrb_naraku_parser_type = { "Parser", mrb_naraku_parser_free };
+
 static mrb_value mrb_naraku_encoding_name_to_cprop(mrb_state *mrb, mrb_value self) {
   char* prop_name;
   mrb_int len;
@@ -30,7 +38,7 @@ static mrb_value mrb_naraku_encoding_name_to_cprop(mrb_state *mrb, mrb_value sel
 
   nk_cprop_t cprop;
   nk_error_t err = nk_name_to_cprop(nk_enc_ascii_8bit, (const uint8_t*)prop_name, (const uint8_t*)prop_name + len, &cprop);
-  if (err < NK_SUCCESS) {
+  if (err != NK_SUCCESS) {
     switch (err) {
       case NK_ERR_INVALID_CHAR_PROP_NAME:
         mrb_raisef(mrb, E_ARGUMENT_ERROR, "invalid character property name: %l", prop_name, len);
@@ -97,7 +105,7 @@ static mrb_value mrb_naraku_encoding_encode_mbc_width(mrb_state *mrb, mrb_value 
 
   size_t width;
   nk_error_t err = nk_enc_encode_mbc(enc, (uint32_t)code, &width, NULL);
-  if (err < NK_SUCCESS) {
+  if (err != NK_SUCCESS) {
     switch (err) {
       case NK_ERR_INVALID_CODE_POINT:
         mrb_raisef(mrb, E_ARGUMENT_ERROR, "invalid code point: %d", code);
@@ -122,7 +130,7 @@ static mrb_value mrb_naraku_encoding_encode_mbc(mrb_state *mrb, mrb_value self) 
   size_t width;
   uint8_t bytes[NK_ENC_MAX_MBC_WIDTH];
   nk_error_t err = nk_enc_encode_mbc(enc, (uint32_t)code, &width, bytes);
-  if (err < NK_SUCCESS) {
+  if (err != NK_SUCCESS) {
     switch (err) {
       case NK_ERR_INVALID_CODE_POINT:
         mrb_raisef(mrb, E_ARGUMENT_ERROR, "invalid code point: %d", code);
@@ -304,7 +312,7 @@ static mrb_value mrb_naraku_encoding_get_cprop_code_range(mrb_state *mrb, mrb_va
   nk_code_range_delegation_t delegation;
   nk_static_code_range_t code_range;
   nk_error_t err = nk_enc_get_cprop_code_range(enc, (nk_cprop_t)cprop, &delegation, &code_range);
-  if (err < NK_SUCCESS) {
+  if (err != NK_SUCCESS) {
     switch (err) {
       case NK_ERR_UNSUPPORTED_CHAR_PROPERTY:
         mrb_raisef(mrb, E_ARGUMENT_ERROR, "unsupported character property: %d", cprop);
@@ -356,6 +364,80 @@ static mrb_value mrb_naraku_encoding_adjust_mbc_head_context_cache_p(mrb_state *
   return adjust_mbc_head_context_cache_check(context, (size_t)offset) ? mrb_true_value() : mrb_false_value();
 }
 
+static mrb_value mrb_naraku_parser_new(mrb_state* mrb, mrb_value self) {
+  void* encoding_ptr;
+
+  char* pattern;
+  mrb_int pattern_len;
+
+  mrb_bool is_extended_mode;
+  mrb_bool is_ignore_case;
+  mrb_bool dot_allows_newline;
+  mrb_bool char_class_is_strict;
+  mrb_bool char_prop_is_ascii_only;
+  mrb_bool posix_char_class_is_ascii_only;
+  mrb_int fold_flags;
+
+  // TODO: add `warning_func` argument for receiving warnings during parsing
+
+  mrb_get_args(
+    mrb,
+    "dsbbbbbbi",
+    &encoding_ptr, &mrb_naraku_encoding_type,
+    &pattern, &pattern_len,
+    &is_extended_mode,
+    &is_ignore_case,
+    &dot_allows_newline,
+    &char_class_is_strict,
+    &char_prop_is_ascii_only,
+    &posix_char_class_is_ascii_only,
+    &fold_flags
+  );
+
+  const nk_encoding_t* enc = (const nk_encoding_t*)encoding_ptr;
+
+  nk_parser_t* parser = mrb_malloc(mrb, sizeof(nk_parser_t));
+  uint8_t* pattern_copy = (uint8_t*)mrb_malloc(mrb, (size_t)pattern_len);
+  memcpy(pattern_copy, pattern, (size_t)pattern_len);
+
+  nk_parser_options_t options = {
+    .is_extended_mode = is_extended_mode ? true : false,
+    .is_ignore_case = is_ignore_case ? true : false,
+    .dot_allows_newline = dot_allows_newline ? true : false,
+    .char_class_is_strict = char_class_is_strict ? true : false,
+    .char_prop_is_ascii_only = char_prop_is_ascii_only ? true : false,
+    .posix_char_class_is_ascii_only = posix_char_class_is_ascii_only ? true : false,
+    .fold_flags = (nk_fold_flag_t)fold_flags,
+  };
+
+  nk_error_t err = nk_parser_init(enc, pattern_copy, pattern_copy + pattern_len, options, parser);
+  if (err != NK_SUCCESS) {
+    mrb_raisef(mrb, E_ARGUMENT_ERROR, "failed to initialize parser: %d", err);
+  }
+
+  struct RClass* parser_class = mrb_class_ptr(self);
+  return mrb_obj_value(mrb_data_object_alloc(mrb, parser_class, parser, &mrb_naraku_parser_type));
+}
+
+mrb_value mrb_naraku_parser_parse(mrb_state* mrb, mrb_value self) {
+  nk_parser_t* parser = (nk_parser_t*)mrb_data_get_ptr(mrb, self, &mrb_naraku_parser_type);
+
+  nk_node_t* node = NULL;
+  nk_error_t err = nk_parser_parse(parser, &node);
+  if (err != NK_SUCCESS) {
+    mrb_raisef(mrb, E_RUNTIME_ERROR, "failed to parse pattern: %d", err);
+  }
+
+  // TODO: convert `node` to a Ruby object
+  printf("node->base.type: %d\n", node->base.type);
+
+  if (node != NULL) {
+    nk_node_free(node);
+  }
+
+  return mrb_nil_value();
+}
+
 void mrb_mruby_naraku_gem_init(mrb_state *mrb) {
   struct RClass* naraku_module = mrb_define_module(mrb, "Naraku");
 
@@ -398,6 +480,15 @@ void mrb_mruby_naraku_gem_init(mrb_state *mrb) {
 
   mrb_define_class_method(mrb, encoding_adjust_mbc_head_context_class, "new", mrb_naraku_encoding_adjust_mbc_head_context_new, MRB_ARGS_REQ(2));
   mrb_define_method(mrb, encoding_adjust_mbc_head_context_class, "cache?", mrb_naraku_encoding_adjust_mbc_head_context_cache_p, MRB_ARGS_REQ(1));
+
+  struct RClass* parser_class = mrb_define_class_under(mrb, naraku_module, "Parser", mrb->object_class);
+  MRB_SET_INSTANCE_TT(parser_class, MRB_TT_DATA);
+  MRB_UNDEF_ALLOCATOR(parser_class);
+  mrb_undef_class_method_id(mrb, parser_class, MRB_SYM(new));
+  mrb_undef_class_method_id(mrb, parser_class, MRB_SYM(allocate));
+
+  mrb_define_class_method(mrb, parser_class, "_new", mrb_naraku_parser_new, MRB_ARGS_REQ(9));
+  mrb_define_method(mrb, parser_class, "parse", mrb_naraku_parser_parse, MRB_ARGS_NONE());
 }
 
 void mrb_mruby_naraku_gem_final(mrb_state *mrb) {}

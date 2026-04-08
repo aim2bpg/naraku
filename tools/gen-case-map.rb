@@ -97,7 +97,7 @@ def gen_ascii(case_map)
     end
   end
 
-  puts "  return 0;"
+  puts "  return NK_SUCCESS;"
   puts "}"
 end
 
@@ -460,7 +460,7 @@ def gen_sb(case_map, enc, prefix)
     puts "  }"
   end
 
-  puts "  return 0;"
+  puts "  return NK_SUCCESS;"
   puts "}"
 end
 
@@ -615,7 +615,7 @@ def gen_mb2(case_map, enc, prefix)
     puts "  }"
   end
 
-  puts "  return 0;"
+  puts "  return NK_SUCCESS;"
   puts "}"
 end
 

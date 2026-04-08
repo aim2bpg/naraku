@@ -619,7 +619,7 @@ static inline int8_t nk_enc_scan_mbc_width(
   return enc->scan_mbc_width(enc, bytes, bytes_end);
 }
 
-static inline int32_t nk_enc_encode_mbc(
+static inline nk_error_t nk_enc_encode_mbc(
     const nk_encoding_t* enc,
     uint32_t code,
     size_t* out_width,
@@ -630,7 +630,7 @@ static inline int32_t nk_enc_encode_mbc(
     if (out_bytes != NULL) {
       *out_bytes = (uint8_t)code;
     }
-    return 1;
+    return NK_SUCCESS;
   }
     
   return enc->encode_mbc(enc, code, out_width, out_bytes);
