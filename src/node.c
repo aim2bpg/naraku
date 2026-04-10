@@ -4,24 +4,34 @@
 #include <stdlib.h>  // for malloc, free
 #include <string.h>  // for memcpy
 
-nk_error_t pbuf_concat(const nk_pbuf_t* buf1, const nk_pbuf_t* buf2, nk_pbuf_t* out_buf) {
+nk_error_t pbuf_append(nk_pbuf_t* buf1, const nk_pbuf_t* buf2) {
   // Special case: if both buffers are views and they are contiguous, we can
   // create a new view that spans both buffers without copying.
   if (buf1->type == NK_PBUF_VIEW && buf2->type == NK_PBUF_VIEW && buf1->bytes_end == buf2->bytes) {
-    out_buf->type = NK_PBUF_VIEW;
-    out_buf->bytes = buf1->bytes;
-    out_buf->bytes_end = buf2->bytes_end;
+    buf1->type = NK_PBUF_VIEW;
+    buf1->bytes = buf1->bytes;
+    buf1->bytes_end = buf2->bytes_end;
     return NK_SUCCESS;
   }
 
-  // General case: we need to allocate a new buffer and copy the contents of
-  // both buffers into it.
-
   size_t len1 = (size_t)(buf1->bytes_end - buf1->bytes);
   size_t len2 = (size_t)(buf2->bytes_end - buf2->bytes);
-  size_t total_len = len1 + len2;
+  size_t new_len = len1 + len2;
 
-  uint8_t* new_bytes = (uint8_t*)malloc(total_len);
+  if (buf1->type == NK_PBUF_OWNED && buf1->cap >= new_len) {
+    // If `buf1` is already an owned buffer with enough capacity, we can append
+    // `buf2` to it without reallocating.
+    memcpy((uint8_t*)buf1->bytes + len1, buf2->bytes, len2);
+    buf1->bytes_end = buf1->bytes + new_len;
+    return NK_SUCCESS;
+  }
+
+  // Otherwise, we need to allocate a new owned buffer and copy both `buf1` and `buf2` into it.
+  size_t new_cap = 1;
+  while (new_cap < new_len) {
+    new_cap *= 2;
+  }
+  uint8_t* new_bytes = (uint8_t*)malloc(new_cap);
   if (new_bytes == NULL) {
     return NK_ERR_MEMORY_ALLOCATION_FAILED;
   }
@@ -29,9 +39,31 @@ nk_error_t pbuf_concat(const nk_pbuf_t* buf1, const nk_pbuf_t* buf2, nk_pbuf_t* 
   memcpy(new_bytes, buf1->bytes, len1);
   memcpy(new_bytes + len1, buf2->bytes, len2);
 
-  out_buf->type = NK_PBUF_OWNED;
-  out_buf->bytes = new_bytes;
-  out_buf->bytes_end = new_bytes + total_len;
+  if (buf1->type == NK_PBUF_OWNED) {
+    free((void*)buf1->bytes);
+  }
+
+  buf1->type = NK_PBUF_OWNED;
+  buf1->cap = new_cap;
+  buf1->bytes = new_bytes;
+  buf1->bytes_end = new_bytes + new_len;
+
+  return NK_SUCCESS;
+}
+
+nk_error_t pbuf_resize(nk_pbuf_t* buf) {
+  if (buf->type == NK_PBUF_VIEW) {
+    return NK_SUCCESS;
+  }
+
+  size_t len = (size_t)(buf->bytes_end - buf->bytes);
+  uint8_t* new_bytes = (uint8_t*)realloc((void*)buf->bytes, len);
+  if (new_bytes == NULL) {
+    return NK_ERR_MEMORY_ALLOCATION_FAILED;
+  }
+  buf->bytes = new_bytes;
+  buf->bytes_end = new_bytes + len;
+  buf->cap = len;
 
   return NK_SUCCESS;
 }
@@ -44,6 +76,7 @@ void nk_pbuf_free(nk_pbuf_t* pbuf) {
   free((void*)pbuf->bytes);
   pbuf->bytes = NULL;
   pbuf->bytes_end = NULL;
+  pbuf->cap = 0;
 }
 
 nk_error_t nk_pbuf_to_owned(nk_pbuf_t* pbuf) {
@@ -58,6 +91,7 @@ nk_error_t nk_pbuf_to_owned(nk_pbuf_t* pbuf) {
   }
   memcpy(copy, pbuf->bytes, len);
   pbuf->type = NK_PBUF_OWNED;
+  pbuf->cap = len;
   pbuf->bytes = copy;
   pbuf->bytes_end = copy + len;
   return NK_SUCCESS;

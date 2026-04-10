@@ -440,6 +440,67 @@ module Parser
 
     # ========================================================================
     #
+    # Unicode properties:
+    #
+    # ========================================================================
+
+    def test_char_prop
+      # Positive property \p{...}
+      result = parse('\p{Lu}')
+      assert_equal :char_prop, result[:type]
+      assert_equal true, result[:is_positive]
+      assert_equal Naraku::Encoding.name_to_cprop('Lu'), result[:cprop]
+
+      result = parse('\p{L}')
+      assert_equal :char_prop, result[:type]
+      assert_equal true, result[:is_positive]
+      assert_equal Naraku::Encoding.name_to_cprop('L'), result[:cprop]
+
+      result = parse('\p{Digit}')
+      assert_equal :char_prop, result[:type]
+      assert_equal true, result[:is_positive]
+      assert_equal Naraku::Encoding.name_to_cprop('Digit'), result[:cprop]
+
+      # Negative property \P{...}
+      result = parse('\P{Lu}')
+      assert_equal :char_prop, result[:type]
+      assert_equal false, result[:is_positive]
+      assert_equal Naraku::Encoding.name_to_cprop('Lu'), result[:cprop]
+
+      result = parse('\P{Digit}')
+      assert_equal :char_prop, result[:type]
+      assert_equal false, result[:is_positive]
+      assert_equal Naraku::Encoding.name_to_cprop('Digit'), result[:cprop]
+
+      # Unicode escapes in property names
+      result = parse('\p{\u004c\u0075}')
+      assert_equal :char_prop, result[:type]
+      assert_equal true, result[:is_positive]
+      assert_equal Naraku::Encoding.name_to_cprop('Lu'), result[:cprop]
+
+      result = parse('\p{\u{4c 75}}')
+      assert_equal :char_prop, result[:type]
+      assert_equal true, result[:is_positive]
+      assert_equal Naraku::Encoding.name_to_cprop('Lu'), result[:cprop]
+
+      result = parse('\p{\u{4c}u}')
+      assert_equal :char_prop, result[:type]
+      assert_equal true, result[:is_positive]
+      assert_equal Naraku::Encoding.name_to_cprop('Lu'), result[:cprop]
+    end
+
+    def test_char_prop_errors
+      # Missing brace
+      assert_raises(RuntimeError, '') { parse('\p') }
+      assert_raises(RuntimeError, '') { parse('\P') }
+      # Unclosed brace
+      assert_raises(RuntimeError, '') { parse('\p{Lu') }
+      # Invalid property name
+      assert_raises(RuntimeError, '') { parse('\p{InvalidProperty}') }
+    end
+
+    # ========================================================================
+    #
     # Special nodes: grapheme cluster, keep, newline
     #
     # ========================================================================

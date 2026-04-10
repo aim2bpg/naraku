@@ -15,9 +15,14 @@
 // ==========================================================================
 
 /**
- * Concatenates two pattern buffers and outputs the result in `out_buf`.
+ * Appends the contents of `buf2` to `buf1`, modifying `buf1` in place.
  */
-nk_error_t pbuf_concat(const nk_pbuf_t* buf1, const nk_pbuf_t* buf2, nk_pbuf_t* out_buf);
+nk_error_t pbuf_append(nk_pbuf_t* buf1, const nk_pbuf_t* buf2);
+
+/**
+ * Resizes the owned buffer in `buf` to fit its current length, if it is an owned buffer.
+ */
+nk_error_t pbuf_resize(nk_pbuf_t* buf);
 
 /**
  * Releases the allocated memory for regex AST nodes in the array `nodes` of length `len`.
@@ -68,9 +73,13 @@ typedef struct {
     } literal;
     uint32_t code;
     struct {
-      nk_char_type_t type;
       bool is_positive;
+      nk_char_type_t type;
     } char_type;
+    struct {
+      bool is_positive;
+      nk_cprop_t cprop;
+    } char_prop;
     struct {
       bool has_name;
       nk_pbuf_t name_buf;

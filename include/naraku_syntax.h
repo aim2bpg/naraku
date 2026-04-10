@@ -39,6 +39,7 @@ typedef enum {
  */
 typedef struct {
   nk_pbuf_type_t type;
+  size_t cap;  // capacity of the buffer (only used for owned buffers)
   const uint8_t* bytes;
   const uint8_t* bytes_end;
 } nk_pbuf_t;

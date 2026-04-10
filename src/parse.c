@@ -663,6 +663,123 @@ static nk_error_t lex_escape_bytes(nk_parser_t* parser, uint32_t* out_code) {
   return NK_SUCCESS;
 }
 
+static nk_error_t
+lex_name(nk_parser_t* parser, nk_pbuf_t* out_name_buf, uint32_t terminator, nk_error_t unterminated_error) {
+  out_name_buf->type = NK_PBUF_VIEW;
+  out_name_buf->bytes = out_name_buf->bytes_end = parser->pattern_bytes;
+
+  while (parser->pattern_bytes < parser->pattern_bytes_end) {
+    int8_t width;
+    uint32_t code;
+    nk_error_t err = next_code(parser, &width, &code);
+    if (err != NK_SUCCESS) {
+      nk_pbuf_free(out_name_buf);
+      return err;
+    }
+
+    if (code == terminator || code == '+') {
+      parser->pattern_bytes -= width;  // put back the terminator
+
+      err = pbuf_resize(out_name_buf);
+      if (err != NK_SUCCESS) {
+        nk_pbuf_free(out_name_buf);
+        return err;
+      }
+
+      return NK_SUCCESS;
+    }
+
+    if (code == '\\') {
+      int8_t head_width;
+      uint32_t head_code;
+      nk_error_t err = peek(parser, &head_width, &head_code);
+      if (err != NK_SUCCESS) {
+        nk_pbuf_free(out_name_buf);
+        return err;
+      }
+
+      if (head_code == 'u') {
+        parser->pattern_bytes += head_width;  // consume `u`
+
+        uint32_t code_point;
+        bool u_is_unclosed_brace;
+        nk_error_t err = lex_unicode_code_point_escape(parser, &code_point, &u_is_unclosed_brace);
+        if (err != NK_SUCCESS) {
+          nk_pbuf_free(out_name_buf);
+          return err;
+        }
+
+        while (true) {
+          uint8_t mbc_bytes[NK_ENC_MAX_MBC_WIDTH];
+          size_t mbc_width;
+          err = nk_enc_encode_mbc(parser->enc, code_point, &mbc_width, mbc_bytes);
+          if (err != NK_SUCCESS) {
+            nk_pbuf_free(out_name_buf);
+            return err;
+          }
+
+          nk_pbuf_t escaped_bytes_pbuf = {.type = NK_PBUF_VIEW, .bytes = mbc_bytes, .bytes_end = mbc_bytes + mbc_width};
+          err = pbuf_append(out_name_buf, &escaped_bytes_pbuf);
+          if (err != NK_SUCCESS) {
+            nk_pbuf_free(out_name_buf);
+            return err;
+          }
+
+          if (!u_is_unclosed_brace) {
+            break;
+          }
+
+          err = lex_unicode_code_point_escape_in_brace(parser, &code_point, &u_is_unclosed_brace);
+          if (err != NK_SUCCESS) {
+            nk_pbuf_free(out_name_buf);
+            return err;
+          }
+        }
+
+        continue;
+      }
+
+      uint32_t escaped_code;
+      err = lex_escape_bytes(parser, &escaped_code);
+      if (err != NK_SUCCESS) {
+        nk_pbuf_free(out_name_buf);
+        return err;
+      }
+
+      uint8_t mbc_bytes[NK_ENC_MAX_MBC_WIDTH];
+      size_t mbc_width;
+      err = nk_enc_encode_mbc(parser->enc, escaped_code, &mbc_width, mbc_bytes);
+      if (err != NK_SUCCESS) {
+        nk_pbuf_free(out_name_buf);
+        return err;
+      }
+
+      nk_pbuf_t escaped_bytes_pbuf = {.type = NK_PBUF_VIEW, .bytes = mbc_bytes, .bytes_end = mbc_bytes + mbc_width};
+      err = pbuf_append(out_name_buf, &escaped_bytes_pbuf);
+      if (err != NK_SUCCESS) {
+        nk_pbuf_free(out_name_buf);
+        return err;
+      }
+
+      continue;
+    }
+
+    nk_pbuf_t literal_pbuf = {
+      .type = NK_PBUF_VIEW,
+      .bytes = parser->pattern_bytes - width,
+      .bytes_end = parser->pattern_bytes
+    };
+    err = pbuf_append(out_name_buf, &literal_pbuf);
+    if (err != NK_SUCCESS) {
+      nk_pbuf_free(out_name_buf);
+      return err;
+    }
+  }
+
+  nk_pbuf_free(out_name_buf);
+  return unterminated_error;
+}
+
 static nk_error_t lex(nk_parser_t* parser, token_t* out_token) {
   if (parser->in_unicode_escape_brace) {
     uint32_t code;
@@ -908,6 +1025,62 @@ static nk_error_t lex(nk_parser_t* parser, token_t* out_token) {
             out_token->data.assertion.type = NK_ASSERTION_TYPE_BEGIN_OF_MATCHING;
             return NK_SUCCESS;
 
+          // Character (Unicode) properties (`\p{...}` and `\P{...}`):
+          case 'p':
+          case 'P':
+          {
+            bool is_positive = code == 'p';
+
+            if (parser->pattern_bytes >= parser->pattern_bytes_end) {
+              return NK_ERR_TOO_SHORT_ESCAPE_SEQUENCE;
+            }
+
+            int8_t width;
+            uint32_t code;
+            nk_error_t err = next_code(parser, &width, &code);
+            if (err != NK_SUCCESS) {
+              return err;
+            }
+
+            if (code != '{') {
+              return NK_ERR_TOO_SHORT_ESCAPE_SEQUENCE;
+            }
+
+            nk_pbuf_t name_buf;
+            err = lex_name(parser, &name_buf, '}', NK_ERR_TOO_SHORT_ESCAPE_SEQUENCE);
+            if (err != NK_SUCCESS) {
+              return err;
+            }
+
+            if (parser->pattern_bytes >= parser->pattern_bytes_end) {
+              nk_pbuf_free(&name_buf);
+              return NK_ERR_TOO_SHORT_ESCAPE_SEQUENCE;
+            }
+
+            err = next_code(parser, &width, &code);
+            if (err != NK_SUCCESS) {
+              nk_pbuf_free(&name_buf);
+              return err;
+            }
+
+            if (code != '}') {
+              nk_pbuf_free(&name_buf);
+              return NK_ERR_TOO_SHORT_ESCAPE_SEQUENCE;
+            }
+
+            out_token->type = TK_CHAR_PROP;
+            out_token->data.char_prop.is_positive = is_positive;
+            err = nk_name_to_cprop(parser->enc, name_buf.bytes, name_buf.bytes_end, &out_token->data.char_prop.cprop);
+            if (err != NK_SUCCESS) {
+              nk_pbuf_free(&name_buf);
+              return err;
+            }
+
+            nk_pbuf_free(&name_buf);
+
+            return NK_SUCCESS;
+          }
+
           // Unicode code point:
           case 'u':
           {
@@ -1095,6 +1268,20 @@ static nk_error_t parse_atom(nk_parser_t* parser, token_t* tok, nk_node_t** out_
       *out_node_ptr = char_type_node;
       break;
     }
+    case TK_CHAR_PROP:
+    {
+      nk_node_t* char_prop_node = (nk_node_t*)malloc(sizeof(nk_node_t));
+      if (char_prop_node == NULL) {
+        return NK_ERR_MEMORY_ALLOCATION_FAILED;
+      }
+      char_prop_node->base.type = NK_NODE_TYPE_CHAR_PROP;
+      char_prop_node->char_prop.cprop = tok->data.char_prop.cprop;
+      char_prop_node->char_prop.is_positive = tok->data.char_prop.is_positive;
+      char_prop_node->char_prop.is_ignore_case = parser->is_ignore_case;
+      char_prop_node->char_prop.fold_flags = parser->fold_flags;
+      *out_node_ptr = char_prop_node;
+      break;
+    }
     case TK_GRAPHEME_CLUSTER:
     {
       nk_node_t* gc_node = (nk_node_t*)malloc(sizeof(nk_node_t));
@@ -1236,16 +1423,12 @@ static nk_error_t parse_concat(nk_parser_t* parser, token_t* tok, nk_node_t** ou
         nk_node_t* last_literal_node = concat_children[concat_children_len - 2];
         nk_node_t* new_literal_node = concat_children[concat_children_len - 1];
 
-        nk_pbuf_t new_buf;
-        nk_error_t err = pbuf_concat(&last_literal_node->literal.buf, &new_literal_node->literal.buf, &new_buf);
+        nk_error_t err = pbuf_append(&last_literal_node->literal.buf, &new_literal_node->literal.buf);
         if (err != NK_SUCCESS) {
           nodes_free(concat_children, concat_children_len);
           *out_node_ptr = NULL;
           return err;
         }
-
-        nk_pbuf_free(&last_literal_node->literal.buf);
-        last_literal_node->literal.buf = new_buf;
 
         nk_node_free(new_literal_node);
         concat_children[--concat_children_len] = NULL;
