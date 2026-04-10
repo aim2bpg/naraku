@@ -66,10 +66,16 @@ typedef struct {
       const uint8_t* pattern_bytes;
       const uint8_t* pattern_bytes_end;
     } literal;
+    uint32_t code;
     struct {
       nk_char_type_t type;
       bool is_positive;
     } char_type;
+    struct {
+      bool has_name;
+      nk_pbuf_t name_buf;
+      uint32_t group_num;
+    } back_ref;
     struct {
       nk_assertion_type_t type;
     } assertion;

@@ -254,6 +254,192 @@ module Parser
 
     # ========================================================================
     #
+    # Unicode escapes:
+    #
+    # ========================================================================
+
+    def test_unicode_escape_fixed
+      result = parse('\u0061')
+      assert_equal :literal, result[:type]
+      assert_equal 'a', result[:buf]
+
+      result = parse('\u3042')
+      assert_equal :literal, result[:type]
+      assert_equal 'あ', result[:buf]
+    end
+
+    def test_unicode_escape_variable
+      result = parse('\u{61}')
+      assert_equal :literal, result[:type]
+      assert_equal 'a', result[:buf]
+
+      result = parse('\u{3042}')
+      assert_equal :literal, result[:type]
+      assert_equal 'あ', result[:buf]
+
+      result = parse('\u{1F308}')
+      assert_equal :literal, result[:type]
+      assert_equal "\u{1F308}", result[:buf]
+    end
+
+    def test_unicode_escape_multiple
+      result = parse('\u{61 62 63}')
+      assert_equal :literal, result[:type]
+      assert_equal 'abc', result[:buf]
+
+      result = parse('\u{3042 3044}')
+      assert_equal :literal, result[:type]
+      assert_equal 'あい', result[:buf]
+    end
+
+    def test_unicode_escape_whitespace
+      result = parse('\u{  61  }')
+      assert_equal :literal, result[:type]
+      assert_equal 'a', result[:buf]
+
+      result = parse("\\u{61\t62}")
+      assert_equal :literal, result[:type]
+      assert_equal 'ab', result[:buf]
+    end
+
+    def test_unicode_escape_large_code_point
+      # U+10FFFF is the maximum valid Unicode code point.
+      result = parse('\u{10FFFF}')
+      assert_equal :literal, result[:type]
+      assert_equal "\u{10FFFF}", result[:buf]
+
+      # U+110000 is out of range for UTF-8.
+      assert_raises(RuntimeError, '') { parse('\u{110000}') }
+    end
+
+    def test_unicode_escape_surrogate
+      # Surrogate code points are invalid in UTF-8.
+      assert_raises(RuntimeError, '') { parse('\u{D800}') }
+      assert_raises(RuntimeError, '') { parse('\u{DFFF}') }
+    end
+
+    def test_unicode_escape_encoding_constraint
+      # U+0080 is out of range for US-ASCII.
+      assert_raises(RuntimeError, '') { parse('\u0080', encoding: Naraku::Encoding::US_ASCII) }
+      assert_raises(RuntimeError, '') { parse('\u{80}', encoding: Naraku::Encoding::US_ASCII) }
+    end
+
+    def test_unicode_escape_errors
+      # Trailing \u
+      assert_raises(RuntimeError, '') { parse('\u') }
+      # Too short fixed escape
+      assert_raises(RuntimeError, '') { parse('\u123') }
+      # Invalid hex digit
+      assert_raises(RuntimeError, '') { parse('\u123G') }
+      # Unclosed brace
+      assert_raises(RuntimeError, '') { parse('\u{61') }
+      # Invalid hex in brace
+      assert_raises(RuntimeError, '') { parse('\u{G}') }
+      # Empty brace
+      assert_raises(RuntimeError, '') { parse('\u{}') }
+    end
+
+    # ========================================================================
+    #
+    # Escape sequences:
+    #
+    # ========================================================================
+
+    def test_hex_escape
+      result = parse('\x61')
+      assert_equal :literal, result[:type]
+      assert_equal 'a', result[:buf]
+
+      # Single hex digit
+      result = parse('\x1')
+      assert_equal :literal, result[:type]
+      assert_equal "\x01", result[:buf]
+
+      result = parse('\x7F')
+      assert_equal :literal, result[:type]
+      assert_equal "\x7F", result[:buf]
+    end
+
+    def test_octal_escape
+      result = parse('\0')
+      assert_equal :literal, result[:type]
+      assert_equal "\0", result[:buf]
+
+      result = parse('\012')
+      assert_equal :literal, result[:type]
+      assert_equal "\n", result[:buf]
+
+      result = parse('\123')
+      assert_equal :literal, result[:type]
+      assert_equal "S", result[:buf]
+
+      # \07 is octal
+      result = parse('\07')
+      assert_equal :literal, result[:type]
+      assert_equal "\a", result[:buf]
+    end
+
+    def test_meta_control_escape
+      result = parse('\M-a', encoding: Naraku::Encoding::ASCII_8BIT)
+      assert_equal :literal, result[:type]
+      assert_equal "\xe1", result[:buf].bytes.map { |b| b.chr }.join
+
+      result = parse('\C-a', encoding: Naraku::Encoding::ASCII_8BIT)
+      assert_equal :literal, result[:type]
+      assert_equal "\x01", result[:buf]
+
+      result = parse('\ca', encoding: Naraku::Encoding::ASCII_8BIT)
+      assert_equal :literal, result[:type]
+      assert_equal "\x01", result[:buf]
+
+      result = parse('\M-\C-a', encoding: Naraku::Encoding::ASCII_8BIT)
+      assert_equal :literal, result[:type]
+      assert_equal "\x81", result[:buf].bytes.map { |b| b.chr }.join
+
+      result = parse('\M-\ca', encoding: Naraku::Encoding::ASCII_8BIT)
+      assert_equal :literal, result[:type]
+      assert_equal "\x81", result[:buf].bytes.map { |b| b.chr }.join
+    end
+
+    def test_standard_escapes
+      assert_equal "\n", parse('\n')[:buf]
+      assert_equal "\t", parse('\t')[:buf]
+      assert_equal "\r", parse('\r')[:buf]
+      assert_equal "\f", parse('\f')[:buf]
+      assert_equal "\v", parse('\v')[:buf]
+      assert_equal "\a", parse('\a')[:buf]
+      assert_equal "\e", parse('\e')[:buf]
+    end
+
+    def test_multibyte_escaped_sequence
+      # UTF-8 encoded 'あ'
+      result = parse('\xe3\x81\x82')
+      assert_equal :literal, result[:type]
+      assert_equal 'あ', result[:buf]
+
+      result = parse('\343\201\202')
+      assert_equal :literal, result[:type]
+      assert_equal 'あ', result[:buf]
+    end
+
+    def test_escape_errors
+      # Missing hex digits
+      assert_raises(RuntimeError, '') { parse('\x') }
+      # Invalid hex digit
+      assert_raises(RuntimeError, '') { parse('\xG') }
+      # Missing meta character
+      assert_raises(RuntimeError, '') { parse('\M') }
+      assert_raises(RuntimeError, '') { parse('\M-') }
+      # Duplicate prefixes
+      assert_raises(RuntimeError, '') { parse('\M-\M-a') }
+      assert_raises(RuntimeError, '') { parse('\C-\C-a') }
+      # Incomplete multibyte sequence (only first byte of 'あ')
+      assert_raises(RuntimeError, '') { parse('\xe3') }
+      assert_raises(RuntimeError, '') { parse('\xe3\x81') }
+    end
+
+    # ========================================================================
+    #
     # Special nodes: grapheme cluster, keep, newline
     #
     # ========================================================================

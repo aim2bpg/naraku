@@ -496,6 +496,10 @@ struct nk_parser {
   bool posix_char_class_is_ascii_only;
   nk_fold_flag_t fold_flags;
 
+  // Lexer state:
+  bool in_unicode_escape_brace;
+  uint32_t num_capture_groups;
+
   bool has_named_groups;
   uint32_t num_groups;
 };
