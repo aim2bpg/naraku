@@ -408,6 +408,10 @@ lex_octal_number(nk_parser_t* parser, uint32_t* out_code, int max_digits, nk_err
   return NK_SUCCESS;
 }
 
+static inline bool is_ascii_printable(uint32_t code) {
+  return ('\t' <= code && code <= '\r') || (' ' <= code && code <= '~');
+}
+
 static nk_error_t lex_escape_single_byte(nk_parser_t* parser, uint8_t* out_byte) {
   bool retry = true;
   bool control_prefix = false;
@@ -463,6 +467,10 @@ static nk_error_t lex_escape_single_byte(nk_parser_t* parser, uint8_t* out_byte)
       case 'b':
         parser->pattern_bytes += width;  // consume `b`
         *out_byte = '\b';
+        break;
+      case 's':
+        parser->pattern_bytes += width;  // consume `s`
+        *out_byte = ' ';
         break;
 
       case 'x':
@@ -531,7 +539,7 @@ static nk_error_t lex_escape_single_byte(nk_parser_t* parser, uint8_t* out_byte)
           retry = true;
           continue;
         }
-        if (code > 0x7F) {
+        if (!is_ascii_printable(code)) {
           return NK_ERR_TOO_SHORT_META_ESCAPE;
         }
 
@@ -582,12 +590,22 @@ static nk_error_t lex_escape_single_byte(nk_parser_t* parser, uint8_t* out_byte)
         if (code > 0x7F) {
           return NK_ERR_TOO_SHORT_CONTROL_ESCAPE;
         }
+        if (code == '?') {
+          control_prefix = false;
+          code = 0x7F;
+        }
         *out_byte = (uint8_t)code;
         break;
       }
 
       default:
-        return NK_ERR_UNEXPECTED_ESCAPE_SEQUENCE;
+        if (!is_ascii_printable(code)) {
+          return NK_ERR_TOO_SHORT_ESCAPE_SEQUENCE;
+        }
+
+        parser->pattern_bytes += width;
+        *out_byte = (uint8_t)code;
+        break;
     }
   }
 
@@ -1100,6 +1118,7 @@ static nk_error_t lex(nk_parser_t* parser, token_t* out_token) {
             return NK_SUCCESS;
           }
 
+          // Back reference (e.g., `\1`, `\2`, ..., `\9`) or octal escape:
           case '1':
           case '2':
           case '3':
@@ -1128,6 +1147,7 @@ static nk_error_t lex(nk_parser_t* parser, token_t* out_token) {
           }
             FALLTHROUGH;
 
+          // Other single-character escape sequences (e.g., `\n`, `\t`, `\r`, `\f`, `\v`, `\a`, `\e`, etc.):
           case '0':
           case 'x':
           case 'c':

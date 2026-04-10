@@ -392,6 +392,22 @@ module Parser
       assert_equal :literal, result[:type]
       assert_equal "\x01", result[:buf]
 
+      result = parse('\C-?', encoding: Naraku::Encoding::ASCII_8BIT)
+      assert_equal :literal, result[:type]
+      assert_equal "\x7F", result[:buf]
+
+      result = parse('\c?', encoding: Naraku::Encoding::ASCII_8BIT)
+      assert_equal :literal, result[:type]
+      assert_equal "\x7F", result[:buf]
+
+      result = parse('\C-\q', encoding: Naraku::Encoding::ASCII_8BIT)
+      assert_equal :literal, result[:type]
+      assert_equal "\x11", result[:buf]
+
+      result = parse('\c\q', encoding: Naraku::Encoding::ASCII_8BIT)
+      assert_equal :literal, result[:type]
+      assert_equal "\x11", result[:buf]
+
       result = parse('\M-\C-a', encoding: Naraku::Encoding::ASCII_8BIT)
       assert_equal :literal, result[:type]
       assert_equal "\x81", result[:buf].bytes.map { |b| b.chr }.join
@@ -433,6 +449,10 @@ module Parser
       # Duplicate prefixes
       assert_raises(RuntimeError, '') { parse('\M-\M-a') }
       assert_raises(RuntimeError, '') { parse('\C-\C-a') }
+      # Invalid control/meta character
+      assert_raises(RuntimeError, '') { parse('\C-あ') }
+      assert_raises(RuntimeError, '') { parse('\cあ') }
+      assert_raises(RuntimeError, '') { parse('\M-あ') }
       # Incomplete multibyte sequence (only first byte of 'あ')
       assert_raises(RuntimeError, '') { parse('\xe3') }
       assert_raises(RuntimeError, '') { parse('\xe3\x81') }
