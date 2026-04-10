@@ -696,6 +696,12 @@ static nk_error_t parse_concat(nk_parser_t* parser, token_t* tok, nk_node_t** ou
     }
   }
 
+  if (concat_children_len == 1) {
+    *out_node_ptr = concat_children[0];
+    free(concat_children);
+    return NK_SUCCESS;
+  }
+
   nk_node_t** resized_concat_children = (nk_node_t**)realloc(concat_children, sizeof(nk_node_t*) * concat_children_len);
   if (resized_concat_children == NULL) {
     nodes_free(concat_children, concat_children_len);

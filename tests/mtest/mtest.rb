@@ -210,6 +210,11 @@ module Mtest
   end
 
   module Assertions
+    def skip(message = nil)
+      message ||= "Skipped"
+      raise Skip, message
+    end
+
     def assert(test, message = nil)
       @num_assertions += 1
       unless test
@@ -480,6 +485,7 @@ module Mtest
 
       @num_tests = 0
       @num_assertions = 0
+      @num_skips = 0
       @start_time = nil
       @reports = []
     end
@@ -507,6 +513,7 @@ module Mtest
         @reports << result
       when 'S'
         @reports << result if report_skips?
+        @num_skips += 1
       end
     end
 
@@ -541,8 +548,7 @@ module Mtest
       @io.puts "Finished in #{total_time.round(2)} seconds"
       num_fails = @reports.count { |r| r.result_code == 'F' }
       num_errors = @reports.count { |r| r.result_code == 'E' }
-      num_skips = @reports.count { |r| r.result_code == 'S' }
-      @io.puts "#{@num_tests} tests, #{@num_assertions} assertions, #{num_fails} failures, #{num_errors} errors, #{num_skips} skips"
+      @io.puts "#{@num_tests} tests, #{@num_assertions} assertions, #{num_fails} failures, #{num_errors} errors, #{@num_skips} skips"
     end
   end
 
