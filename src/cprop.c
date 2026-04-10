@@ -10,8 +10,12 @@
 
 #include <stdio.h>
 
-nk_error_t nk_name_to_cprop(const nk_encoding_t* enc, const uint8_t* name_bytes, const uint8_t* name_bytes_end,
-                            nk_cprop_t* out_cprop) {
+nk_error_t nk_name_to_cprop(
+  const nk_encoding_t* enc,
+  const uint8_t* name_bytes,
+  const uint8_t* name_bytes_end,
+  nk_cprop_t* out_cprop
+) {
   uint8_t ascii_bytes[CPROP_NAME_MAX_BYTES];
   size_t ascii_bytes_len = 0;
 

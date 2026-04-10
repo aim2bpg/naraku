@@ -6,8 +6,12 @@
 
 #define CACHE_CHUNK_SIZE 64
 
-void nk_enc_adjust_mbc_head_context_init(nk_adjust_mbc_head_context_t* context, const uint8_t* bytes_begin,
-                                         const uint8_t* bytes_end, bool use_cache) {
+void nk_enc_adjust_mbc_head_context_init(
+  nk_adjust_mbc_head_context_t* context,
+  const uint8_t* bytes_begin,
+  const uint8_t* bytes_end,
+  bool use_cache
+) {
   context->bytes_begin = bytes_begin;
   context->bytes_end = bytes_end;
 
@@ -27,11 +31,14 @@ void nk_enc_adjust_mbc_head_context_free(nk_adjust_mbc_head_context_t* context) 
   context->head_bits_capacity = 0;
 }
 
-nk_error_t adjust_mbc_head_context_cache_ensure(nk_adjust_mbc_head_context_t* context, size_t target_offset_start,
-                                                size_t target_offset_end  // exclusive bound
+nk_error_t adjust_mbc_head_context_cache_ensure(
+  nk_adjust_mbc_head_context_t* context,
+  size_t target_offset_start,
+  size_t target_offset_end  // exclusive bound
 ) {
-  if (context->cache_start_offset == NK_DONT_USE_CACHE_FOR_ADJUST_MBC_HEAD ||
-      target_offset_start >= target_offset_end) {
+  if (
+    context->cache_start_offset == NK_DONT_USE_CACHE_FOR_ADJUST_MBC_HEAD || target_offset_start >= target_offset_end
+  ) {
     return 0;
   }
 

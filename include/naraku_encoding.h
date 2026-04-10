@@ -123,8 +123,12 @@ typedef struct {
 /**
  * Callback function type for `nk_enc_iterate_case_fold`.
  */
-typedef nk_error_t (*nk_case_fold_callback_t)(uint32_t unfolded_code, const uint32_t* folded_codes,
-                                              size_t folded_codes_len, void* user_data);
+typedef nk_error_t (*nk_case_fold_callback_t)(
+  uint32_t unfolded_code,
+  const uint32_t* folded_codes,
+  size_t folded_codes_len,
+  void* user_data
+);
 
 /**
  * Type representing a character property.
@@ -207,8 +211,11 @@ struct nk_encoding {
    * - `NK_ERR_TOO_LARGE_CODE_POINT` if the code point is too large to be encoded
    *   in the encoding (e.g., above U+10FFFF for UTF-8).
    */
-  nk_error_t (*encode_mbc)(const nk_encoding_t* enc, uint32_t code, size_t* out_width,
-                           uint8_t* out_bytes  // nullable
+  nk_error_t (*encode_mbc)(
+    const nk_encoding_t* enc,
+    uint32_t code,
+    size_t* out_width,
+    uint8_t* out_bytes  // nullable
   );
 
   /**
@@ -245,8 +252,11 @@ struct nk_encoding {
    * called because such encoding can adjust the head without scanning.
    * Therefore, in such case, `enc->adjust_mbc_head` can be `NULL`.
    */
-  nk_error_t (*adjust_mbc_head)(const nk_encoding_t* enc, const uint8_t** bytes_to_adjust,
-                                nk_adjust_mbc_head_context_t* context);
+  nk_error_t (*adjust_mbc_head)(
+    const nk_encoding_t* enc,
+    const uint8_t** bytes_to_adjust,
+    nk_adjust_mbc_head_context_t* context
+  );
 
   /**
    * Function pointer to check if a string is self-synchronizing.
@@ -332,8 +342,13 @@ struct nk_encoding {
    * Note that `NK_FOLD_ASCII_ONLY` should not be handled by this function because
    * it is handled by the wrapper function `nk_enc_expand_case_unfold`.
    */
-  size_t (*expand_case_unfold)(const nk_encoding_t* enc, nk_fold_flag_t flags, const uint32_t* folded_codes,
-                               size_t folded_codes_len, nk_unfold_item_t* out_unfold_items);
+  size_t (*expand_case_unfold)(
+    const nk_encoding_t* enc,
+    nk_fold_flag_t flags,
+    const uint32_t* folded_codes,
+    size_t folded_codes_len,
+    nk_unfold_item_t* out_unfold_items
+  );
 
   /**
    * Function pointer to iterate over all case-folded code point sequences for
@@ -346,8 +361,12 @@ struct nk_encoding {
    * return that value. Otherwise, it should return `NK_SUCCESS` after iterating
    * over all case-folded code point sequences.
    */
-  nk_error_t (*iterate_case_fold)(const nk_encoding_t* enc, nk_fold_flag_t flags, nk_case_fold_callback_t callback,
-                                  void* user_data);
+  nk_error_t (*iterate_case_fold)(
+    const nk_encoding_t* enc,
+    nk_fold_flag_t flags,
+    nk_case_fold_callback_t callback,
+    void* user_data
+  );
 
   // ==========================================================================
   //
@@ -387,9 +406,12 @@ struct nk_encoding {
    * - `NK_ERR_UNSUPPORTED_CHAR_PROPERTY` if the character property is not supported
    *   by the encoding.
    */
-  nk_error_t (*get_cprop_code_range)(const nk_encoding_t* enc, nk_cprop_t cprop,
-                                     nk_code_range_delegation_t* out_delegation,
-                                     nk_static_code_range_t* out_code_range);
+  nk_error_t (*get_cprop_code_range)(
+    const nk_encoding_t* enc,
+    nk_cprop_t cprop,
+    nk_code_range_delegation_t* out_delegation,
+    nk_static_code_range_t* out_code_range
+  );
 };
 
 // ==========================================================================
@@ -398,8 +420,12 @@ struct nk_encoding {
 //
 // ==========================================================================
 
-void nk_enc_adjust_mbc_head_context_init(nk_adjust_mbc_head_context_t* context, const uint8_t* bytes_begin,
-                                         const uint8_t* bytes_end, bool use_cache);
+void nk_enc_adjust_mbc_head_context_init(
+  nk_adjust_mbc_head_context_t* context,
+  const uint8_t* bytes_begin,
+  const uint8_t* bytes_end,
+  bool use_cache
+);
 
 void nk_enc_adjust_mbc_head_context_free(nk_adjust_mbc_head_context_t* context);
 
@@ -410,29 +436,44 @@ void nk_enc_adjust_mbc_head_context_free(nk_adjust_mbc_head_context_t* context);
 // ==========================================================================
 
 NARAKU_EXPORTED_FUNCTION
-size_t nk_enc_ascii_get_case_fold(const nk_encoding_t* enc, nk_fold_flag_t flags, uint32_t code,
-                                  uint32_t* out_folded_codes);
+size_t
+nk_enc_ascii_get_case_fold(const nk_encoding_t* enc, nk_fold_flag_t flags, uint32_t code, uint32_t* out_folded_codes);
 
 NARAKU_EXPORTED_FUNCTION
-size_t nk_enc_ascii_expand_case_unfold(const nk_encoding_t* enc, nk_fold_flag_t flags, const uint32_t* folded_codes,
-                                       size_t folded_codes_len, nk_unfold_item_t* out_unfold_items);
+size_t nk_enc_ascii_expand_case_unfold(
+  const nk_encoding_t* enc,
+  nk_fold_flag_t flags,
+  const uint32_t* folded_codes,
+  size_t folded_codes_len,
+  nk_unfold_item_t* out_unfold_items
+);
 
 NARAKU_EXPORTED_FUNCTION
-nk_error_t nk_enc_ascii_iterate_case_fold(const nk_encoding_t* enc, nk_fold_flag_t flags,
-                                          nk_case_fold_callback_t callback, void* user_data);
+nk_error_t nk_enc_ascii_iterate_case_fold(
+  const nk_encoding_t* enc,
+  nk_fold_flag_t flags,
+  nk_case_fold_callback_t callback,
+  void* user_data
+);
 
 NARAKU_EXPORTED_FUNCTION
 bool nk_enc_ascii_code_is_cprop(const nk_encoding_t* enc, uint32_t code, uint32_t cprop);
 
 NARAKU_EXPORTED_FUNCTION
-nk_error_t nk_enc_ascii_get_cprop_code_range(const nk_encoding_t* enc, uint32_t cprop,
-                                             nk_code_range_delegation_t* out_delegation,
-                                             nk_static_code_range_t* out_code_range);
+nk_error_t nk_enc_ascii_get_cprop_code_range(
+  const nk_encoding_t* enc,
+  uint32_t cprop,
+  nk_code_range_delegation_t* out_delegation,
+  nk_static_code_range_t* out_code_range
+);
 
 NARAKU_EXPORTED_FUNCTION
-nk_error_t nk_enc_ascii_8bit_get_cprop_code_range(const nk_encoding_t* enc, uint32_t cprop,
-                                                  nk_code_range_delegation_t* out_delegation,
-                                                  nk_static_code_range_t* out_code_range);
+nk_error_t nk_enc_ascii_8bit_get_cprop_code_range(
+  const nk_encoding_t* enc,
+  uint32_t cprop,
+  nk_code_range_delegation_t* out_delegation,
+  nk_static_code_range_t* out_code_range
+);
 
 NARAKU_EXPORTED_FUNCTION
 int8_t nk_enc_sb_scan_mbc_width(const nk_encoding_t* enc, const uint8_t* bytes, const uint8_t* bytes_end);
@@ -450,24 +491,36 @@ uint32_t nk_enc_sb_decode_mbc(const nk_encoding_t* enc, const uint8_t* bytes, co
 // ==========================================================================
 
 NARAKU_EXPORTED_FUNCTION
-size_t nk_enc_unicode_get_case_fold(const nk_encoding_t* enc, nk_fold_flag_t flags, uint32_t code,
-                                    uint32_t* out_folded_codes);
+size_t
+nk_enc_unicode_get_case_fold(const nk_encoding_t* enc, nk_fold_flag_t flags, uint32_t code, uint32_t* out_folded_codes);
 
 NARAKU_EXPORTED_FUNCTION
-size_t nk_enc_unicode_expand_case_unfold(const nk_encoding_t* enc, nk_fold_flag_t flags, const uint32_t* folded_codes,
-                                         size_t folded_codes_len, nk_unfold_item_t* out_unfold_items);
+size_t nk_enc_unicode_expand_case_unfold(
+  const nk_encoding_t* enc,
+  nk_fold_flag_t flags,
+  const uint32_t* folded_codes,
+  size_t folded_codes_len,
+  nk_unfold_item_t* out_unfold_items
+);
 
 NARAKU_EXPORTED_FUNCTION
-nk_error_t nk_enc_unicode_iterate_case_fold(const nk_encoding_t* enc, nk_fold_flag_t flags,
-                                            nk_case_fold_callback_t callback, void* user_data);
+nk_error_t nk_enc_unicode_iterate_case_fold(
+  const nk_encoding_t* enc,
+  nk_fold_flag_t flags,
+  nk_case_fold_callback_t callback,
+  void* user_data
+);
 
 NARAKU_EXPORTED_FUNCTION
 bool nk_enc_unicode_code_is_cprop(const nk_encoding_t* enc, uint32_t code, uint32_t cprop);
 
 NARAKU_EXPORTED_FUNCTION
-nk_error_t nk_enc_unicode_get_cprop_code_range(const nk_encoding_t* enc, uint32_t cprop,
-                                               nk_code_range_delegation_t* out_delegation,
-                                               nk_static_code_range_t* out_code_range);
+nk_error_t nk_enc_unicode_get_cprop_code_range(
+  const nk_encoding_t* enc,
+  uint32_t cprop,
+  nk_code_range_delegation_t* out_delegation,
+  nk_static_code_range_t* out_code_range
+);
 
 // ==========================================================================
 //
@@ -489,8 +542,12 @@ nk_error_t nk_enc_unicode_get_cprop_code_range(const nk_encoding_t* enc, uint32_
  * escapes.
  */
 NARAKU_EXPORTED_FUNCTION
-nk_error_t nk_name_to_cprop(const nk_encoding_t* enc, const uint8_t* name_bytes, const uint8_t* name_bytes_end,
-                            nk_cprop_t* out_cprop);
+nk_error_t nk_name_to_cprop(
+  const nk_encoding_t* enc,
+  const uint8_t* name_bytes,
+  const uint8_t* name_bytes_end,
+  nk_cprop_t* out_cprop
+);
 
 // ==========================================================================
 //
@@ -506,8 +563,8 @@ static inline int8_t nk_enc_scan_mbc_width(const nk_encoding_t* enc, const uint8
   return enc->scan_mbc_width(enc, bytes, bytes_end);
 }
 
-static inline nk_error_t nk_enc_encode_mbc(const nk_encoding_t* enc, uint32_t code, size_t* out_width,
-                                           uint8_t* out_bytes) {
+static inline nk_error_t
+nk_enc_encode_mbc(const nk_encoding_t* enc, uint32_t code, size_t* out_width, uint8_t* out_bytes) {
   if (code < enc->single_byte_threshold) {
     *out_width = 1;
     if (out_bytes != NULL) {
@@ -527,8 +584,11 @@ static inline uint32_t nk_enc_decode_mbc(const nk_encoding_t* enc, const uint8_t
   return enc->decode_mbc(enc, bytes, bytes_end);
 }
 
-static inline nk_error_t nk_enc_adjust_mbc_head(const nk_encoding_t* enc, const uint8_t** bytes_to_adjust,
-                                                nk_adjust_mbc_head_context_t* context) {
+static inline nk_error_t nk_enc_adjust_mbc_head(
+  const nk_encoding_t* enc,
+  const uint8_t** bytes_to_adjust,
+  nk_adjust_mbc_head_context_t* context
+) {
   if (enc->min_mbc_width == enc->max_mbc_width) {
     if (enc->min_mbc_width == 1) {
       return 0;
@@ -546,15 +606,18 @@ static inline nk_error_t nk_enc_adjust_mbc_head(const nk_encoding_t* enc, const 
     return 0;
   }
 
-  if ((enc->flags & NK_ENC_FLAG_SELF_SYNC) == 0 && context->head_bits != NULL &&
-      context->cache_start_offset != NK_DONT_USE_CACHE_FOR_ADJUST_MBC_HEAD) {
+  if (
+    (enc->flags & NK_ENC_FLAG_SELF_SYNC) == 0 && context->head_bits != NULL &&
+    context->cache_start_offset != NK_DONT_USE_CACHE_FOR_ADJUST_MBC_HEAD
+  ) {
     size_t offset = (size_t)(*bytes_to_adjust - context->bytes_begin);
     if (context->cache_start_offset <= offset) {
       for (size_t i = 0; i < enc->max_mbc_width && offset - i >= context->cache_start_offset; i++) {
         size_t bit_index = (offset - i) / 64;
         size_t bit_offset = (offset - i) % 64;
-        if (bit_index < context->head_bits_capacity &&
-            (context->head_bits[bit_index] & ((uint64_t)1 << bit_offset)) != 0) {
+        if (
+          bit_index < context->head_bits_capacity && (context->head_bits[bit_index] & ((uint64_t)1 << bit_offset)) != 0
+        ) {
           const uint8_t* candidate = *bytes_to_adjust - i;
           int8_t width = nk_enc_scan_mbc_width(enc, candidate, context->bytes_end);
           if (width > 0 && candidate + width > *bytes_to_adjust) {
@@ -569,8 +632,8 @@ static inline nk_error_t nk_enc_adjust_mbc_head(const nk_encoding_t* enc, const 
   return enc->adjust_mbc_head(enc, bytes_to_adjust, context);
 }
 
-static inline bool nk_enc_is_self_sync_string(const nk_encoding_t* enc, const uint8_t* bytes,
-                                              const uint8_t* bytes_end) {
+static inline bool
+nk_enc_is_self_sync_string(const nk_encoding_t* enc, const uint8_t* bytes, const uint8_t* bytes_end) {
   if ((enc->flags & NK_ENC_FLAG_SELF_SYNC) != 0) {
     return true;
   }
@@ -578,8 +641,8 @@ static inline bool nk_enc_is_self_sync_string(const nk_encoding_t* enc, const ui
   return enc->is_self_sync_string(enc, bytes, bytes_end);
 }
 
-static inline size_t nk_enc_get_case_fold(const nk_encoding_t* enc, nk_fold_flag_t flags, uint32_t code,
-                                          uint32_t* out_folded_codes) {
+static inline size_t
+nk_enc_get_case_fold(const nk_encoding_t* enc, nk_fold_flag_t flags, uint32_t code, uint32_t* out_folded_codes) {
   if ((flags & NK_FOLD_ASCII_ONLY) != 0) {
     return nk_enc_ascii_get_case_fold(enc, flags, code, out_folded_codes);
   }
@@ -587,9 +650,13 @@ static inline size_t nk_enc_get_case_fold(const nk_encoding_t* enc, nk_fold_flag
   return enc->get_case_fold(enc, flags, code, out_folded_codes);
 }
 
-static inline size_t nk_enc_expand_case_unfold(const nk_encoding_t* enc, nk_fold_flag_t flags,
-                                               const uint32_t* folded_codes, size_t folded_codes_len,
-                                               nk_unfold_item_t* out_unfold_items) {
+static inline size_t nk_enc_expand_case_unfold(
+  const nk_encoding_t* enc,
+  nk_fold_flag_t flags,
+  const uint32_t* folded_codes,
+  size_t folded_codes_len,
+  nk_unfold_item_t* out_unfold_items
+) {
   if ((flags & NK_FOLD_ASCII_ONLY) != 0) {
     return nk_enc_ascii_expand_case_unfold(enc, flags, folded_codes, folded_codes_len, out_unfold_items);
   }
@@ -597,8 +664,12 @@ static inline size_t nk_enc_expand_case_unfold(const nk_encoding_t* enc, nk_fold
   return enc->expand_case_unfold(enc, flags, folded_codes, folded_codes_len, out_unfold_items);
 }
 
-static inline nk_error_t nk_enc_iterate_case_fold(const nk_encoding_t* enc, nk_fold_flag_t flags,
-                                                  nk_case_fold_callback_t callback, void* user_data) {
+static inline nk_error_t nk_enc_iterate_case_fold(
+  const nk_encoding_t* enc,
+  nk_fold_flag_t flags,
+  nk_case_fold_callback_t callback,
+  void* user_data
+) {
   if ((flags & NK_FOLD_ASCII_ONLY) != 0) {
     return nk_enc_ascii_iterate_case_fold(enc, flags, callback, user_data);
   }
@@ -614,9 +685,12 @@ static inline bool nk_enc_code_is_cprop(const nk_encoding_t* enc, uint32_t code,
   return enc->code_is_cprop(enc, code, cprop);
 }
 
-static inline nk_error_t nk_enc_get_cprop_code_range(const nk_encoding_t* enc, nk_cprop_t cprop,
-                                                     nk_code_range_delegation_t* out_delegation,
-                                                     nk_static_code_range_t* out_code_range) {
+static inline nk_error_t nk_enc_get_cprop_code_range(
+  const nk_encoding_t* enc,
+  nk_cprop_t cprop,
+  nk_code_range_delegation_t* out_delegation,
+  nk_static_code_range_t* out_code_range
+) {
   if (cprop == NK_CPROP_ASCII) {
     *out_delegation = NK_ENC_7BIT_DELEGATE;
     return NK_SUCCESS;

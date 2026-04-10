@@ -15,8 +15,11 @@
 //
 // ==========================================================================
 
-nk_error_t adjust_mbc_head_context_cache_ensure(nk_adjust_mbc_head_context_t* context, size_t target_offset,
-                                                size_t target_offset_end);
+nk_error_t adjust_mbc_head_context_cache_ensure(
+  nk_adjust_mbc_head_context_t* context,
+  size_t target_offset,
+  size_t target_offset_end
+);
 
 static inline bool adjust_mbc_head_context_cache_check(nk_adjust_mbc_head_context_t* context, size_t target_offset) {
   if (context->head_bits == NULL || context->cache_start_offset == NK_DONT_USE_CACHE_FOR_ADJUST_MBC_HEAD) {
@@ -48,10 +51,15 @@ static inline void adjust_mbc_head_context_cache_set(nk_adjust_mbc_head_context_
   }
 }
 
-static inline void adjust_mbc_head_context_cache_fill_step2(nk_adjust_mbc_head_context_t* context, size_t target_offset,
-                                                            size_t target_offset_end) {
-  if (context->head_bits == NULL || context->cache_start_offset == NK_DONT_USE_CACHE_FOR_ADJUST_MBC_HEAD ||
-      target_offset >= target_offset_end) {
+static inline void adjust_mbc_head_context_cache_fill_step2(
+  nk_adjust_mbc_head_context_t* context,
+  size_t target_offset,
+  size_t target_offset_end
+) {
+  if (
+    context->head_bits == NULL || context->cache_start_offset == NK_DONT_USE_CACHE_FOR_ADJUST_MBC_HEAD ||
+    target_offset >= target_offset_end
+  ) {
     return;
   }
 

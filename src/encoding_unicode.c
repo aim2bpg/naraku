@@ -131,8 +131,12 @@ uint32_t unicode_unfold3_lookup(uint32_t code1, uint32_t code2, uint32_t code3) 
   return entry->index;
 }
 
-size_t nk_enc_unicode_get_case_fold(const nk_encoding_t* enc ARG_UNUSED, nk_fold_flag_t flags, uint32_t code,
-                                    uint32_t* out_folded_codes) {
+size_t nk_enc_unicode_get_case_fold(
+  const nk_encoding_t* enc ARG_UNUSED,
+  nk_fold_flag_t flags,
+  uint32_t code,
+  uint32_t* out_folded_codes
+) {
   struct unicode_fold_item* item = unicode_fold_item_lookup(code);
   if (item == NULL) {
     out_folded_codes[0] = code;
@@ -181,9 +185,13 @@ size_t nk_enc_unicode_get_case_fold(const nk_encoding_t* enc ARG_UNUSED, nk_fold
   return 1;
 }
 
-size_t nk_enc_unicode_expand_case_unfold(const nk_encoding_t* enc ARG_UNUSED, nk_fold_flag_t flags,
-                                         const uint32_t* folded_codes, size_t folded_codes_len,
-                                         nk_unfold_item_t* out_unfold_items) {
+size_t nk_enc_unicode_expand_case_unfold(
+  const nk_encoding_t* enc ARG_UNUSED,
+  nk_fold_flag_t flags,
+  const uint32_t* folded_codes,
+  size_t folded_codes_len,
+  nk_unfold_item_t* out_unfold_items
+) {
   uint32_t type_flags = 0;
   if ((flags & NK_FOLD_FULL) != 0) {
     type_flags |= FOLD_FULL;
@@ -290,8 +298,12 @@ size_t nk_enc_unicode_expand_case_unfold(const nk_encoding_t* enc ARG_UNUSED, nk
   return unfold_items_len;
 }
 
-nk_error_t nk_enc_unicode_iterate_case_fold(const nk_encoding_t* enc ARG_UNUSED, nk_fold_flag_t flags,
-                                            nk_case_fold_callback_t callback, void* user_data) {
+nk_error_t nk_enc_unicode_iterate_case_fold(
+  const nk_encoding_t* enc ARG_UNUSED,
+  nk_fold_flag_t flags,
+  nk_case_fold_callback_t callback,
+  void* user_data
+) {
   uint32_t type_flags = 0;
   if ((flags & NK_FOLD_FULL) != 0) {
     type_flags |= FOLD_FULL;
@@ -362,9 +374,12 @@ bool nk_enc_unicode_code_is_cprop(const nk_encoding_t* enc ARG_UNUSED, uint32_t 
   return code_in_code_range(code, len, intervals);
 }
 
-nk_error_t nk_enc_unicode_get_cprop_code_range(const nk_encoding_t* enc ARG_UNUSED, nk_cprop_t cprop,
-                                               nk_code_range_delegation_t* out_delegation,
-                                               nk_static_code_range_t* out_code_range) {
+nk_error_t nk_enc_unicode_get_cprop_code_range(
+  const nk_encoding_t* enc ARG_UNUSED,
+  nk_cprop_t cprop,
+  nk_code_range_delegation_t* out_delegation,
+  nk_static_code_range_t* out_code_range
+) {
   if (cprop > NK_MAX_CPROP) {
     return NK_ERR_UNSUPPORTED_CHAR_PROPERTY;
   }

@@ -11,8 +11,13 @@
 #define ARG_UNUSED
 #endif
 
-nk_error_t nk_parser_init(const nk_encoding_t* enc, const uint8_t* pattern_bytes, const uint8_t* pattern_bytes_end,
-                          nk_parser_options_t options, nk_parser_t* out_parser) {
+nk_error_t nk_parser_init(
+  const nk_encoding_t* enc,
+  const uint8_t* pattern_bytes,
+  const uint8_t* pattern_bytes_end,
+  nk_parser_options_t options,
+  nk_parser_t* out_parser
+) {
   out_parser->enc = enc;
   out_parser->pattern_bytes_begin = pattern_bytes;
   out_parser->pattern_bytes_end = pattern_bytes_end;
@@ -24,7 +29,7 @@ nk_error_t nk_parser_init(const nk_encoding_t* enc, const uint8_t* pattern_bytes
   out_parser->is_ignore_case = options.is_ignore_case;
   out_parser->dot_allows_newline = options.dot_allows_newline;
   out_parser->char_class_is_strict = options.char_class_is_strict;
-  out_parser->char_prop_is_ascii_only = options.char_prop_is_ascii_only;
+  out_parser->char_type_is_ascii_only = options.char_type_is_ascii_only;
   out_parser->posix_char_class_is_ascii_only = options.posix_char_class_is_ascii_only;
   out_parser->fold_flags = options.fold_flags;
 
@@ -64,8 +69,8 @@ static inline nk_error_t next_code(nk_parser_t* parser, int8_t* out_width, uint3
   return NK_SUCCESS;
 }
 
-static nk_error_t lex_decimal_number(nk_parser_t* parser, uint32_t* out_value, uint32_t max_value,
-                                     nk_error_t overflow_error) {
+static nk_error_t
+lex_decimal_number(nk_parser_t* parser, uint32_t* out_value, uint32_t max_value, nk_error_t overflow_error) {
   *out_value = 0;
 
   while (parser->pattern_bytes < parser->pattern_bytes_end) {
@@ -93,8 +98,13 @@ static nk_error_t lex_decimal_number(nk_parser_t* parser, uint32_t* out_value, u
 
 #define RANGE_QUANTIFIER_MAX_REPETITION 100000
 
-static nk_error_t lex_range_quantifier(nk_parser_t* parser, uint32_t* out_min, uint32_t* out_max,
-                                       bool* out_is_incomplete, bool* out_allows_reluctant) {
+static nk_error_t lex_range_quantifier(
+  nk_parser_t* parser,
+  uint32_t* out_min,
+  uint32_t* out_max,
+  bool* out_is_incomplete,
+  bool* out_allows_reluctant
+) {
   const uint8_t* pattern_bytes_backup = parser->pattern_bytes;
 
   *out_min = *out_max = 0;
@@ -114,7 +124,7 @@ static nk_error_t lex_range_quantifier(nk_parser_t* parser, uint32_t* out_min, u
   bool has_explicit_min = false;
   if ('0' <= code && code <= '9') {
     nk_error_t err =
-        lex_decimal_number(parser, out_min, RANGE_QUANTIFIER_MAX_REPETITION, NK_ERR_TOO_BIG_NUMBER_IN_QUANTIFIER);
+      lex_decimal_number(parser, out_min, RANGE_QUANTIFIER_MAX_REPETITION, NK_ERR_TOO_BIG_NUMBER_IN_QUANTIFIER);
     if (err != NK_SUCCESS) {
       return err;
     }
@@ -151,7 +161,7 @@ static nk_error_t lex_range_quantifier(nk_parser_t* parser, uint32_t* out_min, u
 
     if ('0' <= code && code <= '9') {
       nk_error_t err =
-          lex_decimal_number(parser, out_max, RANGE_QUANTIFIER_MAX_REPETITION, NK_ERR_TOO_BIG_NUMBER_IN_QUANTIFIER);
+        lex_decimal_number(parser, out_max, RANGE_QUANTIFIER_MAX_REPETITION, NK_ERR_TOO_BIG_NUMBER_IN_QUANTIFIER);
       if (err != NK_SUCCESS) {
         return err;
       }
@@ -247,6 +257,7 @@ static nk_error_t lex(nk_parser_t* parser, token_t* out_token) {
         // These whitespace characters are ignored in extended mode.
         if (parser->is_extended_mode) {
           retry = true;
+          continue;
         }
         break;
 
@@ -266,12 +277,17 @@ static nk_error_t lex(nk_parser_t* parser, token_t* out_token) {
             }
           }
           retry = true;
+          continue;
         }
         break;
 
-      case '[': out_token->type = TK_CHAR_CLASS_OPEN; return NK_SUCCESS;
+      case '[':
+        out_token->type = TK_CHAR_CLASS_OPEN;
+        return NK_SUCCESS;
 
-      case '.': out_token->type = TK_DOT; return NK_SUCCESS;
+      case '.':
+        out_token->type = TK_DOT;
+        return NK_SUCCESS;
 
       case '^':
         out_token->type = TK_ASSERTION;
@@ -283,9 +299,12 @@ static nk_error_t lex(nk_parser_t* parser, token_t* out_token) {
         out_token->data.assertion.type = NK_ASSERTION_TYPE_END_OF_LINE;
         return NK_SUCCESS;
 
-      case '|': out_token->type = TK_ALT; return NK_SUCCESS;
+      case '|':
+        out_token->type = TK_ALT;
+        return NK_SUCCESS;
 
-      case '*': {
+      case '*':
+      {
         out_token->type = TK_QUANTIFIER;
         out_token->data.quantifier.min = 0;
         out_token->data.quantifier.max = UINT32_MAX;
@@ -296,18 +315,20 @@ static nk_error_t lex(nk_parser_t* parser, token_t* out_token) {
         return NK_SUCCESS;
       }
 
-      case '+': {
+      case '+':
+      {
         out_token->type = TK_QUANTIFIER;
         out_token->data.quantifier.min = 1;
         out_token->data.quantifier.max = UINT32_MAX;
-        nk_error_t err = lex_quantifier_type(parser, &out_token->data.quantifier.type, false);
+        nk_error_t err = lex_quantifier_type(parser, &out_token->data.quantifier.type, true);
         if (err != NK_SUCCESS) {
           return err;
         }
         return NK_SUCCESS;
       }
 
-      case '?': {
+      case '?':
+      {
         out_token->type = TK_QUANTIFIER;
         out_token->data.quantifier.min = 0;
         out_token->data.quantifier.max = 1;
@@ -318,13 +339,19 @@ static nk_error_t lex(nk_parser_t* parser, token_t* out_token) {
         return NK_SUCCESS;
       }
 
-      case '{': {
+      case '{':
+      {
         out_token->type = TK_QUANTIFIER;
 
         bool is_incomplete;
         bool allows_reluctant;
-        nk_error_t err = lex_range_quantifier(parser, &out_token->data.quantifier.min, &out_token->data.quantifier.max,
-                                              &is_incomplete, &allows_reluctant);
+        nk_error_t err = lex_range_quantifier(
+          parser,
+          &out_token->data.quantifier.min,
+          &out_token->data.quantifier.max,
+          &is_incomplete,
+          &allows_reluctant
+        );
         if (err != NK_SUCCESS) {
           return err;
         }
@@ -339,23 +366,205 @@ static nk_error_t lex(nk_parser_t* parser, token_t* out_token) {
         }
         return NK_SUCCESS;
       }
+
+      case '\\':
+      {
+        if (parser->pattern_bytes >= parser->pattern_bytes_end) {
+          return NK_ERR_TOO_SHORT_ESCAPE_SEQUENCE;
+        }
+
+        nk_error_t err = next_code(parser, &width, &code);
+        if (err != NK_SUCCESS) {
+          return err;
+        }
+
+        switch (code) {
+          // Character types (e.g., `\d`, `\w`, `\s`, `\h`):
+          case 'd':
+            out_token->type = TK_CHAR_TYPE;
+            out_token->data.char_type.type = NK_CHAR_TYPE_DIGIT;
+            out_token->data.char_type.is_positive = true;
+            return NK_SUCCESS;
+          case 'D':
+            out_token->type = TK_CHAR_TYPE;
+            out_token->data.char_type.type = NK_CHAR_TYPE_DIGIT;
+            out_token->data.char_type.is_positive = false;
+            return NK_SUCCESS;
+          case 'w':
+            out_token->type = TK_CHAR_TYPE;
+            out_token->data.char_type.type = NK_CHAR_TYPE_WORD;
+            out_token->data.char_type.is_positive = true;
+            return NK_SUCCESS;
+          case 'W':
+            out_token->type = TK_CHAR_TYPE;
+            out_token->data.char_type.type = NK_CHAR_TYPE_WORD;
+            out_token->data.char_type.is_positive = false;
+            return NK_SUCCESS;
+          case 's':
+            out_token->type = TK_CHAR_TYPE;
+            out_token->data.char_type.type = NK_CHAR_TYPE_SPACE;
+            out_token->data.char_type.is_positive = true;
+            return NK_SUCCESS;
+          case 'S':
+            out_token->type = TK_CHAR_TYPE;
+            out_token->data.char_type.type = NK_CHAR_TYPE_SPACE;
+            out_token->data.char_type.is_positive = false;
+            return NK_SUCCESS;
+          case 'h':
+            out_token->type = TK_CHAR_TYPE;
+            out_token->data.char_type.type = NK_CHAR_TYPE_HEX_DIGIT;
+            out_token->data.char_type.is_positive = true;
+            return NK_SUCCESS;
+          case 'H':
+            out_token->type = TK_CHAR_TYPE;
+            out_token->data.char_type.type = NK_CHAR_TYPE_HEX_DIGIT;
+            out_token->data.char_type.is_positive = false;
+            return NK_SUCCESS;
+
+          // Grahpeme cluster/keep operator/newline:
+          case 'X':
+            out_token->type = TK_GRAPHEME_CLUSTER;
+            return NK_SUCCESS;
+          case 'K':
+            out_token->type = TK_KEEP;
+            return NK_SUCCESS;
+          case 'R':
+            out_token->type = TK_NEWLINE;
+            return NK_SUCCESS;
+
+          // Assertions:
+          case 'b':
+            out_token->type = TK_ASSERTION;
+            out_token->data.assertion.type = NK_ASSERTION_TYPE_WORD_BOUNDARY;
+            return NK_SUCCESS;
+          case 'B':
+            out_token->type = TK_ASSERTION;
+            out_token->data.assertion.type = NK_ASSERTION_TYPE_NON_WORD_BOUNDARY;
+            return NK_SUCCESS;
+          case 'A':
+            out_token->type = TK_ASSERTION;
+            out_token->data.assertion.type = NK_ASSERTION_TYPE_BEGIN_OF_STRING;
+            return NK_SUCCESS;
+          case 'z':
+            out_token->type = TK_ASSERTION;
+            out_token->data.assertion.type = NK_ASSERTION_TYPE_END_OF_STRING_STRICT;
+            return NK_SUCCESS;
+          case 'Z':
+            out_token->type = TK_ASSERTION;
+            out_token->data.assertion.type = NK_ASSERTION_TYPE_END_OF_STRING_LOOSE;
+            return NK_SUCCESS;
+          case 'G':
+            out_token->type = TK_ASSERTION;
+            out_token->data.assertion.type = NK_ASSERTION_TYPE_BEGIN_OF_MATCHING;
+            return NK_SUCCESS;
+
+          default:
+            out_token->type = TK_LITERAL;
+            out_token->data.literal.pattern_bytes = parser->pattern_bytes - width;
+            out_token->data.literal.pattern_bytes_end = parser->pattern_bytes;
+            return NK_SUCCESS;
+        }
+      }
     }
+
+    out_token->type = TK_LITERAL;
+    out_token->data.literal.pattern_bytes = parser->pattern_bytes - width;
+    out_token->data.literal.pattern_bytes_end = parser->pattern_bytes;
+
+    return NK_SUCCESS;
   }
 
-  return NK_ERR_INTERNAL_ERROR;
+  return NK_ERR_INTERNAL_ERROR; // unreachable
 }
+
+// ==========================================================================
+//
+// Parser implementation:
+//
+// ==========================================================================
 
 static nk_error_t parse_atom(nk_parser_t* parser, token_t* tok, nk_node_t** out_node_ptr) {
   switch (tok->type) {
-    case TK_DOT: {
+    case TK_LITERAL:
+    {
+      nk_node_t* literal_node = (nk_node_t*)malloc(sizeof(nk_node_t));
+      if (literal_node == NULL) {
+        return NK_ERR_MEMORY_ALLOCATION_FAILED;
+      }
+      literal_node->base.type = NK_NODE_TYPE_LITERAL;
+      literal_node->literal.buf = (nk_pbuf_t){
+        .type = NK_PBUF_VIEW,
+        .bytes = tok->data.literal.pattern_bytes,
+        .bytes_end = tok->data.literal.pattern_bytes_end
+      };
+      literal_node->literal.is_ignore_case = parser->is_ignore_case;
+      literal_node->literal.fold_flags = parser->fold_flags;
+      *out_node_ptr = literal_node;
+    } break;
+    case TK_DOT:
+    {
       nk_node_t* dot_node = (nk_node_t*)malloc(sizeof(nk_node_t));
       if (dot_node == NULL) {
         return NK_ERR_MEMORY_ALLOCATION_FAILED;
       }
       dot_node->base.type = NK_NODE_TYPE_DOT;
+      dot_node->dot.allows_newline = parser->dot_allows_newline;
       *out_node_ptr = dot_node;
     } break;
-    default: return NK_ERR_INTERNAL_ERROR;
+    case TK_ASSERTION:
+    {
+      nk_node_t* assertion_node = (nk_node_t*)malloc(sizeof(nk_node_t));
+      if (assertion_node == NULL) {
+        return NK_ERR_MEMORY_ALLOCATION_FAILED;
+      }
+      assertion_node->base.type = NK_NODE_TYPE_ASSERTION;
+      assertion_node->assertion.type = tok->data.assertion.type;
+      assertion_node->assertion.child = NULL;
+      *out_node_ptr = assertion_node;
+    } break;
+    case TK_CHAR_TYPE:
+    {
+      nk_node_t* char_type_node = (nk_node_t*)malloc(sizeof(nk_node_t));
+      if (char_type_node == NULL) {
+        return NK_ERR_MEMORY_ALLOCATION_FAILED;
+      }
+      char_type_node->base.type = NK_NODE_TYPE_CHAR_TYPE;
+      char_type_node->char_type.char_type = tok->data.char_type.type;
+      char_type_node->char_type.is_positive = tok->data.char_type.is_positive;
+      char_type_node->char_type.is_ascii_only = parser->char_type_is_ascii_only;
+      char_type_node->char_type.is_ignore_case = parser->is_ignore_case;
+      char_type_node->char_type.fold_flags = parser->fold_flags;
+      *out_node_ptr = char_type_node;
+    } break;
+    case TK_GRAPHEME_CLUSTER:
+    {
+      nk_node_t* gc_node = (nk_node_t*)malloc(sizeof(nk_node_t));
+      if (gc_node == NULL) {
+        return NK_ERR_MEMORY_ALLOCATION_FAILED;
+      }
+      gc_node->base.type = NK_NODE_TYPE_GRAPHEME_CLUSTER;
+      *out_node_ptr = gc_node;
+    } break;
+    case TK_KEEP:
+    {
+      nk_node_t* keep_node = (nk_node_t*)malloc(sizeof(nk_node_t));
+      if (keep_node == NULL) {
+        return NK_ERR_MEMORY_ALLOCATION_FAILED;
+      }
+      keep_node->base.type = NK_NODE_TYPE_KEEP;
+      *out_node_ptr = keep_node;
+    } break;
+    case TK_NEWLINE:
+    {
+      nk_node_t* newline_node = (nk_node_t*)malloc(sizeof(nk_node_t));
+      if (newline_node == NULL) {
+        return NK_ERR_MEMORY_ALLOCATION_FAILED;
+      }
+      newline_node->base.type = NK_NODE_TYPE_NEWLINE;
+      *out_node_ptr = newline_node;
+    } break;
+    default:
+      return NK_ERR_INTERNAL_ERROR;
   }
 
   nk_error_t err = lex(parser, tok);
@@ -432,6 +641,8 @@ static nk_error_t parse_concat(nk_parser_t* parser, token_t* tok, nk_node_t** ou
     return NK_ERR_MEMORY_ALLOCATION_FAILED;
   }
 
+  bool last_child_is_string = (*out_node_ptr)->base.type == NK_NODE_TYPE_LITERAL;
+
   size_t concat_children_len = 0;
   concat_children[concat_children_len++] = *out_node_ptr;
 
@@ -453,6 +664,31 @@ static nk_error_t parse_concat(nk_parser_t* parser, token_t* tok, nk_node_t** ou
       nodes_free(concat_children, concat_children_len - 1);
       *out_node_ptr = NULL;
       return err;
+    }
+
+    if (concat_children[concat_children_len - 1]->base.type == NK_NODE_TYPE_LITERAL) {
+      if (last_child_is_string) {
+        nk_node_t* last_literal_node = concat_children[concat_children_len - 2];
+        nk_node_t* new_literal_node = concat_children[concat_children_len - 1];
+
+        nk_pbuf_t new_buf;
+        nk_error_t err = pbuf_concat(&last_literal_node->literal.buf, &new_literal_node->literal.buf, &new_buf);
+        if (err != NK_SUCCESS) {
+          nodes_free(concat_children, concat_children_len);
+          *out_node_ptr = NULL;
+          return err;
+        }
+
+        nk_pbuf_free(&last_literal_node->literal.buf);
+        last_literal_node->literal.buf = new_buf;
+
+        nk_node_free(new_literal_node);
+        concat_children[--concat_children_len] = NULL;
+      }
+
+      last_child_is_string = true;
+    } else {
+      last_child_is_string = false;
     }
 
     if (tok->type == TK_ALT || tok->type == TK_PAREN_CLOSE || tok->type == TK_END) {

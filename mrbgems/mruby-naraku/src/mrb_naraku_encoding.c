@@ -28,7 +28,9 @@ static void mrb_naraku_encoding_adjust_mbc_head_context_free(mrb_state* mrb, voi
   mrb_free(mrb, (void*)context);
 }
 struct mrb_data_type mrb_naraku_encoding_adjust_mbc_head_context_type = {
-    "AdjustMbcHeadContext", mrb_naraku_encoding_adjust_mbc_head_context_free};
+  "AdjustMbcHeadContext",
+  mrb_naraku_encoding_adjust_mbc_head_context_free
+};
 
 static const nk_encoding_t* mrb_naraku_encoding_get_ptr(mrb_state* mrb, mrb_value self) {
   return (const nk_encoding_t*)mrb_data_get_ptr(mrb, self, &mrb_naraku_encoding_type);
@@ -45,13 +47,15 @@ static mrb_value mrb_naraku_encoding_name_to_cprop(mrb_state* mrb, mrb_value sel
 
   nk_cprop_t cprop;
   nk_error_t err =
-      nk_name_to_cprop(nk_enc_ascii_8bit, (const uint8_t*)prop_name, (const uint8_t*)prop_name + len, &cprop);
+    nk_name_to_cprop(nk_enc_ascii_8bit, (const uint8_t*)prop_name, (const uint8_t*)prop_name + len, &cprop);
   if (err != NK_SUCCESS) {
     switch (err) {
       case NK_ERR_INVALID_CHAR_PROP_NAME:
         mrb_raisef(mrb, E_ARGUMENT_ERROR, "invalid character property name: %l", prop_name, len);
         break;
-      default: mrb_raisef(mrb, E_ARGUMENT_ERROR, "unknown error: %d", err); break;
+      default:
+        mrb_raisef(mrb, E_ARGUMENT_ERROR, "unknown error: %d", err);
+        break;
     }
   }
 
@@ -119,9 +123,15 @@ static mrb_value mrb_naraku_encoding_encode_mbc_width(mrb_state* mrb, mrb_value 
   nk_error_t err = nk_enc_encode_mbc(enc, (uint32_t)code, &width, NULL);
   if (err != NK_SUCCESS) {
     switch (err) {
-      case NK_ERR_INVALID_CODE_POINT: mrb_raisef(mrb, E_ARGUMENT_ERROR, "invalid code point: %d", code); break;
-      case NK_ERR_TOO_LARGE_CODE_POINT: mrb_raisef(mrb, E_ARGUMENT_ERROR, "too large code point: %d", code); break;
-      default: mrb_raisef(mrb, E_ARGUMENT_ERROR, "unknown error: %d", err); break;
+      case NK_ERR_INVALID_CODE_POINT:
+        mrb_raisef(mrb, E_ARGUMENT_ERROR, "invalid code point: %d", code);
+        break;
+      case NK_ERR_TOO_LARGE_CODE_POINT:
+        mrb_raisef(mrb, E_ARGUMENT_ERROR, "too large code point: %d", code);
+        break;
+      default:
+        mrb_raisef(mrb, E_ARGUMENT_ERROR, "unknown error: %d", err);
+        break;
     }
   }
 
@@ -138,9 +148,15 @@ static mrb_value mrb_naraku_encoding_encode_mbc(mrb_state* mrb, mrb_value self) 
   nk_error_t err = nk_enc_encode_mbc(enc, (uint32_t)code, &width, bytes);
   if (err != NK_SUCCESS) {
     switch (err) {
-      case NK_ERR_INVALID_CODE_POINT: mrb_raisef(mrb, E_ARGUMENT_ERROR, "invalid code point: %d", code); break;
-      case NK_ERR_TOO_LARGE_CODE_POINT: mrb_raisef(mrb, E_ARGUMENT_ERROR, "too large code point: %d", code); break;
-      default: mrb_raisef(mrb, E_ARGUMENT_ERROR, "unknown error: %d", err); break;
+      case NK_ERR_INVALID_CODE_POINT:
+        mrb_raisef(mrb, E_ARGUMENT_ERROR, "invalid code point: %d", code);
+        break;
+      case NK_ERR_TOO_LARGE_CODE_POINT:
+        mrb_raisef(mrb, E_ARGUMENT_ERROR, "too large code point: %d", code);
+        break;
+      default:
+        mrb_raisef(mrb, E_ARGUMENT_ERROR, "unknown error: %d", err);
+        break;
     }
   }
 
@@ -174,7 +190,9 @@ static mrb_value mrb_naraku_encoding_adjust_mbc_head(mrb_state* mrb, mrb_value s
       case NK_ERR_MEMORY_ALLOCATION_FAILED:
         mrb_raise(mrb, E_RUNTIME_ERROR, "memory allocation failed during adjust_mbc_head");
         break;
-      default: mrb_raisef(mrb, E_RUNTIME_ERROR, "unknown error: %d", err); break;
+      default:
+        mrb_raisef(mrb, E_RUNTIME_ERROR, "unknown error: %d", err);
+        break;
     }
   }
 
@@ -230,7 +248,7 @@ static mrb_value mrb_naraku_encoding_expand_case_unfold(mrb_state* mrb, mrb_valu
 
   nk_unfold_item_t unfold_items[NK_ENC_MAX_UNFOLD_ITEMS];
   size_t unfold_items_len =
-      nk_enc_expand_case_unfold(enc, (nk_fold_flag_t)flags, folded_codes, folded_codes_len, unfold_items);
+    nk_enc_expand_case_unfold(enc, (nk_fold_flag_t)flags, folded_codes, folded_codes_len, unfold_items);
   if (unfold_items_len == 0) {
     return mrb_nil_value();
   }
@@ -239,10 +257,18 @@ static mrb_value mrb_naraku_encoding_expand_case_unfold(mrb_state* mrb, mrb_valu
   for (size_t i = 0; i < unfold_items_len; i++) {
     const nk_unfold_item_t* item = &unfold_items[i];
     mrb_value item_hash = mrb_hash_new_capa(mrb, 2);
-    mrb_hash_set(mrb, item_hash, mrb_symbol_value(mrb_intern_cstr(mrb, "folded_codes_len")),
-                 mrb_fixnum_value(item->folded_codes_len));
-    mrb_hash_set(mrb, item_hash, mrb_symbol_value(mrb_intern_cstr(mrb, "unfolded_code")),
-                 mrb_fixnum_value(item->unfolded_code));
+    mrb_hash_set(
+      mrb,
+      item_hash,
+      mrb_symbol_value(mrb_intern_cstr(mrb, "folded_codes_len")),
+      mrb_fixnum_value(item->folded_codes_len)
+    );
+    mrb_hash_set(
+      mrb,
+      item_hash,
+      mrb_symbol_value(mrb_intern_cstr(mrb, "unfolded_code")),
+      mrb_fixnum_value(item->unfolded_code)
+    );
     mrb_ary_push(mrb, ary, item_hash);
   }
 
@@ -254,8 +280,12 @@ struct case_fold_callback_data {
   mrb_value callback;
 };
 
-static nk_error_t mrb_naraku_encoding_iterate_case_fold_callback(uint32_t code, const uint32_t* folded_codes,
-                                                                 size_t folded_codes_len, void* user_data) {
+static nk_error_t mrb_naraku_encoding_iterate_case_fold_callback(
+  uint32_t code,
+  const uint32_t* folded_codes,
+  size_t folded_codes_len,
+  void* user_data
+) {
   struct case_fold_callback_data* data = (struct case_fold_callback_data*)user_data;
   mrb_state* mrb = data->mrb;
   mrb_value callback = data->callback;
@@ -282,12 +312,15 @@ static mrb_value mrb_naraku_encoding_iterate_case_fold(mrb_state* mrb, mrb_value
 
   struct case_fold_callback_data data = {mrb, callback};
   nk_error_t err =
-      nk_enc_iterate_case_fold(enc, (nk_fold_flag_t)flags, mrb_naraku_encoding_iterate_case_fold_callback, &data);
+    nk_enc_iterate_case_fold(enc, (nk_fold_flag_t)flags, mrb_naraku_encoding_iterate_case_fold_callback, &data);
 
   if (err != 0) {
     switch (err) {
-      case NK_ERR_INTERNAL_ERROR: break;
-      default: mrb_raisef(mrb, E_RUNTIME_ERROR, "unknown error: %d", err); break;
+      case NK_ERR_INTERNAL_ERROR:
+        break;
+      default:
+        mrb_raisef(mrb, E_RUNTIME_ERROR, "unknown error: %d", err);
+        break;
     }
   }
 
@@ -317,22 +350,31 @@ static mrb_value mrb_naraku_encoding_get_cprop_code_range(mrb_state* mrb, mrb_va
       case NK_ERR_UNSUPPORTED_CHAR_PROPERTY:
         mrb_raisef(mrb, E_ARGUMENT_ERROR, "unsupported character property: %d", cprop);
         break;
-      default: mrb_raisef(mrb, E_ARGUMENT_ERROR, "unknown error: %d", err); break;
+      default:
+        mrb_raisef(mrb, E_ARGUMENT_ERROR, "unknown error: %d", err);
+        break;
     }
   }
 
   switch (delegation) {
-    case NK_ENC_NO_DELEGATION: {
+    case NK_ENC_NO_DELEGATION:
+    {
       mrb_value code_range_ary = mrb_ary_new_capa(mrb, code_range.len);
       for (size_t i = 0; i < code_range.len; i++) {
-        mrb_value range = mrb_range_new(mrb, mrb_fixnum_value(code_range.intervals[i * 2]),
-                                        mrb_fixnum_value(code_range.intervals[i * 2 + 1]), 0);
+        mrb_value range = mrb_range_new(
+          mrb,
+          mrb_fixnum_value(code_range.intervals[i * 2]),
+          mrb_fixnum_value(code_range.intervals[i * 2 + 1]),
+          0
+        );
         mrb_ary_push(mrb, code_range_ary, range);
       }
       return code_range_ary;
     }
-    case NK_ENC_7BIT_DELEGATE: return mrb_symbol_value(mrb_intern_cstr(mrb, "delegate_7bit"));
-    case NK_ENC_8BIT_DELEGATE: return mrb_symbol_value(mrb_intern_cstr(mrb, "delegate_8bit"));
+    case NK_ENC_7BIT_DELEGATE:
+      return mrb_symbol_value(mrb_intern_cstr(mrb, "delegate_7bit"));
+    case NK_ENC_8BIT_DELEGATE:
+      return mrb_symbol_value(mrb_intern_cstr(mrb, "delegate_8bit"));
   }
 }
 
@@ -349,16 +391,24 @@ static mrb_value mrb_naraku_encoding_adjust_mbc_head_context_new(mrb_state* mrb,
   mrb_get_args(mrb, "sb", &bytes, &len, &use_cache);
 
   nk_adjust_mbc_head_context_t* context =
-      (nk_adjust_mbc_head_context_t*)mrb_malloc(mrb, sizeof(nk_adjust_mbc_head_context_t));
+    (nk_adjust_mbc_head_context_t*)mrb_malloc(mrb, sizeof(nk_adjust_mbc_head_context_t));
 
   char* bytes_copy = (char*)mrb_malloc(mrb, (size_t)len);
   memcpy(bytes_copy, bytes, (size_t)len);
-  nk_enc_adjust_mbc_head_context_init(context, (const uint8_t*)bytes_copy, (const uint8_t*)(bytes_copy + len),
-                                      use_cache);
+  nk_enc_adjust_mbc_head_context_init(
+    context,
+    (const uint8_t*)bytes_copy,
+    (const uint8_t*)(bytes_copy + len),
+    use_cache
+  );
 
   struct RClass* encoding_adjust_mbc_head_context_class = mrb_class_ptr(self);
-  return mrb_obj_value(mrb_data_object_alloc(mrb, encoding_adjust_mbc_head_context_class, context,
-                                             &mrb_naraku_encoding_adjust_mbc_head_context_type));
+  return mrb_obj_value(mrb_data_object_alloc(
+    mrb,
+    encoding_adjust_mbc_head_context_class,
+    context,
+    &mrb_naraku_encoding_adjust_mbc_head_context_type
+  ));
 }
 
 static mrb_value mrb_naraku_encoding_adjust_mbc_head_context_cache_p(mrb_state* mrb, mrb_value self) {
@@ -388,8 +438,13 @@ void mrb_naraku_encoding_gem_init(mrb_state* mrb, struct RClass* naraku_module) 
   mrb_define_method(mrb, encoding_class, "name", mrb_naraku_encoding_name, MRB_ARGS_NONE());
   mrb_define_method(mrb, encoding_class, "min_mbc_width", mrb_naraku_encoding_min_mbc_width, MRB_ARGS_NONE());
   mrb_define_method(mrb, encoding_class, "max_mbc_width", mrb_naraku_encoding_max_mbc_width, MRB_ARGS_NONE());
-  mrb_define_method(mrb, encoding_class, "single_byte_threshold", mrb_naraku_encoding_single_byte_threshold,
-                    MRB_ARGS_NONE());
+  mrb_define_method(
+    mrb,
+    encoding_class,
+    "single_byte_threshold",
+    mrb_naraku_encoding_single_byte_threshold,
+    MRB_ARGS_NONE()
+  );
   mrb_define_method(mrb, encoding_class, "flags", mrb_naraku_encoding_flags, MRB_ARGS_NONE());
   mrb_define_method(mrb, encoding_class, "scan_mbc_width", mrb_naraku_encoding_scan_mbc_width, MRB_ARGS_REQ(1));
   mrb_define_method(mrb, encoding_class, "encode_mbc", mrb_naraku_encoding_encode_mbc, MRB_ARGS_REQ(1));
@@ -398,13 +453,28 @@ void mrb_naraku_encoding_gem_init(mrb_state* mrb, struct RClass* naraku_module) 
   mrb_define_method(mrb, encoding_class, "adjust_mbc_head", mrb_naraku_encoding_adjust_mbc_head, MRB_ARGS_REQ(2));
   mrb_define_method(mrb, encoding_class, "self_sync_string?", mrb_naraku_encoding_self_sync_string_p, MRB_ARGS_REQ(1));
   mrb_define_method(mrb, encoding_class, "_get_case_fold", mrb_naraku_encoding_get_case_fold, MRB_ARGS_REQ(2));
-  mrb_define_method(mrb, encoding_class, "_expand_case_unfold", mrb_naraku_encoding_expand_case_unfold,
-                    MRB_ARGS_REQ(2));
-  mrb_define_method(mrb, encoding_class, "_iterate_case_fold", mrb_naraku_encoding_iterate_case_fold,
-                    MRB_ARGS_REQ(1) | MRB_ARGS_BLOCK());
+  mrb_define_method(
+    mrb,
+    encoding_class,
+    "_expand_case_unfold",
+    mrb_naraku_encoding_expand_case_unfold,
+    MRB_ARGS_REQ(2)
+  );
+  mrb_define_method(
+    mrb,
+    encoding_class,
+    "_iterate_case_fold",
+    mrb_naraku_encoding_iterate_case_fold,
+    MRB_ARGS_REQ(1) | MRB_ARGS_BLOCK()
+  );
   mrb_define_method(mrb, encoding_class, "_cprop?", mrb_naraku_encoding_cprop_p, MRB_ARGS_REQ(2));
-  mrb_define_method(mrb, encoding_class, "_get_cprop_code_range", mrb_naraku_encoding_get_cprop_code_range,
-                    MRB_ARGS_REQ(1));
+  mrb_define_method(
+    mrb,
+    encoding_class,
+    "_get_cprop_code_range",
+    mrb_naraku_encoding_get_cprop_code_range,
+    MRB_ARGS_REQ(1)
+  );
 
   mrb_define_const(mrb, encoding_class, "ASCII_8BIT", mrb_naraku_encoding_new(mrb, encoding_class, nk_enc_ascii_8bit));
   mrb_define_const(mrb, encoding_class, "ISO_8859_1", mrb_naraku_encoding_new(mrb, encoding_class, nk_enc_iso_8859_1));
@@ -414,14 +484,24 @@ void mrb_naraku_encoding_gem_init(mrb_state* mrb, struct RClass* naraku_module) 
 
   // `Naraku::Encoding::AdjustMbcHeadContext`:
   struct RClass* encoding_adjust_mbc_head_context_class =
-      mrb_define_class_under(mrb, encoding_class, "AdjustMbcHeadContext", mrb->object_class);
+    mrb_define_class_under(mrb, encoding_class, "AdjustMbcHeadContext", mrb->object_class);
   MRB_SET_INSTANCE_TT(encoding_adjust_mbc_head_context_class, MRB_TT_DATA);
   MRB_UNDEF_ALLOCATOR(encoding_adjust_mbc_head_context_class);
   mrb_undef_class_method_id(mrb, encoding_adjust_mbc_head_context_class, MRB_SYM(new));
   mrb_undef_class_method_id(mrb, encoding_adjust_mbc_head_context_class, MRB_SYM(allocate));
 
-  mrb_define_class_method(mrb, encoding_adjust_mbc_head_context_class, "new",
-                          mrb_naraku_encoding_adjust_mbc_head_context_new, MRB_ARGS_REQ(2));
-  mrb_define_method(mrb, encoding_adjust_mbc_head_context_class, "cache?",
-                    mrb_naraku_encoding_adjust_mbc_head_context_cache_p, MRB_ARGS_REQ(1));
+  mrb_define_class_method(
+    mrb,
+    encoding_adjust_mbc_head_context_class,
+    "new",
+    mrb_naraku_encoding_adjust_mbc_head_context_new,
+    MRB_ARGS_REQ(2)
+  );
+  mrb_define_method(
+    mrb,
+    encoding_adjust_mbc_head_context_class,
+    "cache?",
+    mrb_naraku_encoding_adjust_mbc_head_context_cache_p,
+    MRB_ARGS_REQ(1)
+  );
 }

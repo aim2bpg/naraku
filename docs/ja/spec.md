@@ -267,18 +267,12 @@
 > * `/\xED\xA0\xBD/ =~ "😊"` => ERROR `"invalid multibyte escape"`
 > * `/\uD83D/ =~ "😊"` => ERROR `"invalid Unicode escape sequence"`
 > * `/\u{D83D}/ =~ "😊"` => ERROR `"invalid Unicode escape sequence"`
+> * `/\x20\x00/ =~ " "` (enc=UTF-16LE) => MATCH `[(0, 2)]`
 > * `/\x20/ =~ " "` (enc=UTF-16LE) => ERROR `"too short multibyte code string"`
 >
 > `\xED\xA0\xBD` や `\uD83D` はサロゲートペアの片方です。
 
 **議論**: enc=UTF-16LEのケースではエラーメッセージが不正なバイト列を含んでいます (参照: **ES1**)。
-
-**Naraku拡張** (**ES1**): Rubyの文字列リテラルと同様に、続くバイト列はリテラルでも許容されます。
-
-> **テストケース**: `esc_valid_bytes_extended`
->
-> * `/\x95\\/ =~ "表"` (enc=Windows-31J) => MATCH `[(0, 2)]`
-> * `/\x95A/ =~ "柊"` (enc=Windows-31J) => MATCH `[(0, 2)]` (onigmo=ERROR `"too short escaped multibyte character"`)
 
 ### ドット (Dot)
 

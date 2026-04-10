@@ -83,8 +83,11 @@ void nk_node_free(nk_node_t* node) {
   }
 
   switch (node->base.type) {
-    case NK_NODE_TYPE_UNKNOWN: break;
-    case NK_NODE_TYPE_LITERAL: nk_pbuf_free(&node->literal.buf); break;
+    case NK_NODE_TYPE_UNKNOWN:
+      break;
+    case NK_NODE_TYPE_LITERAL:
+      nk_pbuf_free(&node->literal.buf);
+      break;
     case NK_NODE_TYPE_CHAR_CLASS:
       if (node->char_class.unions != NULL) {
         for (size_t i = 0; i < node->char_class.unions_len; i++) {
@@ -99,7 +102,8 @@ void nk_node_free(nk_node_t* node) {
     case NK_NODE_TYPE_DOT:
     case NK_NODE_TYPE_NEWLINE:
     case NK_NODE_TYPE_GRAPHEME_CLUSTER:
-    case NK_NODE_TYPE_KEEP: break;
+    case NK_NODE_TYPE_KEEP:
+      break;
     case NK_NODE_TYPE_BACK_REF:
       if (node->back_ref.has_name) {
         nk_pbuf_free(&node->back_ref.name_buf);
@@ -160,7 +164,7 @@ void nk_node_free(nk_node_t* node) {
       break;
   }
 
-  node->base.type = NK_NODE_TYPE_UNKNOWN;
+  free(node);
 }
 
 static void char_class_item_free(nk_char_class_item_t* item) {
@@ -173,7 +177,8 @@ static void char_class_item_free(nk_char_class_item_t* item) {
     case NK_CHAR_CLASS_ITEM_TYPE_RANGE:
     case NK_CHAR_CLASS_ITEM_TYPE_CHAR_TYPE:
     case NK_CHAR_CLASS_ITEM_TYPE_CHAR_PROP:
-    case NK_CHAR_CLASS_ITEM_TYPE_POSIX_CHAR_CLASS: break;
+    case NK_CHAR_CLASS_ITEM_TYPE_POSIX_CHAR_CLASS:
+      break;
     case NK_CHAR_CLASS_ITEM_TYPE_NESTED_CHAR_CLASS:
       if (item->data.nested_char_class.unions != NULL) {
         for (size_t i = 0; i < item->data.nested_char_class.unions_len; i++) {
@@ -184,6 +189,8 @@ static void char_class_item_free(nk_char_class_item_t* item) {
       }
       break;
   }
+
+  free(item);
 }
 
 static void char_class_union_free(nk_char_class_union_t* u) {
@@ -198,6 +205,8 @@ static void char_class_union_free(nk_char_class_union_t* u) {
     free(u->items);
     u->items = NULL;
   }
+
+  free(u);
 }
 
 nk_error_t nk_node_to_owned(nk_node_t* node) {
@@ -214,7 +223,8 @@ nk_error_t nk_node_to_owned(nk_node_t* node) {
     case NK_NODE_TYPE_KEEP:
     case NK_NODE_TYPE_CHAR_CLASS:
     case NK_NODE_TYPE_CHAR_TYPE:
-    case NK_NODE_TYPE_CHAR_PROP: break;
+    case NK_NODE_TYPE_CHAR_PROP:
+      break;
     case NK_NODE_TYPE_LITERAL:
       err = nk_pbuf_to_owned(&node->literal.buf);
       if (err != NK_SUCCESS) {

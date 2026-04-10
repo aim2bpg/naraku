@@ -58,6 +58,8 @@ typedef enum {
   NK_ERR_INVALID_BYTE_SEQUENCE_IN_PATTERN = -100,
   NK_ERR_TOO_BIG_NUMBER_IN_QUANTIFIER = -201,
   NK_ERR_NUMBERS_OUT_OF_ORDER_IN_QUANTIFIER = -202,
+  NK_ERR_TOO_SHORT_ESCAPE_SEQUENCE = -210,
+  NK_ERR_UNMATCHED_CLOSE_PAREN = -211,
 
   // ============================================================================
   //

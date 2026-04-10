@@ -492,7 +492,7 @@ struct nk_parser {
   bool is_ignore_case;
   bool dot_allows_newline;
   bool char_class_is_strict;
-  bool char_prop_is_ascii_only;
+  bool char_type_is_ascii_only;
   bool posix_char_class_is_ascii_only;
   nk_fold_flag_t fold_flags;
 
@@ -508,7 +508,7 @@ typedef struct {
   bool is_ignore_case;                  // corresponds to `i`
   bool dot_allows_newline;              // corresponds to `m`
   bool char_class_is_strict;            // corresponds to `v`
-  bool char_prop_is_ascii_only;         // corresponds to `a`, `d`, `u`
+  bool char_type_is_ascii_only;         // corresponds to `a`, `d`, `u`
   bool posix_char_class_is_ascii_only;  // corresponds to `a`, `d`, `u`
   nk_fold_flag_t fold_flags;            // corresponds to `S`, `F`, `T`, `A`
 
@@ -519,8 +519,13 @@ typedef struct {
  * Initializes a regex parser with the given pattern and options.
  */
 NARAKU_EXPORTED_FUNCTION
-nk_error_t nk_parser_init(const nk_encoding_t* enc, const uint8_t* pattern_bytes, const uint8_t* pattern_bytes_end,
-                          nk_parser_options_t options, nk_parser_t* out_parser);
+nk_error_t nk_parser_init(
+  const nk_encoding_t* enc,
+  const uint8_t* pattern_bytes,
+  const uint8_t* pattern_bytes_end,
+  nk_parser_options_t options,
+  nk_parser_t* out_parser
+);
 
 /**
  * Parses the regex pattern and builds the AST.

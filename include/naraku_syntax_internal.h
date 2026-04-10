@@ -32,8 +32,8 @@ void nodes_free(nk_node_t** nodes, size_t len);
 
 typedef enum {
   TK_END,
-  TK_STRING,
-  TK_ESCAPE_CHAR,
+  TK_LITERAL,
+  TK_CODE,
   TK_CHAR_CLASS_OPEN,   // `[`
   TK_CHAR_PROP,         // e.g., `\p{Lu}`, `\P{Lu}`
   TK_CHAR_TYPE,         // e.g., `\d`, `\w`, `\s`, `\h`
@@ -62,6 +62,14 @@ typedef enum {
 typedef struct {
   token_type_t type;
   union {
+    struct {
+      const uint8_t* pattern_bytes;
+      const uint8_t* pattern_bytes_end;
+    } literal;
+    struct {
+      nk_char_type_t type;
+      bool is_positive;
+    } char_type;
     struct {
       nk_assertion_type_t type;
     } assertion;

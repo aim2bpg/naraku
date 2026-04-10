@@ -3,9 +3,19 @@ BasedOnStyle: Google
 IndentWidth: 2
 ColumnLimit: 120
 PointerAlignment: Left
-AllowShortCaseLabelsOnASingleLine: true
+AllowShortCaseLabelsOnASingleLine: false
 AllowShortFunctionsOnASingleLine: InlineOnly
 AllowShortBlocksOnASingleLine: Empty
 SortIncludes: Never
 DerivePointerAlignment: false
+IndentCaseLabels: true
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterCaseLabel: true
+AlignAfterOpenBracket: BlockIndent
+ContinuationIndentWidth: 2
+BinPackArguments: false
+BinPackParameters: false
+AllowAllArgumentsOnNextLine: false
+AllowAllParametersOfDeclarationOnNextLine: false
 ...

@@ -35,15 +35,27 @@ static mrb_value mrb_naraku_parser_new(mrb_state* mrb, mrb_value self) {
   mrb_bool is_ignore_case;
   mrb_bool dot_allows_newline;
   mrb_bool char_class_is_strict;
-  mrb_bool char_prop_is_ascii_only;
+  mrb_bool char_type_is_ascii_only;
   mrb_bool posix_char_class_is_ascii_only;
   mrb_int fold_flags;
 
   // TODO: add `warning_func` argument for receiving warnings during parsing
 
-  mrb_get_args(mrb, "dsbbbbbbi", &encoding_ptr, &mrb_naraku_encoding_type, &pattern, &pattern_len, &is_extended_mode,
-               &is_ignore_case, &dot_allows_newline, &char_class_is_strict, &char_prop_is_ascii_only,
-               &posix_char_class_is_ascii_only, &fold_flags);
+  mrb_get_args(
+    mrb,
+    "dsbbbbbbi",
+    &encoding_ptr,
+    &mrb_naraku_encoding_type,
+    &pattern,
+    &pattern_len,
+    &is_extended_mode,
+    &is_ignore_case,
+    &dot_allows_newline,
+    &char_class_is_strict,
+    &char_type_is_ascii_only,
+    &posix_char_class_is_ascii_only,
+    &fold_flags
+  );
 
   const nk_encoding_t* enc = (const nk_encoding_t*)encoding_ptr;
 
@@ -52,13 +64,13 @@ static mrb_value mrb_naraku_parser_new(mrb_state* mrb, mrb_value self) {
   memcpy(pattern_copy, pattern, (size_t)pattern_len);
 
   nk_parser_options_t options = {
-      .is_extended_mode = is_extended_mode ? true : false,
-      .is_ignore_case = is_ignore_case ? true : false,
-      .dot_allows_newline = dot_allows_newline ? true : false,
-      .char_class_is_strict = char_class_is_strict ? true : false,
-      .char_prop_is_ascii_only = char_prop_is_ascii_only ? true : false,
-      .posix_char_class_is_ascii_only = posix_char_class_is_ascii_only ? true : false,
-      .fold_flags = (nk_fold_flag_t)fold_flags,
+    .is_extended_mode = is_extended_mode ? true : false,
+    .is_ignore_case = is_ignore_case ? true : false,
+    .dot_allows_newline = dot_allows_newline ? true : false,
+    .char_class_is_strict = char_class_is_strict ? true : false,
+    .char_type_is_ascii_only = char_type_is_ascii_only ? true : false,
+    .posix_char_class_is_ascii_only = posix_char_class_is_ascii_only ? true : false,
+    .fold_flags = (nk_fold_flag_t)fold_flags,
   };
 
   nk_error_t err = nk_parser_init(enc, pattern_copy, pattern_copy + pattern_len, options, parser);

@@ -28,7 +28,6 @@ static void mrb_naraku_node_root_free(mrb_state* mrb, void* ptr) {
 
   if (root->root != NULL) {
     nk_node_free(root->root);
-    free(root->root);
     root->root = NULL;
   }
 
@@ -107,7 +106,7 @@ mrb_value mrb_naraku_node_create_root(mrb_state* mrb, nk_node_t* node) {
   mrb_naraku_node_root_t* root = (mrb_naraku_node_root_t*)mrb_malloc(mrb, sizeof(mrb_naraku_node_root_t));
   root->root = node;
   mrb_value root_ref =
-      mrb_obj_value(mrb_data_object_alloc(mrb, mrb_naraku_node_root_class(mrb), root, &mrb_naraku_node_root_type));
+    mrb_obj_value(mrb_data_object_alloc(mrb, mrb_naraku_node_root_class(mrb), root, &mrb_naraku_node_root_type));
 
   return mrb_naraku_node_wrap(mrb, node, root_ref);
 }
@@ -146,33 +145,39 @@ typedef struct {
 static void mrb_naraku_char_class_union_free_func(mrb_state* mrb, void* ptr) {
   mrb_free(mrb, ptr);
 }
-static struct mrb_data_type mrb_naraku_char_class_union_type = {"CharClassUnion",
-                                                                mrb_naraku_char_class_union_free_func};
+static struct mrb_data_type mrb_naraku_char_class_union_type = {
+  "CharClassUnion",
+  mrb_naraku_char_class_union_free_func
+};
 
 static void mrb_naraku_char_class_item_free_func(mrb_state* mrb, void* ptr) {
   mrb_free(mrb, ptr);
 }
-static struct mrb_data_type mrb_naraku_char_class_item_data_type = {"CharClassItem",
-                                                                    mrb_naraku_char_class_item_free_func};
+static struct mrb_data_type mrb_naraku_char_class_item_data_type = {
+  "CharClassItem",
+  mrb_naraku_char_class_item_free_func
+};
 
 static mrb_value mrb_naraku_char_class_union_wrap(mrb_state* mrb, nk_char_class_union_t* u, mrb_value root_ref) {
   mrb_naraku_char_class_union_t* wrapper =
-      (mrb_naraku_char_class_union_t*)mrb_malloc(mrb, sizeof(mrb_naraku_char_class_union_t));
+    (mrb_naraku_char_class_union_t*)mrb_malloc(mrb, sizeof(mrb_naraku_char_class_union_t));
   wrapper->u = u;
   wrapper->root_ref = root_ref;
   mrb_value obj = mrb_obj_value(
-      mrb_data_object_alloc(mrb, mrb_naraku_char_class_union_class(mrb), wrapper, &mrb_naraku_char_class_union_type));
+    mrb_data_object_alloc(mrb, mrb_naraku_char_class_union_class(mrb), wrapper, &mrb_naraku_char_class_union_type)
+  );
   mrb_iv_set(mrb, obj, mrb_intern_cstr(mrb, "_root"), root_ref);
   return obj;
 }
 
 static mrb_value mrb_naraku_char_class_item_wrap(mrb_state* mrb, nk_char_class_item_t* item, mrb_value root_ref) {
   mrb_naraku_char_class_item_t* wrapper =
-      (mrb_naraku_char_class_item_t*)mrb_malloc(mrb, sizeof(mrb_naraku_char_class_item_t));
+    (mrb_naraku_char_class_item_t*)mrb_malloc(mrb, sizeof(mrb_naraku_char_class_item_t));
   wrapper->item = item;
   wrapper->root_ref = root_ref;
-  mrb_value obj = mrb_obj_value(mrb_data_object_alloc(mrb, mrb_naraku_char_class_item_class(mrb), wrapper,
-                                                      &mrb_naraku_char_class_item_data_type));
+  mrb_value obj = mrb_obj_value(
+    mrb_data_object_alloc(mrb, mrb_naraku_char_class_item_class(mrb), wrapper, &mrb_naraku_char_class_item_data_type)
+  );
   mrb_iv_set(mrb, obj, mrb_intern_cstr(mrb, "_root"), root_ref);
   return obj;
 }
@@ -185,7 +190,7 @@ static mrb_value mrb_naraku_char_class_item_wrap(mrb_state* mrb, nk_char_class_i
 
 static mrb_value mrb_naraku_char_class_union_items(mrb_state* mrb, mrb_value self) {
   mrb_naraku_char_class_union_t* wrapper =
-      (mrb_naraku_char_class_union_t*)mrb_data_get_ptr(mrb, self, &mrb_naraku_char_class_union_type);
+    (mrb_naraku_char_class_union_t*)mrb_data_get_ptr(mrb, self, &mrb_naraku_char_class_union_type);
   nk_char_class_union_t* u = wrapper->u;
   mrb_value root_ref = wrapper->root_ref;
 
@@ -204,142 +209,185 @@ static mrb_value mrb_naraku_char_class_union_items(mrb_state* mrb, mrb_value sel
 
 static const char* char_class_item_type_name(nk_char_class_item_type_t type) {
   switch (type) {
-    case NK_CHAR_CLASS_ITEM_TYPE_CODE: return "code";
-    case NK_CHAR_CLASS_ITEM_TYPE_RANGE: return "range";
-    case NK_CHAR_CLASS_ITEM_TYPE_CHAR_TYPE: return "char_type";
-    case NK_CHAR_CLASS_ITEM_TYPE_POSIX_CHAR_CLASS: return "posix_char_class";
-    case NK_CHAR_CLASS_ITEM_TYPE_CHAR_PROP: return "char_prop";
-    case NK_CHAR_CLASS_ITEM_TYPE_NESTED_CHAR_CLASS: return "nested_char_class";
+    case NK_CHAR_CLASS_ITEM_TYPE_CODE:
+      return "code";
+    case NK_CHAR_CLASS_ITEM_TYPE_RANGE:
+      return "range";
+    case NK_CHAR_CLASS_ITEM_TYPE_CHAR_TYPE:
+      return "char_type";
+    case NK_CHAR_CLASS_ITEM_TYPE_POSIX_CHAR_CLASS:
+      return "posix_char_class";
+    case NK_CHAR_CLASS_ITEM_TYPE_CHAR_PROP:
+      return "char_prop";
+    case NK_CHAR_CLASS_ITEM_TYPE_NESTED_CHAR_CLASS:
+      return "nested_char_class";
   }
   return "unknown";
 }
 
 static mrb_value mrb_naraku_char_class_item_type(mrb_state* mrb, mrb_value self) {
   mrb_naraku_char_class_item_t* wrapper =
-      (mrb_naraku_char_class_item_t*)mrb_data_get_ptr(mrb, self, &mrb_naraku_char_class_item_data_type);
+    (mrb_naraku_char_class_item_t*)mrb_data_get_ptr(mrb, self, &mrb_naraku_char_class_item_data_type);
   return mrb_symbol_value(mrb_intern_cstr(mrb, char_class_item_type_name(wrapper->item->type)));
 }
 
-#define CHAR_CLASS_ITEM_CHECK_TYPE(mrb, wrapper, expected, method_name)                       \
-  if (wrapper->item->type != (expected)) {                                                    \
-    mrb_raisef(mrb, E_RUNTIME_ERROR, #method_name " is not available for %s char class item", \
-               char_class_item_type_name(wrapper->item->type));                               \
+#define CHAR_CLASS_ITEM_CHECK_TYPE(mrb, wrapper, expected, method_name) \
+  if (wrapper->item->type != (expected)) {                              \
+    mrb_raisef(                                                         \
+      mrb,                                                              \
+      E_RUNTIME_ERROR,                                                  \
+      #method_name " is not available for %s char class item",          \
+      char_class_item_type_name(wrapper->item->type)                    \
+    );                                                                  \
   }
 
 static mrb_value mrb_naraku_char_class_item_code(mrb_state* mrb, mrb_value self) {
   mrb_naraku_char_class_item_t* wrapper =
-      (mrb_naraku_char_class_item_t*)mrb_data_get_ptr(mrb, self, &mrb_naraku_char_class_item_data_type);
+    (mrb_naraku_char_class_item_t*)mrb_data_get_ptr(mrb, self, &mrb_naraku_char_class_item_data_type);
   CHAR_CLASS_ITEM_CHECK_TYPE(mrb, wrapper, NK_CHAR_CLASS_ITEM_TYPE_CODE, code);
   return mrb_fixnum_value(wrapper->item->data.code);
 }
 
 static mrb_value mrb_naraku_char_class_item_from_code(mrb_state* mrb, mrb_value self) {
   mrb_naraku_char_class_item_t* wrapper =
-      (mrb_naraku_char_class_item_t*)mrb_data_get_ptr(mrb, self, &mrb_naraku_char_class_item_data_type);
+    (mrb_naraku_char_class_item_t*)mrb_data_get_ptr(mrb, self, &mrb_naraku_char_class_item_data_type);
   CHAR_CLASS_ITEM_CHECK_TYPE(mrb, wrapper, NK_CHAR_CLASS_ITEM_TYPE_RANGE, from_code);
   return mrb_fixnum_value(wrapper->item->data.range.from_code);
 }
 
 static mrb_value mrb_naraku_char_class_item_to_code(mrb_state* mrb, mrb_value self) {
   mrb_naraku_char_class_item_t* wrapper =
-      (mrb_naraku_char_class_item_t*)mrb_data_get_ptr(mrb, self, &mrb_naraku_char_class_item_data_type);
+    (mrb_naraku_char_class_item_t*)mrb_data_get_ptr(mrb, self, &mrb_naraku_char_class_item_data_type);
   CHAR_CLASS_ITEM_CHECK_TYPE(mrb, wrapper, NK_CHAR_CLASS_ITEM_TYPE_RANGE, to_code);
   return mrb_fixnum_value(wrapper->item->data.range.to_code);
 }
 
 static mrb_value mrb_naraku_char_class_item_is_positive(mrb_state* mrb, mrb_value self) {
   mrb_naraku_char_class_item_t* wrapper =
-      (mrb_naraku_char_class_item_t*)mrb_data_get_ptr(mrb, self, &mrb_naraku_char_class_item_data_type);
+    (mrb_naraku_char_class_item_t*)mrb_data_get_ptr(mrb, self, &mrb_naraku_char_class_item_data_type);
   switch (wrapper->item->type) {
-    case NK_CHAR_CLASS_ITEM_TYPE_CHAR_TYPE: return mrb_bool_value(wrapper->item->data.char_type.is_positive);
+    case NK_CHAR_CLASS_ITEM_TYPE_CHAR_TYPE:
+      return mrb_bool_value(wrapper->item->data.char_type.is_positive);
     case NK_CHAR_CLASS_ITEM_TYPE_POSIX_CHAR_CLASS:
       return mrb_bool_value(wrapper->item->data.posix_char_class.is_positive);
-    case NK_CHAR_CLASS_ITEM_TYPE_CHAR_PROP: return mrb_bool_value(wrapper->item->data.char_prop.is_positive);
+    case NK_CHAR_CLASS_ITEM_TYPE_CHAR_PROP:
+      return mrb_bool_value(wrapper->item->data.char_prop.is_positive);
     case NK_CHAR_CLASS_ITEM_TYPE_NESTED_CHAR_CLASS:
       return mrb_bool_value(wrapper->item->data.nested_char_class.is_positive);
     default:
-      mrb_raisef(mrb, E_RUNTIME_ERROR, "is_positive is not available for %s char class item",
-                 char_class_item_type_name(wrapper->item->type));
+      mrb_raisef(
+        mrb,
+        E_RUNTIME_ERROR,
+        "is_positive is not available for %s char class item",
+        char_class_item_type_name(wrapper->item->type)
+      );
       return mrb_nil_value();
   }
 }
 
 static mrb_value mrb_naraku_char_class_item_is_ascii_only(mrb_state* mrb, mrb_value self) {
   mrb_naraku_char_class_item_t* wrapper =
-      (mrb_naraku_char_class_item_t*)mrb_data_get_ptr(mrb, self, &mrb_naraku_char_class_item_data_type);
+    (mrb_naraku_char_class_item_t*)mrb_data_get_ptr(mrb, self, &mrb_naraku_char_class_item_data_type);
   switch (wrapper->item->type) {
-    case NK_CHAR_CLASS_ITEM_TYPE_CHAR_TYPE: return mrb_bool_value(wrapper->item->data.char_type.is_ascii_only);
+    case NK_CHAR_CLASS_ITEM_TYPE_CHAR_TYPE:
+      return mrb_bool_value(wrapper->item->data.char_type.is_ascii_only);
     case NK_CHAR_CLASS_ITEM_TYPE_POSIX_CHAR_CLASS:
       return mrb_bool_value(wrapper->item->data.posix_char_class.is_ascii_only);
     default:
-      mrb_raisef(mrb, E_RUNTIME_ERROR, "is_ascii_only is not available for %s char class item",
-                 char_class_item_type_name(wrapper->item->type));
+      mrb_raisef(
+        mrb,
+        E_RUNTIME_ERROR,
+        "is_ascii_only is not available for %s char class item",
+        char_class_item_type_name(wrapper->item->type)
+      );
       return mrb_nil_value();
   }
 }
 
 static const char* char_type_sym_name(nk_char_type_t ct) {
   switch (ct) {
-    case NK_CHAR_TYPE_WORD: return "word";
-    case NK_CHAR_TYPE_DIGIT: return "digit";
-    case NK_CHAR_TYPE_SPACE: return "space";
-    case NK_CHAR_TYPE_HEX_DIGIT: return "hex_digit";
+    case NK_CHAR_TYPE_WORD:
+      return "word";
+    case NK_CHAR_TYPE_DIGIT:
+      return "digit";
+    case NK_CHAR_TYPE_SPACE:
+      return "space";
+    case NK_CHAR_TYPE_HEX_DIGIT:
+      return "hex_digit";
   }
   return "unknown";
 }
 
 static mrb_value mrb_naraku_char_class_item_char_type(mrb_state* mrb, mrb_value self) {
   mrb_naraku_char_class_item_t* wrapper =
-      (mrb_naraku_char_class_item_t*)mrb_data_get_ptr(mrb, self, &mrb_naraku_char_class_item_data_type);
+    (mrb_naraku_char_class_item_t*)mrb_data_get_ptr(mrb, self, &mrb_naraku_char_class_item_data_type);
   CHAR_CLASS_ITEM_CHECK_TYPE(mrb, wrapper, NK_CHAR_CLASS_ITEM_TYPE_CHAR_TYPE, char_type);
   return mrb_symbol_value(mrb_intern_cstr(mrb, char_type_sym_name(wrapper->item->data.char_type.char_type)));
 }
 
 static const char* posix_char_class_sym_name(nk_posix_char_class_t pc) {
   switch (pc) {
-    case NK_POSIX_CHAR_CLASS_ALNUM: return "alnum";
-    case NK_POSIX_CHAR_CLASS_ALPHA: return "alpha";
-    case NK_POSIX_CHAR_CLASS_BLANK: return "blank";
-    case NK_POSIX_CHAR_CLASS_CNTRL: return "cntrl";
-    case NK_POSIX_CHAR_CLASS_DIGIT: return "digit";
-    case NK_POSIX_CHAR_CLASS_GRAPH: return "graph";
-    case NK_POSIX_CHAR_CLASS_LOWER: return "lower";
-    case NK_POSIX_CHAR_CLASS_PRINT: return "print";
-    case NK_POSIX_CHAR_CLASS_PUNCT: return "punct";
-    case NK_POSIX_CHAR_CLASS_SPACE: return "space";
-    case NK_POSIX_CHAR_CLASS_UPPER: return "upper";
-    case NK_POSIX_CHAR_CLASS_XDIGIT: return "xdigit";
-    case NK_POSIX_CHAR_CLASS_ASCII: return "ascii";
-    case NK_POSIX_CHAR_CLASS_WORD: return "word";
+    case NK_POSIX_CHAR_CLASS_ALNUM:
+      return "alnum";
+    case NK_POSIX_CHAR_CLASS_ALPHA:
+      return "alpha";
+    case NK_POSIX_CHAR_CLASS_BLANK:
+      return "blank";
+    case NK_POSIX_CHAR_CLASS_CNTRL:
+      return "cntrl";
+    case NK_POSIX_CHAR_CLASS_DIGIT:
+      return "digit";
+    case NK_POSIX_CHAR_CLASS_GRAPH:
+      return "graph";
+    case NK_POSIX_CHAR_CLASS_LOWER:
+      return "lower";
+    case NK_POSIX_CHAR_CLASS_PRINT:
+      return "print";
+    case NK_POSIX_CHAR_CLASS_PUNCT:
+      return "punct";
+    case NK_POSIX_CHAR_CLASS_SPACE:
+      return "space";
+    case NK_POSIX_CHAR_CLASS_UPPER:
+      return "upper";
+    case NK_POSIX_CHAR_CLASS_XDIGIT:
+      return "xdigit";
+    case NK_POSIX_CHAR_CLASS_ASCII:
+      return "ascii";
+    case NK_POSIX_CHAR_CLASS_WORD:
+      return "word";
   }
   return "unknown";
 }
 
 static mrb_value mrb_naraku_char_class_item_posix_char_class(mrb_state* mrb, mrb_value self) {
   mrb_naraku_char_class_item_t* wrapper =
-      (mrb_naraku_char_class_item_t*)mrb_data_get_ptr(mrb, self, &mrb_naraku_char_class_item_data_type);
+    (mrb_naraku_char_class_item_t*)mrb_data_get_ptr(mrb, self, &mrb_naraku_char_class_item_data_type);
   CHAR_CLASS_ITEM_CHECK_TYPE(mrb, wrapper, NK_CHAR_CLASS_ITEM_TYPE_POSIX_CHAR_CLASS, posix_char_class);
   return mrb_symbol_value(
-      mrb_intern_cstr(mrb, posix_char_class_sym_name(wrapper->item->data.posix_char_class.posix_char_class)));
+    mrb_intern_cstr(mrb, posix_char_class_sym_name(wrapper->item->data.posix_char_class.posix_char_class))
+  );
 }
 
 static mrb_value mrb_naraku_char_class_item_cprop(mrb_state* mrb, mrb_value self) {
   mrb_naraku_char_class_item_t* wrapper =
-      (mrb_naraku_char_class_item_t*)mrb_data_get_ptr(mrb, self, &mrb_naraku_char_class_item_data_type);
+    (mrb_naraku_char_class_item_t*)mrb_data_get_ptr(mrb, self, &mrb_naraku_char_class_item_data_type);
   CHAR_CLASS_ITEM_CHECK_TYPE(mrb, wrapper, NK_CHAR_CLASS_ITEM_TYPE_CHAR_PROP, cprop);
   return mrb_fixnum_value(wrapper->item->data.char_prop.cprop);
 }
 
 static mrb_value mrb_naraku_char_class_item_unions(mrb_state* mrb, mrb_value self) {
   mrb_naraku_char_class_item_t* wrapper =
-      (mrb_naraku_char_class_item_t*)mrb_data_get_ptr(mrb, self, &mrb_naraku_char_class_item_data_type);
+    (mrb_naraku_char_class_item_t*)mrb_data_get_ptr(mrb, self, &mrb_naraku_char_class_item_data_type);
   CHAR_CLASS_ITEM_CHECK_TYPE(mrb, wrapper, NK_CHAR_CLASS_ITEM_TYPE_NESTED_CHAR_CLASS, unions);
   mrb_value root_ref = wrapper->root_ref;
   size_t len = wrapper->item->data.nested_char_class.unions_len;
   mrb_value ary = mrb_ary_new_capa(mrb, len);
   for (size_t i = 0; i < len; i++) {
-    mrb_ary_push(mrb, ary,
-                 mrb_naraku_char_class_union_wrap(mrb, wrapper->item->data.nested_char_class.unions[i], root_ref));
+    mrb_ary_push(
+      mrb,
+      ary,
+      mrb_naraku_char_class_union_wrap(mrb, wrapper->item->data.nested_char_class.unions[i], root_ref)
+    );
   }
   return ary;
 }
@@ -352,24 +400,42 @@ static mrb_value mrb_naraku_char_class_item_unions(mrb_state* mrb, mrb_value sel
 
 static const char* node_type_name(nk_node_type_t type) {
   switch (type) {
-    case NK_NODE_TYPE_UNKNOWN: return "unknown";
-    case NK_NODE_TYPE_LITERAL: return "literal";
-    case NK_NODE_TYPE_CHAR_CLASS: return "char_class";
-    case NK_NODE_TYPE_CHAR_TYPE: return "char_type";
-    case NK_NODE_TYPE_CHAR_PROP: return "char_prop";
-    case NK_NODE_TYPE_DOT: return "dot";
-    case NK_NODE_TYPE_NEWLINE: return "newline";
-    case NK_NODE_TYPE_GRAPHEME_CLUSTER: return "grapheme_cluster";
-    case NK_NODE_TYPE_KEEP: return "keep";
-    case NK_NODE_TYPE_BACK_REF: return "back_ref";
-    case NK_NODE_TYPE_CALL: return "call";
-    case NK_NODE_TYPE_ASSERTION: return "assertion";
-    case NK_NODE_TYPE_QUANTIFIER: return "quantifier";
-    case NK_NODE_TYPE_GROUP: return "group";
-    case NK_NODE_TYPE_ATOMIC: return "atomic";
-    case NK_NODE_TYPE_CONDITIONAL: return "conditional";
-    case NK_NODE_TYPE_CONCAT: return "concat";
-    case NK_NODE_TYPE_ALT: return "alt";
+    case NK_NODE_TYPE_UNKNOWN:
+      return "unknown";
+    case NK_NODE_TYPE_LITERAL:
+      return "literal";
+    case NK_NODE_TYPE_CHAR_CLASS:
+      return "char_class";
+    case NK_NODE_TYPE_CHAR_TYPE:
+      return "char_type";
+    case NK_NODE_TYPE_CHAR_PROP:
+      return "char_prop";
+    case NK_NODE_TYPE_DOT:
+      return "dot";
+    case NK_NODE_TYPE_NEWLINE:
+      return "newline";
+    case NK_NODE_TYPE_GRAPHEME_CLUSTER:
+      return "grapheme_cluster";
+    case NK_NODE_TYPE_KEEP:
+      return "keep";
+    case NK_NODE_TYPE_BACK_REF:
+      return "back_ref";
+    case NK_NODE_TYPE_CALL:
+      return "call";
+    case NK_NODE_TYPE_ASSERTION:
+      return "assertion";
+    case NK_NODE_TYPE_QUANTIFIER:
+      return "quantifier";
+    case NK_NODE_TYPE_GROUP:
+      return "group";
+    case NK_NODE_TYPE_ATOMIC:
+      return "atomic";
+    case NK_NODE_TYPE_CONDITIONAL:
+      return "conditional";
+    case NK_NODE_TYPE_CONCAT:
+      return "concat";
+    case NK_NODE_TYPE_ALT:
+      return "alt";
   }
   return "unknown";
 }
@@ -393,11 +459,16 @@ static mrb_value mrb_naraku_node_buf(mrb_state* mrb, mrb_value self) {
 static mrb_value mrb_naraku_node_is_ignore_case(mrb_state* mrb, mrb_value self) {
   nk_node_t* node = mrb_naraku_node_get_ptr(mrb, self);
   switch (node->base.type) {
-    case NK_NODE_TYPE_LITERAL: return mrb_bool_value(node->literal.is_ignore_case);
-    case NK_NODE_TYPE_CHAR_CLASS: return mrb_bool_value(node->char_class.is_ignore_case);
-    case NK_NODE_TYPE_CHAR_TYPE: return mrb_bool_value(node->char_type.is_ignore_case);
-    case NK_NODE_TYPE_CHAR_PROP: return mrb_bool_value(node->char_prop.is_ignore_case);
-    case NK_NODE_TYPE_BACK_REF: return mrb_bool_value(node->back_ref.is_ignore_case);
+    case NK_NODE_TYPE_LITERAL:
+      return mrb_bool_value(node->literal.is_ignore_case);
+    case NK_NODE_TYPE_CHAR_CLASS:
+      return mrb_bool_value(node->char_class.is_ignore_case);
+    case NK_NODE_TYPE_CHAR_TYPE:
+      return mrb_bool_value(node->char_type.is_ignore_case);
+    case NK_NODE_TYPE_CHAR_PROP:
+      return mrb_bool_value(node->char_prop.is_ignore_case);
+    case NK_NODE_TYPE_BACK_REF:
+      return mrb_bool_value(node->back_ref.is_ignore_case);
     default:
       mrb_raisef(mrb, E_RUNTIME_ERROR, "is_ignore_case is not available for %s node", node_type_name(node->base.type));
       return mrb_nil_value();
@@ -407,11 +478,16 @@ static mrb_value mrb_naraku_node_is_ignore_case(mrb_state* mrb, mrb_value self) 
 static mrb_value mrb_naraku_node_fold_flags(mrb_state* mrb, mrb_value self) {
   nk_node_t* node = mrb_naraku_node_get_ptr(mrb, self);
   switch (node->base.type) {
-    case NK_NODE_TYPE_LITERAL: return mrb_fixnum_value(node->literal.fold_flags);
-    case NK_NODE_TYPE_CHAR_CLASS: return mrb_fixnum_value(node->char_class.fold_flags);
-    case NK_NODE_TYPE_CHAR_TYPE: return mrb_fixnum_value(node->char_type.fold_flags);
-    case NK_NODE_TYPE_CHAR_PROP: return mrb_fixnum_value(node->char_prop.fold_flags);
-    case NK_NODE_TYPE_BACK_REF: return mrb_fixnum_value(node->back_ref.fold_flags);
+    case NK_NODE_TYPE_LITERAL:
+      return mrb_fixnum_value(node->literal.fold_flags);
+    case NK_NODE_TYPE_CHAR_CLASS:
+      return mrb_fixnum_value(node->char_class.fold_flags);
+    case NK_NODE_TYPE_CHAR_TYPE:
+      return mrb_fixnum_value(node->char_type.fold_flags);
+    case NK_NODE_TYPE_CHAR_PROP:
+      return mrb_fixnum_value(node->char_prop.fold_flags);
+    case NK_NODE_TYPE_BACK_REF:
+      return mrb_fixnum_value(node->back_ref.fold_flags);
     default:
       mrb_raisef(mrb, E_RUNTIME_ERROR, "fold_flags is not available for %s node", node_type_name(node->base.type));
       return mrb_nil_value();
@@ -427,9 +503,12 @@ static mrb_value mrb_naraku_node_is_strict(mrb_state* mrb, mrb_value self) {
 static mrb_value mrb_naraku_node_is_positive(mrb_state* mrb, mrb_value self) {
   nk_node_t* node = mrb_naraku_node_get_ptr(mrb, self);
   switch (node->base.type) {
-    case NK_NODE_TYPE_CHAR_CLASS: return mrb_bool_value(node->char_class.is_positive);
-    case NK_NODE_TYPE_CHAR_TYPE: return mrb_bool_value(node->char_type.is_positive);
-    case NK_NODE_TYPE_CHAR_PROP: return mrb_bool_value(node->char_prop.is_positive);
+    case NK_NODE_TYPE_CHAR_CLASS:
+      return mrb_bool_value(node->char_class.is_positive);
+    case NK_NODE_TYPE_CHAR_TYPE:
+      return mrb_bool_value(node->char_type.is_positive);
+    case NK_NODE_TYPE_CHAR_PROP:
+      return mrb_bool_value(node->char_prop.is_positive);
     default:
       mrb_raisef(mrb, E_RUNTIME_ERROR, "is_positive is not available for %s node", node_type_name(node->base.type));
       return mrb_nil_value();
@@ -474,10 +553,14 @@ static mrb_value mrb_naraku_node_allows_newline(mrb_state* mrb, mrb_value self) 
 static mrb_value mrb_naraku_node_has_name(mrb_state* mrb, mrb_value self) {
   nk_node_t* node = mrb_naraku_node_get_ptr(mrb, self);
   switch (node->base.type) {
-    case NK_NODE_TYPE_BACK_REF: return mrb_bool_value(node->back_ref.has_name);
-    case NK_NODE_TYPE_CALL: return mrb_bool_value(node->call.has_name);
-    case NK_NODE_TYPE_GROUP: return mrb_bool_value(node->group.has_name);
-    case NK_NODE_TYPE_CONDITIONAL: return mrb_bool_value(node->conditional.has_name);
+    case NK_NODE_TYPE_BACK_REF:
+      return mrb_bool_value(node->back_ref.has_name);
+    case NK_NODE_TYPE_CALL:
+      return mrb_bool_value(node->call.has_name);
+    case NK_NODE_TYPE_GROUP:
+      return mrb_bool_value(node->group.has_name);
+    case NK_NODE_TYPE_CONDITIONAL:
+      return mrb_bool_value(node->conditional.has_name);
     default:
       mrb_raisef(mrb, E_RUNTIME_ERROR, "has_name is not available for %s node", node_type_name(node->base.type));
       return mrb_nil_value();
@@ -508,10 +591,14 @@ static mrb_value mrb_naraku_node_name(mrb_state* mrb, mrb_value self) {
 static mrb_value mrb_naraku_node_group_num(mrb_state* mrb, mrb_value self) {
   nk_node_t* node = mrb_naraku_node_get_ptr(mrb, self);
   switch (node->base.type) {
-    case NK_NODE_TYPE_BACK_REF: return mrb_fixnum_value(node->back_ref.group_num);
-    case NK_NODE_TYPE_CALL: return mrb_fixnum_value(node->call.group_num);
-    case NK_NODE_TYPE_GROUP: return mrb_fixnum_value(node->group.group_num);
-    case NK_NODE_TYPE_CONDITIONAL: return mrb_fixnum_value(node->conditional.group_num);
+    case NK_NODE_TYPE_BACK_REF:
+      return mrb_fixnum_value(node->back_ref.group_num);
+    case NK_NODE_TYPE_CALL:
+      return mrb_fixnum_value(node->call.group_num);
+    case NK_NODE_TYPE_GROUP:
+      return mrb_fixnum_value(node->group.group_num);
+    case NK_NODE_TYPE_CONDITIONAL:
+      return mrb_fixnum_value(node->conditional.group_num);
     default:
       mrb_raisef(mrb, E_RUNTIME_ERROR, "group_num is not available for %s node", node_type_name(node->base.type));
       return mrb_nil_value();
@@ -526,18 +613,30 @@ static mrb_value mrb_naraku_node_depth(mrb_state* mrb, mrb_value self) {
 
 static const char* assertion_type_sym_name(nk_assertion_type_t type) {
   switch (type) {
-    case NK_ASSERTION_TYPE_BEGIN_OF_LINE: return "begin_of_line";
-    case NK_ASSERTION_TYPE_END_OF_LINE: return "end_of_line";
-    case NK_ASSERTION_TYPE_BEGIN_OF_STRING: return "begin_of_string";
-    case NK_ASSERTION_TYPE_END_OF_STRING_STRICT: return "end_of_string_strict";
-    case NK_ASSERTION_TYPE_END_OF_STRING_LOOSE: return "end_of_string_loose";
-    case NK_ASSERTION_TYPE_BEGIN_OF_MATCHING: return "begin_of_matching";
-    case NK_ASSERTION_TYPE_WORD_BOUNDARY: return "word_boundary";
-    case NK_ASSERTION_TYPE_NON_WORD_BOUNDARY: return "non_word_boundary";
-    case NK_ASSERTION_TYPE_POSITIVE_LOOKAHEAD: return "positive_lookahead";
-    case NK_ASSERTION_TYPE_NEGATIVE_LOOKAHEAD: return "negative_lookahead";
-    case NK_ASSERTION_TYPE_POSITIVE_LOOKBEHIND: return "positive_lookbehind";
-    case NK_ASSERTION_TYPE_NEGATIVE_LOOKBEHIND: return "negative_lookbehind";
+    case NK_ASSERTION_TYPE_BEGIN_OF_LINE:
+      return "begin_of_line";
+    case NK_ASSERTION_TYPE_END_OF_LINE:
+      return "end_of_line";
+    case NK_ASSERTION_TYPE_BEGIN_OF_STRING:
+      return "begin_of_string";
+    case NK_ASSERTION_TYPE_END_OF_STRING_STRICT:
+      return "end_of_string_strict";
+    case NK_ASSERTION_TYPE_END_OF_STRING_LOOSE:
+      return "end_of_string_loose";
+    case NK_ASSERTION_TYPE_BEGIN_OF_MATCHING:
+      return "begin_of_matching";
+    case NK_ASSERTION_TYPE_WORD_BOUNDARY:
+      return "word_boundary";
+    case NK_ASSERTION_TYPE_NON_WORD_BOUNDARY:
+      return "non_word_boundary";
+    case NK_ASSERTION_TYPE_POSITIVE_LOOKAHEAD:
+      return "positive_lookahead";
+    case NK_ASSERTION_TYPE_NEGATIVE_LOOKAHEAD:
+      return "negative_lookahead";
+    case NK_ASSERTION_TYPE_POSITIVE_LOOKBEHIND:
+      return "positive_lookbehind";
+    case NK_ASSERTION_TYPE_NEGATIVE_LOOKBEHIND:
+      return "negative_lookbehind";
   }
   return "unknown";
 }
@@ -552,10 +651,14 @@ static mrb_value mrb_naraku_node_child(mrb_state* mrb, mrb_value self) {
   nk_node_t* node = mrb_naraku_node_get_ptr(mrb, self);
   mrb_value root_ref = mrb_naraku_node_get_root_ref(mrb, self);
   switch (node->base.type) {
-    case NK_NODE_TYPE_ASSERTION: return mrb_naraku_node_wrap(mrb, node->assertion.child, root_ref);
-    case NK_NODE_TYPE_QUANTIFIER: return mrb_naraku_node_wrap(mrb, node->quantifier.child, root_ref);
-    case NK_NODE_TYPE_GROUP: return mrb_naraku_node_wrap(mrb, node->group.child, root_ref);
-    case NK_NODE_TYPE_ATOMIC: return mrb_naraku_node_wrap(mrb, node->atomic.child, root_ref);
+    case NK_NODE_TYPE_ASSERTION:
+      return mrb_naraku_node_wrap(mrb, node->assertion.child, root_ref);
+    case NK_NODE_TYPE_QUANTIFIER:
+      return mrb_naraku_node_wrap(mrb, node->quantifier.child, root_ref);
+    case NK_NODE_TYPE_GROUP:
+      return mrb_naraku_node_wrap(mrb, node->group.child, root_ref);
+    case NK_NODE_TYPE_ATOMIC:
+      return mrb_naraku_node_wrap(mrb, node->atomic.child, root_ref);
     default:
       mrb_raisef(mrb, E_RUNTIME_ERROR, "child is not available for %s node", node_type_name(node->base.type));
       return mrb_nil_value();
@@ -578,9 +681,12 @@ static mrb_value mrb_naraku_node_quantifier_type(mrb_state* mrb, mrb_value self)
   nk_node_t* node = mrb_naraku_node_get_ptr(mrb, self);
   NODE_CHECK_TYPE(mrb, node, NK_NODE_TYPE_QUANTIFIER, quantifier_type);
   switch (node->quantifier.type) {
-    case NK_QUANTIFIER_TYPE_GREEDY: return mrb_symbol_value(mrb_intern_cstr(mrb, "greedy"));
-    case NK_QUANTIFIER_TYPE_RELUCTANT: return mrb_symbol_value(mrb_intern_cstr(mrb, "reluctant"));
-    case NK_QUANTIFIER_TYPE_POSSESSIVE: return mrb_symbol_value(mrb_intern_cstr(mrb, "possessive"));
+    case NK_QUANTIFIER_TYPE_GREEDY:
+      return mrb_symbol_value(mrb_intern_cstr(mrb, "greedy"));
+    case NK_QUANTIFIER_TYPE_RELUCTANT:
+      return mrb_symbol_value(mrb_intern_cstr(mrb, "reluctant"));
+    case NK_QUANTIFIER_TYPE_POSSESSIVE:
+      return mrb_symbol_value(mrb_intern_cstr(mrb, "possessive"));
   }
   return mrb_nil_value();
 }
@@ -691,8 +797,13 @@ void mrb_naraku_node_gem_init(mrb_state* mrb, struct RClass* naraku_module) {
   mrb_define_method(mrb, cc_item_class, "is_positive", mrb_naraku_char_class_item_is_positive, MRB_ARGS_NONE());
   mrb_define_method(mrb, cc_item_class, "is_ascii_only", mrb_naraku_char_class_item_is_ascii_only, MRB_ARGS_NONE());
   mrb_define_method(mrb, cc_item_class, "char_type", mrb_naraku_char_class_item_char_type, MRB_ARGS_NONE());
-  mrb_define_method(mrb, cc_item_class, "posix_char_class", mrb_naraku_char_class_item_posix_char_class,
-                    MRB_ARGS_NONE());
+  mrb_define_method(
+    mrb,
+    cc_item_class,
+    "posix_char_class",
+    mrb_naraku_char_class_item_posix_char_class,
+    MRB_ARGS_NONE()
+  );
   mrb_define_method(mrb, cc_item_class, "cprop", mrb_naraku_char_class_item_cprop, MRB_ARGS_NONE());
   mrb_define_method(mrb, cc_item_class, "unions", mrb_naraku_char_class_item_unions, MRB_ARGS_NONE());
 }
