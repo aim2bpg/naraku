@@ -255,7 +255,13 @@ static nk_error_t lex_quantifier_type(nk_parser_t* parser, nk_quantifier_type_t*
   return NK_SUCCESS;
 }
 
-static nk_error_t lex_hexdecimal_number(nk_parser_t* parser, uint32_t* out_code, int min_digits, int max_digits, nk_error_t too_short_error) {
+static nk_error_t lex_hexdecimal_number(
+  nk_parser_t* parser,
+  uint32_t* out_code,
+  int min_digits,
+  int max_digits,
+  nk_error_t too_short_error
+) {
   *out_code = 0;
   int digits = 0;
 
@@ -290,11 +296,7 @@ static nk_error_t lex_hexdecimal_number(nk_parser_t* parser, uint32_t* out_code,
   return NK_SUCCESS;
 }
 
-static nk_error_t lex_unicode_code_point_escape(
-  nk_parser_t* parser,
-  uint32_t* out_code,
-  bool* out_is_unclosed_brace
-) {
+static nk_error_t lex_unicode_code_point_escape(nk_parser_t* parser, uint32_t* out_code, bool* out_is_unclosed_brace) {
   *out_code = 0;
   *out_is_unclosed_brace = false;
 
@@ -347,11 +349,8 @@ static nk_error_t lex_unicode_code_point_escape(
   return NK_ERR_INVALID_UNICODE_CODE_POINT_ESCAPE;
 }
 
-static nk_error_t lex_unicode_code_point_escape_in_brace(
-  nk_parser_t* parser,
-  uint32_t* out_code,
-  bool* out_is_unclosed_brace
-) {
+static nk_error_t
+lex_unicode_code_point_escape_in_brace(nk_parser_t* parser, uint32_t* out_code, bool* out_is_unclosed_brace) {
   *out_code = 0;
   *out_is_unclosed_brace = true;
 
@@ -380,7 +379,8 @@ static nk_error_t lex_unicode_code_point_escape_in_brace(
   return NK_SUCCESS;
 }
 
-static nk_error_t lex_octal_number(nk_parser_t* parser, uint32_t* out_code, int max_digits, nk_error_t too_short_error) {
+static nk_error_t
+lex_octal_number(nk_parser_t* parser, uint32_t* out_code, int max_digits, nk_error_t too_short_error) {
   *out_code = 0;
   int digits = 0;
 
@@ -429,43 +429,44 @@ static nk_error_t lex_escape_single_byte(nk_parser_t* parser, uint8_t* out_byte)
 
     switch (code) {
       case '\\':
-        parser->pattern_bytes += width; // consume `\`
+        parser->pattern_bytes += width;  // consume `\`
         *out_byte = '\\';
         break;
       case 'n':
-        parser->pattern_bytes += width; // consume `n`
+        parser->pattern_bytes += width;  // consume `n`
         *out_byte = '\n';
         break;
       case 't':
-        parser->pattern_bytes += width; // consume `t`
+        parser->pattern_bytes += width;  // consume `t`
         *out_byte = '\t';
         break;
       case 'r':
-        parser->pattern_bytes += width; // consume `r`
+        parser->pattern_bytes += width;  // consume `r`
         *out_byte = '\r';
         break;
       case 'f':
-        parser->pattern_bytes += width; // consume `f`
+        parser->pattern_bytes += width;  // consume `f`
         *out_byte = '\f';
         break;
       case 'v':
-        parser->pattern_bytes += width; // consume `v`
+        parser->pattern_bytes += width;  // consume `v`
         *out_byte = '\v';
         break;
       case 'a':
-        parser->pattern_bytes += width; // consume `a`
+        parser->pattern_bytes += width;  // consume `a`
         *out_byte = '\a';
         break;
       case 'e':
-        parser->pattern_bytes += width; // consume `e`
+        parser->pattern_bytes += width;  // consume `e`
         *out_byte = '\x1B';
         break;
       case 'b':
-        parser->pattern_bytes += width; // consume `b`
+        parser->pattern_bytes += width;  // consume `b`
         *out_byte = '\b';
         break;
-      
-      case 'x': {
+
+      case 'x':
+      {
         parser->pattern_bytes += width;  // consume `x`
 
         uint32_t hex_code;
@@ -484,7 +485,8 @@ static nk_error_t lex_escape_single_byte(nk_parser_t* parser, uint8_t* out_byte)
       case '4':
       case '5':
       case '6':
-      case '7': {
+      case '7':
+      {
         uint32_t octal_code;
         nk_error_t err = lex_octal_number(parser, &octal_code, 3, NK_ERR_TOO_SHORT_ESCAPE_SEQUENCE);
         if (err != NK_SUCCESS) {
@@ -494,8 +496,9 @@ static nk_error_t lex_escape_single_byte(nk_parser_t* parser, uint8_t* out_byte)
         break;
       }
 
-      case 'M': {
-        parser->pattern_bytes += width; // consume `M`
+      case 'M':
+      {
+        parser->pattern_bytes += width;  // consume `M`
         if (meta_prefix) {
           return NK_ERR_DUPLICATE_META_ESCAPE;
         }
@@ -537,9 +540,10 @@ static nk_error_t lex_escape_single_byte(nk_parser_t* parser, uint8_t* out_byte)
       }
 
       case 'c':
-      case 'C': {
+      case 'C':
+      {
         bool needs_hyphen = code == 'C';
-        parser->pattern_bytes += width; // consume `c` or `C`
+        parser->pattern_bytes += width;  // consume `c` or `C`
         if (control_prefix) {
           return NK_ERR_DUPLICATE_CONTROL_ESCAPE;
         }
@@ -905,7 +909,8 @@ static nk_error_t lex(nk_parser_t* parser, token_t* out_token) {
             return NK_SUCCESS;
 
           // Unicode code point:
-          case 'u': {
+          case 'u':
+          {
             uint32_t code;
             bool is_unclosed_brace;
             nk_error_t err = lex_unicode_code_point_escape(parser, &code, &is_unclosed_brace);
@@ -930,7 +935,8 @@ static nk_error_t lex(nk_parser_t* parser, token_t* out_token) {
           case '6':
           case '7':
           case '8':
-          case '9': {
+          case '9':
+          {
             const uint8_t* pattern_bytes_backup = parser->pattern_bytes;
 
             uint32_t num;
@@ -947,7 +953,7 @@ static nk_error_t lex(nk_parser_t* parser, token_t* out_token) {
 
             parser->pattern_bytes = pattern_bytes_backup;
           }
-          FALLTHROUGH;
+            FALLTHROUGH;
 
           case '0':
           case 'x':
@@ -961,7 +967,8 @@ static nk_error_t lex(nk_parser_t* parser, token_t* out_token) {
           case 'f':
           case 'v':
           case 'a':
-          case 'e': {
+          case 'e':
+          {
             parser->pattern_bytes -= width;
 
             uint32_t escaped_code;
@@ -992,7 +999,7 @@ static nk_error_t lex(nk_parser_t* parser, token_t* out_token) {
     return NK_SUCCESS;
   }
 
-  return NK_ERR_INTERNAL_ERROR; // unreachable
+  return NK_ERR_INTERNAL_ERROR;  // unreachable
 }
 
 // ==========================================================================
@@ -1044,11 +1051,7 @@ static nk_error_t parse_atom(nk_parser_t* parser, token_t* tok, nk_node_t** out_
       }
 
       memcpy(bytes, buf, width);
-      literal_node->literal.buf = (nk_pbuf_t){
-        .type = NK_PBUF_OWNED,
-        .bytes = bytes,
-        .bytes_end = bytes + width
-      };
+      literal_node->literal.buf = (nk_pbuf_t){.type = NK_PBUF_OWNED, .bytes = bytes, .bytes_end = bytes + width};
       literal_node->literal.is_ignore_case = parser->is_ignore_case;
       literal_node->literal.fold_flags = parser->fold_flags;
       *out_node_ptr = literal_node;
