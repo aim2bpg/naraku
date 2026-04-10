@@ -54,7 +54,7 @@ module Encoding
     end
 
     def test_adjust_mbc_head
-      context = Naraku::Encoding::AdjustMBCHeadContext.new("abcd", false)
+      context = Naraku::Encoding::AdjustMbcHeadContext.new("abcd", false)
       (0..4).each do |index|
         assert_equal index, E.adjust_mbc_head(index, context)
       end

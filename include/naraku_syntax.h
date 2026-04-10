@@ -2,12 +2,12 @@
  * @file naraku_syntax.h
  */
 
- #ifndef NARAKU_SYNTAX_H
- #define NARAKU_SYNTAX_H
+#ifndef NARAKU_SYNTAX_H
+#define NARAKU_SYNTAX_H
 
 #include <naraku_common.h>
-#include <naraku_error.h>
 #include <naraku_encoding.h>
+#include <naraku_error.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -29,26 +29,19 @@ typedef enum {
 
 /**
  * Structure representing a pattern buffer.
- * 
+ *
  * A pattern buffer is a contiguous sequence of bytes that represents a portion
- * of the regex pattern. It can either be a view into the original pattern string
- * (i.e., `NK_PBUF_VIEW`) or an owned buffer that has been allocated and needs
- * to be freed (i.e., `NK_PBUF_OWNED`). The `type` field indicates whether the
- * buffer is a view or owned, and the `bytes` and `bytes_end` fields indicate
- * the range of bytes in the buffer.
+ * of the regex pattern. It can either be a view into the original pattern
+ * string (i.e., `NK_PBUF_VIEW`) or an owned buffer that has been allocated and
+ * needs to be freed (i.e., `NK_PBUF_OWNED`). The `type` field indicates whether
+ * the buffer is a view or owned, and the `bytes` and `bytes_end` fields
+ * indicate the range of bytes in the buffer.
  */
 typedef struct {
   nk_pbuf_type_t type;
   const uint8_t* bytes;
   const uint8_t* bytes_end;
 } nk_pbuf_t;
-
-/**
- * Releases the memory allocated for a pattern buffer if it is owned.
- */
-NARAKU_EXPORTED_FUNCTION
-void nk_pbuf_free(nk_pbuf_t* pbuf);
-
 
 // ============================================================================
 //
@@ -80,7 +73,7 @@ typedef union nk_node nk_node_t;
 
 /**
  * Enumeration of node types.
- * 
+ *
  * The `type` field in `nk_node_base_t` indicates the actual type of the node,
  * which determines which member of the `nk_node` union is valid.
  */
@@ -138,30 +131,30 @@ typedef enum {
  * Enumeration of character types (e.g., `\w`, `\d`, `\s`, `\h`).
  */
 typedef enum {
-  NK_CHAR_TYPE_WORD = 0,  // `\w`, `\W`
-  NK_CHAR_TYPE_DIGIT,     // `\d`, `\D`
-  NK_CHAR_TYPE_SPACE,     // `\s`, `\S`
-  NK_CHAR_TYPE_HEX_DIGIT, // `\h`, `\H`
+  NK_CHAR_TYPE_WORD = 0,   // `\w`, `\W`
+  NK_CHAR_TYPE_DIGIT,      // `\d`, `\D`
+  NK_CHAR_TYPE_SPACE,      // `\s`, `\S`
+  NK_CHAR_TYPE_HEX_DIGIT,  // `\h`, `\H`
 } nk_char_type_t;
 
 /**
  * Enumeration of POSIX character classes (e.g., `[[:digit:]]`).
  */
 typedef enum {
-  NK_POSIX_CHAR_CLASS_ALNUM = 0, // `[[:alnum:]]`
-  NK_POSIX_CHAR_CLASS_ALPHA,     // `[[:alpha:]]`
-  NK_POSIX_CHAR_CLASS_BLANK,     // `[[:blank:]]`
-  NK_POSIX_CHAR_CLASS_CNTRL,     // `[[:cntrl:]]`
-  NK_POSIX_CHAR_CLASS_DIGIT,     // `[[:digit:]]`
-  NK_POSIX_CHAR_CLASS_GRAPH,     // `[[:graph:]]`
-  NK_POSIX_CHAR_CLASS_LOWER,     // `[[:lower:]]`
-  NK_POSIX_CHAR_CLASS_PRINT,     // `[[:print:]]`
-  NK_POSIX_CHAR_CLASS_PUNCT,     // `[[:punct:]]`
-  NK_POSIX_CHAR_CLASS_SPACE,     // `[[:space:]]`
-  NK_POSIX_CHAR_CLASS_UPPER,     // `[[:upper:]]`
-  NK_POSIX_CHAR_CLASS_XDIGIT,    // `[[:xdigit:]]`
-  NK_POSIX_CHAR_CLASS_ASCII,     // `[[:ascii:]]`
-  NK_POSIX_CHAR_CLASS_WORD,      // `[[:word:]]`
+  NK_POSIX_CHAR_CLASS_ALNUM = 0,  // `[[:alnum:]]`
+  NK_POSIX_CHAR_CLASS_ALPHA,      // `[[:alpha:]]`
+  NK_POSIX_CHAR_CLASS_BLANK,      // `[[:blank:]]`
+  NK_POSIX_CHAR_CLASS_CNTRL,      // `[[:cntrl:]]`
+  NK_POSIX_CHAR_CLASS_DIGIT,      // `[[:digit:]]`
+  NK_POSIX_CHAR_CLASS_GRAPH,      // `[[:graph:]]`
+  NK_POSIX_CHAR_CLASS_LOWER,      // `[[:lower:]]`
+  NK_POSIX_CHAR_CLASS_PRINT,      // `[[:print:]]`
+  NK_POSIX_CHAR_CLASS_PUNCT,      // `[[:punct:]]`
+  NK_POSIX_CHAR_CLASS_SPACE,      // `[[:space:]]`
+  NK_POSIX_CHAR_CLASS_UPPER,      // `[[:upper:]]`
+  NK_POSIX_CHAR_CLASS_XDIGIT,     // `[[:xdigit:]]`
+  NK_POSIX_CHAR_CLASS_ASCII,      // `[[:ascii:]]`
+  NK_POSIX_CHAR_CLASS_WORD,       // `[[:word:]]`
 } nk_posix_char_class_t;
 
 /**
@@ -279,7 +272,8 @@ struct nk_keep_node {
 };
 
 /**
- * Structure representing a back reference node in the regex AST (e.g., `\1`, `\k<name>`).
+ * Structure representing a back reference node in the regex AST (e.g., `\1`,
+ * `\k<name>`).
  */
 struct nk_back_ref_node {
   nk_node_base_t base;
@@ -331,26 +325,27 @@ typedef enum {
 struct nk_assertion_node {
   nk_node_base_t base;
   nk_assertion_type_t type;
-  nk_node_t* child; // nullable, used for lookaround assertions
+  nk_node_t* child;  // nullable, used for lookaround assertions
 };
 
 /**
  * Enumeration of quantifier types.
  */
 typedef enum {
-  NK_QUANTIFIER_TYPE_GREEDY = 0, // e.g., `a*`
-  NK_QUANTIFIER_TYPE_RELUCTANT,  // e.g., `a*?`
-  NK_QUANTIFIER_TYPE_POSSESSIVE, // e.g., `a*+`
+  NK_QUANTIFIER_TYPE_GREEDY = 0,  // e.g., `a*`
+  NK_QUANTIFIER_TYPE_RELUCTANT,   // e.g., `a*?`
+  NK_QUANTIFIER_TYPE_POSSESSIVE,  // e.g., `a*+`
 } nk_quantifier_type_t;
 
 /**
- * Structure representing a quantifier node in the regex AST (e.g., `a*`, `a+`, `a?`).
+ * Structure representing a quantifier node in the regex AST (e.g., `a*`, `a+`,
+ * `a?`).
  */
 struct nk_quantifier_node {
   nk_node_base_t base;
   nk_node_t* child;
   uint32_t min;
-  uint32_t max; // `UINT32_MAX` means no upper limit (i.e., `{min,}`)
+  uint32_t max;  // `UINT32_MAX` means no upper limit (i.e., `{min,}`)
   nk_quantifier_type_t type;
 };
 
@@ -367,7 +362,8 @@ struct nk_group_node {
 };
 
 /**
- * Structure representing an atomic group node in the regex AST (e.g., `(?>abc)`).
+ * Structure representing an atomic group node in the regex AST (e.g.,
+ * `(?>abc)`).
  */
 struct nk_atomic_node {
   nk_node_base_t base;
@@ -375,7 +371,8 @@ struct nk_atomic_node {
 };
 
 /**
- * Structure representing a conditional node in the regex AST (e.g., `(?(condition)yes|no)`).
+ * Structure representing a conditional node in the regex AST (e.g.,
+ * `(?(condition)yes|no)`).
  */
 struct nk_conditional_node {
   nk_node_base_t base;
@@ -383,7 +380,7 @@ struct nk_conditional_node {
   nk_pbuf_t name_buf;
   int32_t group_num;
   nk_node_t* yes_child;
-  nk_node_t* no_child; // nullable
+  nk_node_t* no_child;  // nullable
 };
 
 /**
@@ -435,10 +432,37 @@ union nk_node {
 // ==========================================================================
 
 /**
- * Releases the memory allocated for a regex AST node and its children recursively.
+ * Releases the memory allocated for a pattern buffer if it is owned.
+ */
+NARAKU_EXPORTED_FUNCTION
+void nk_pbuf_free(nk_pbuf_t* pbuf);
+
+/**
+ * Converts a pattern buffer from a view to an owned copy.
+ *
+ * If the buffer is already owned, this function does nothing.
+ * If the buffer is a view, a copy of the data is allocated and the buffer
+ * is updated to be owned.
+ */
+NARAKU_EXPORTED_FUNCTION
+nk_error_t nk_pbuf_to_owned(nk_pbuf_t* pbuf);
+
+/**
+ * Releases the memory allocated for a regex AST node and its children
+ * recursively.
  */
 NARAKU_EXPORTED_FUNCTION
 void nk_node_free(nk_node_t* node);
+
+/**
+ * Recursively converts all pattern buffers in the given node tree from views
+ * to owned copies.
+ *
+ * This is useful when the node tree needs to outlive the original pattern
+ * string (e.g., when the parser is freed but the AST is retained).
+ */
+NARAKU_EXPORTED_FUNCTION
+nk_error_t nk_node_to_owned(nk_node_t* node);
 
 // ==========================================================================
 //
@@ -458,7 +482,7 @@ typedef void (*nk_warning_func_t)(const char* message);
 
 struct nk_parser {
   const nk_encoding_t* enc;
-  const uint8_t*pattern_bytes_begin;
+  const uint8_t* pattern_bytes_begin;
   const uint8_t* pattern_bytes_end;
   nk_warning_func_t warning_func;
 
@@ -480,13 +504,13 @@ struct nk_parser {
  * Structure representing the options for a regex parser.
  */
 typedef struct {
-  bool is_extended_mode;               // corresponds to `x`
-  bool is_ignore_case;                 // corresponds to `i`
-  bool dot_allows_newline;             // corresponds to `m`
-  bool char_class_is_strict;           // corresponds to `v`
-  bool char_prop_is_ascii_only;        // corresponds to `a`, `d`, `u`
-  bool posix_char_class_is_ascii_only; // corresponds to `a`, `d`, `u`
-  nk_fold_flag_t fold_flags;           // corresponds to `S`, `F`, `T`, `A`
+  bool is_extended_mode;                // corresponds to `x`
+  bool is_ignore_case;                  // corresponds to `i`
+  bool dot_allows_newline;              // corresponds to `m`
+  bool char_class_is_strict;            // corresponds to `v`
+  bool char_prop_is_ascii_only;         // corresponds to `a`, `d`, `u`
+  bool posix_char_class_is_ascii_only;  // corresponds to `a`, `d`, `u`
+  nk_fold_flag_t fold_flags;            // corresponds to `S`, `F`, `T`, `A`
 
   nk_warning_func_t warning_func;
 } nk_parser_options_t;
@@ -495,13 +519,8 @@ typedef struct {
  * Initializes a regex parser with the given pattern and options.
  */
 NARAKU_EXPORTED_FUNCTION
-nk_error_t nk_parser_init(
-    const nk_encoding_t* enc,
-    const uint8_t* pattern_bytes,
-    const uint8_t* pattern_bytes_end,
-    nk_parser_options_t options,
-    nk_parser_t* out_parser
-);
+nk_error_t nk_parser_init(const nk_encoding_t* enc, const uint8_t* pattern_bytes, const uint8_t* pattern_bytes_end,
+                          nk_parser_options_t options, nk_parser_t* out_parser);
 
 /**
  * Parses the regex pattern and builds the AST.
@@ -519,4 +538,4 @@ void nk_parser_free(nk_parser_t* parser);
 }
 #endif
 
-#endif // NARAKU_SYNTAX_H
+#endif  // NARAKU_SYNTAX_H

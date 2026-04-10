@@ -1,23 +1,18 @@
 #include <naraku_syntax.h>
 #include <naraku_syntax_internal.h>
 
-#include <stdlib.h> // for malloc, free
+#include <stdlib.h>  // for malloc, free
 
 #include <stdio.h>
 
 #if defined(__GNUC__)
-#  define ARG_UNUSED __attribute__((unused))
+#define ARG_UNUSED __attribute__((unused))
 #else
-#  define ARG_UNUSED
+#define ARG_UNUSED
 #endif
 
-nk_error_t nk_parser_init(
-    const nk_encoding_t* enc,
-    const uint8_t* pattern_bytes,
-    const uint8_t* pattern_bytes_end,
-    nk_parser_options_t options,
-    nk_parser_t* out_parser
-) {
+nk_error_t nk_parser_init(const nk_encoding_t* enc, const uint8_t* pattern_bytes, const uint8_t* pattern_bytes_end,
+                          nk_parser_options_t options, nk_parser_t* out_parser) {
   out_parser->enc = enc;
   out_parser->pattern_bytes_begin = pattern_bytes;
   out_parser->pattern_bytes_end = pattern_bytes_end;
@@ -39,7 +34,8 @@ nk_error_t nk_parser_init(
   return NK_SUCCESS;
 }
 
-void nk_parser_free(nk_parser_t* parser ARG_UNUSED) {}
+void nk_parser_free(nk_parser_t* parser ARG_UNUSED) {
+}
 
 // ==========================================================================
 //
@@ -47,12 +43,7 @@ void nk_parser_free(nk_parser_t* parser ARG_UNUSED) {}
 //
 // ==========================================================================
 
-static inline
-nk_error_t peek(
-    nk_parser_t* parser,
-    int8_t* out_width,
-    uint32_t* out_code
-) {
+static inline nk_error_t peek(nk_parser_t* parser, int8_t* out_width, uint32_t* out_code) {
   int8_t width = nk_enc_scan_mbc_width(parser->enc, parser->pattern_bytes, parser->pattern_bytes_end);
   if (width <= 0) {
     return NK_ERR_INVALID_BYTE_SEQUENCE_IN_PATTERN;
@@ -63,12 +54,7 @@ nk_error_t peek(
   return NK_SUCCESS;
 }
 
-static inline
-nk_error_t next_code(
-    nk_parser_t* parser,
-    int8_t* out_width,
-    uint32_t* out_code
-) {
+static inline nk_error_t next_code(nk_parser_t* parser, int8_t* out_width, uint32_t* out_code) {
   nk_error_t err = peek(parser, out_width, out_code);
   if (err != NK_SUCCESS) {
     return err;
@@ -78,13 +64,8 @@ nk_error_t next_code(
   return NK_SUCCESS;
 }
 
-static
-nk_error_t lex_decimal_number(
-    nk_parser_t* parser,
-    uint32_t* out_value,
-    uint32_t max_value,
-    nk_error_t overflow_error
-) {
+static nk_error_t lex_decimal_number(nk_parser_t* parser, uint32_t* out_value, uint32_t max_value,
+                                     nk_error_t overflow_error) {
   *out_value = 0;
 
   while (parser->pattern_bytes < parser->pattern_bytes_end) {
@@ -112,21 +93,15 @@ nk_error_t lex_decimal_number(
 
 #define RANGE_QUANTIFIER_MAX_REPETITION 100000
 
-static
-nk_error_t lex_range_quantifier(
-    nk_parser_t* parser,
-    uint32_t* out_min,
-    uint32_t* out_max,
-    bool *out_is_incomplete,
-    bool* out_allows_reluctant
-) {
+static nk_error_t lex_range_quantifier(nk_parser_t* parser, uint32_t* out_min, uint32_t* out_max,
+                                       bool* out_is_incomplete, bool* out_allows_reluctant) {
   const uint8_t* pattern_bytes_backup = parser->pattern_bytes;
 
   *out_min = *out_max = 0;
   *out_is_incomplete = *out_allows_reluctant = true;
 
   if (parser->pattern_bytes >= parser->pattern_bytes_end) {
-    return NK_SUCCESS; // incomplete quantifier
+    return NK_SUCCESS;  // incomplete quantifier
   }
 
   int8_t width;
@@ -138,12 +113,8 @@ nk_error_t lex_range_quantifier(
 
   bool has_explicit_min = false;
   if ('0' <= code && code <= '9') {
-    nk_error_t err = lex_decimal_number(
-        parser,
-        out_min,
-        RANGE_QUANTIFIER_MAX_REPETITION,
-        NK_ERR_TOO_BIG_NUMBER_IN_QUANTIFIER
-    );
+    nk_error_t err =
+        lex_decimal_number(parser, out_min, RANGE_QUANTIFIER_MAX_REPETITION, NK_ERR_TOO_BIG_NUMBER_IN_QUANTIFIER);
     if (err != NK_SUCCESS) {
       return err;
     }
@@ -151,7 +122,7 @@ nk_error_t lex_range_quantifier(
 
     if (parser->pattern_bytes >= parser->pattern_bytes_end) {
       parser->pattern_bytes = pattern_bytes_backup;
-      return NK_SUCCESS; // incomplete quantifier
+      return NK_SUCCESS;  // incomplete quantifier
     }
 
     err = peek(parser, &width, &code);
@@ -162,15 +133,15 @@ nk_error_t lex_range_quantifier(
     *out_min = 0;
   } else {
     parser->pattern_bytes = pattern_bytes_backup;
-    return NK_SUCCESS; // incomplete quantifier
+    return NK_SUCCESS;  // incomplete quantifier
   }
 
-  if (code == ',') { // `{n,}` or `{n,m}`
-    parser->pattern_bytes += width; // consume `,`
+  if (code == ',') {                 // `{n,}` or `{n,m}`
+    parser->pattern_bytes += width;  // consume `,`
 
     if (parser->pattern_bytes >= parser->pattern_bytes_end) {
       parser->pattern_bytes = pattern_bytes_backup;
-      return NK_SUCCESS; // incomplete quantifier
+      return NK_SUCCESS;  // incomplete quantifier
     }
 
     nk_error_t err = peek(parser, &width, &code);
@@ -179,19 +150,15 @@ nk_error_t lex_range_quantifier(
     }
 
     if ('0' <= code && code <= '9') {
-      nk_error_t err = lex_decimal_number(
-          parser,
-          out_max,
-          RANGE_QUANTIFIER_MAX_REPETITION,
-          NK_ERR_TOO_BIG_NUMBER_IN_QUANTIFIER
-      );
+      nk_error_t err =
+          lex_decimal_number(parser, out_max, RANGE_QUANTIFIER_MAX_REPETITION, NK_ERR_TOO_BIG_NUMBER_IN_QUANTIFIER);
       if (err != NK_SUCCESS) {
         return err;
       }
 
       if (parser->pattern_bytes >= parser->pattern_bytes_end) {
         parser->pattern_bytes = pattern_bytes_backup;
-        return NK_SUCCESS; // incomplete quantifier
+        return NK_SUCCESS;  // incomplete quantifier
       }
 
       err = peek(parser, &width, &code);
@@ -201,14 +168,14 @@ nk_error_t lex_range_quantifier(
     } else {
       if (!has_explicit_min) {
         parser->pattern_bytes = pattern_bytes_backup;
-        return NK_SUCCESS; // incomplete_quantifier
+        return NK_SUCCESS;  // incomplete_quantifier
       }
       *out_max = UINT32_MAX;
     }
-  } else { // `{n}`
+  } else {  // `{n}`
     if (!has_explicit_min) {
       parser->pattern_bytes = pattern_bytes_backup;
-      return NK_SUCCESS; // incomplete quantifier
+      return NK_SUCCESS;  // incomplete quantifier
     }
     *out_allows_reluctant = false;
     *out_max = *out_min;
@@ -220,21 +187,16 @@ nk_error_t lex_range_quantifier(
 
   if (code != '}') {
     parser->pattern_bytes = pattern_bytes_backup;
-    return NK_SUCCESS; // incomplete quantifier
+    return NK_SUCCESS;  // incomplete quantifier
   }
 
-  parser->pattern_bytes += width; // consume `}`
+  parser->pattern_bytes += width;  // consume `}`
 
   *out_is_incomplete = false;
   return NK_SUCCESS;
 }
 
-static
-nk_error_t lex_quantifier_type(
-    nk_parser_t* parser,
-    nk_quantifier_type_t* out_type,
-    bool allows_reluctant
-) {
+static nk_error_t lex_quantifier_type(nk_parser_t* parser, nk_quantifier_type_t* out_type, bool allows_reluctant) {
   *out_type = NK_QUANTIFIER_TYPE_GREEDY;
 
   if (parser->pattern_bytes >= parser->pattern_bytes_end) {
@@ -258,11 +220,7 @@ nk_error_t lex_quantifier_type(
   return NK_SUCCESS;
 }
 
-static
-nk_error_t lex(
-    nk_parser_t* parser,
-    token_t* out_token
-) {
+static nk_error_t lex(nk_parser_t* parser, token_t* out_token) {
   bool retry = true;
 
   while (retry) {
@@ -311,13 +269,9 @@ nk_error_t lex(
         }
         break;
 
-      case '[':
-        out_token->type = TK_CHAR_CLASS_OPEN;
-        return NK_SUCCESS;
+      case '[': out_token->type = TK_CHAR_CLASS_OPEN; return NK_SUCCESS;
 
-      case '.':
-        out_token->type = TK_DOT;
-        return NK_SUCCESS;
+      case '.': out_token->type = TK_DOT; return NK_SUCCESS;
 
       case '^':
         out_token->type = TK_ASSERTION;
@@ -329,88 +283,79 @@ nk_error_t lex(
         out_token->data.assertion.type = NK_ASSERTION_TYPE_END_OF_LINE;
         return NK_SUCCESS;
 
-      case '|':
-        out_token->type = TK_ALT;
+      case '|': out_token->type = TK_ALT; return NK_SUCCESS;
+
+      case '*': {
+        out_token->type = TK_QUANTIFIER;
+        out_token->data.quantifier.min = 0;
+        out_token->data.quantifier.max = UINT32_MAX;
+        nk_error_t err = lex_quantifier_type(parser, &out_token->data.quantifier.type, true);
+        if (err != NK_SUCCESS) {
+          return err;
+        }
         return NK_SUCCESS;
+      }
 
-      case '*':
-        {
-          out_token->type = TK_QUANTIFIER;
-          out_token->data.quantifier.min = 0;
-          out_token->data.quantifier.max = UINT32_MAX;
-          nk_error_t err = lex_quantifier_type(parser, &out_token->data.quantifier.type, true);
-          if (err != NK_SUCCESS) {
-            return err;
-          }
-          return NK_SUCCESS;
+      case '+': {
+        out_token->type = TK_QUANTIFIER;
+        out_token->data.quantifier.min = 1;
+        out_token->data.quantifier.max = UINT32_MAX;
+        nk_error_t err = lex_quantifier_type(parser, &out_token->data.quantifier.type, false);
+        if (err != NK_SUCCESS) {
+          return err;
+        }
+        return NK_SUCCESS;
+      }
+
+      case '?': {
+        out_token->type = TK_QUANTIFIER;
+        out_token->data.quantifier.min = 0;
+        out_token->data.quantifier.max = 1;
+        nk_error_t err = lex_quantifier_type(parser, &out_token->data.quantifier.type, true);
+        if (err != NK_SUCCESS) {
+          return err;
+        }
+        return NK_SUCCESS;
+      }
+
+      case '{': {
+        out_token->type = TK_QUANTIFIER;
+
+        bool is_incomplete;
+        bool allows_reluctant;
+        nk_error_t err = lex_range_quantifier(parser, &out_token->data.quantifier.min, &out_token->data.quantifier.max,
+                                              &is_incomplete, &allows_reluctant);
+        if (err != NK_SUCCESS) {
+          return err;
         }
 
-      case '+':
-        {
-          out_token->type = TK_QUANTIFIER;
-          out_token->data.quantifier.min = 1;
-          out_token->data.quantifier.max = UINT32_MAX;
-          nk_error_t err = lex_quantifier_type(parser, &out_token->data.quantifier.type, false);
-          if (err != NK_SUCCESS) {
-            return err;
-          }
-          return NK_SUCCESS;
+        if (is_incomplete) {
+          break;
         }
 
-      case '?':
-        {
-          out_token->type = TK_QUANTIFIER;
-          out_token->data.quantifier.min = 0;
-          out_token->data.quantifier.max = 1;
-          nk_error_t err = lex_quantifier_type(parser, &out_token->data.quantifier.type, true);
-          if (err != NK_SUCCESS) {
-            return err;
-          }
-          return NK_SUCCESS;
+        err = lex_quantifier_type(parser, &out_token->data.quantifier.type, allows_reluctant);
+        if (err != NK_SUCCESS) {
+          return err;
         }
-
-      case '{':
-        {
-          out_token->type = TK_QUANTIFIER;
-
-          bool is_incomplete;
-          bool allows_reluctant;
-          nk_error_t err = lex_range_quantifier(parser, &out_token->data.quantifier.min, &out_token->data.quantifier.max, &is_incomplete, &allows_reluctant);
-          if (err != NK_SUCCESS) {
-            return err;
-          }
-
-          if (is_incomplete) {
-            break;
-          }
-
-          err = lex_quantifier_type(parser, &out_token->data.quantifier.type, allows_reluctant);
-          if (err != NK_SUCCESS) {
-            return err;
-          }
-          return NK_SUCCESS;
-        }
+        return NK_SUCCESS;
+      }
     }
   }
 
   return NK_ERR_INTERNAL_ERROR;
 }
 
-static
-nk_error_t parse_atom(nk_parser_t* parser, token_t* tok, nk_node_t** out_node_ptr) {
+static nk_error_t parse_atom(nk_parser_t* parser, token_t* tok, nk_node_t** out_node_ptr) {
   switch (tok->type) {
-    case TK_DOT:
-      {
-        nk_node_t* dot_node = (nk_node_t*)malloc(sizeof(nk_node_t));
-        if (dot_node == NULL) {
-          return NK_ERR_MEMORY_ALLOCATION_FAILED;
-        }
-        dot_node->base.type = NK_NODE_TYPE_DOT;
-        *out_node_ptr = dot_node;
+    case TK_DOT: {
+      nk_node_t* dot_node = (nk_node_t*)malloc(sizeof(nk_node_t));
+      if (dot_node == NULL) {
+        return NK_ERR_MEMORY_ALLOCATION_FAILED;
       }
-      break;
-    default:
-      return NK_ERR_INTERNAL_ERROR;
+      dot_node->base.type = NK_NODE_TYPE_DOT;
+      *out_node_ptr = dot_node;
+    } break;
+    default: return NK_ERR_INTERNAL_ERROR;
   }
 
   nk_error_t err = lex(parser, tok);
@@ -420,12 +365,10 @@ nk_error_t parse_atom(nk_parser_t* parser, token_t* tok, nk_node_t** out_node_pt
     return err;
   }
 
-
   return NK_SUCCESS;
 }
 
-static
-nk_error_t parse_quantifier(nk_parser_t* parser, token_t* tok, nk_node_t** out_node_ptr) {
+static nk_error_t parse_quantifier(nk_parser_t* parser, token_t* tok, nk_node_t** out_node_ptr) {
   nk_error_t err = parse_atom(parser, tok, out_node_ptr);
   if (err != NK_SUCCESS) {
     return err;
@@ -458,9 +401,8 @@ nk_error_t parse_quantifier(nk_parser_t* parser, token_t* tok, nk_node_t** out_n
   return NK_SUCCESS;
 }
 
-static
-nk_error_t parse_concat(nk_parser_t* parser, token_t* tok, nk_node_t** out_node_ptr) {
-  if (tok->type ==TK_ALT || tok->type == TK_PAREN_CLOSE || tok->type == TK_END) {
+static nk_error_t parse_concat(nk_parser_t* parser, token_t* tok, nk_node_t** out_node_ptr) {
+  if (tok->type == TK_ALT || tok->type == TK_PAREN_CLOSE || tok->type == TK_END) {
     nk_node_t* empty_node = (nk_node_t*)malloc(sizeof(nk_node_t));
     if (empty_node == NULL) {
       return NK_ERR_MEMORY_ALLOCATION_FAILED;
@@ -542,8 +484,7 @@ nk_error_t parse_concat(nk_parser_t* parser, token_t* tok, nk_node_t** out_node_
   return NK_SUCCESS;
 }
 
-static
-nk_error_t parse_alt(nk_parser_t* parser, token_t* tok, nk_node_t** out_node_ptr) {
+static nk_error_t parse_alt(nk_parser_t* parser, token_t* tok, nk_node_t** out_node_ptr) {
   nk_error_t err = parse_concat(parser, tok, out_node_ptr);
   if (err != NK_SUCCESS) {
     return err;
@@ -616,7 +557,7 @@ nk_error_t parse_alt(nk_parser_t* parser, token_t* tok, nk_node_t** out_node_ptr
   return NK_SUCCESS;
 }
 
-nk_error_t nk_parser_parse(nk_parser_t*parser, nk_node_t** out_node_ptr) {
+nk_error_t nk_parser_parse(nk_parser_t* parser, nk_node_t** out_node_ptr) {
   *out_node_ptr = NULL;
 
   token_t tok;

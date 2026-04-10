@@ -13,6 +13,7 @@ RMALL ?= rm -f -r
 # Source and artifact files.
 HEADERS := $(wildcard include/*.h include/encoding/*.h)
 SOURCES := $(wildcard src/*.c src/encoding/*.c)
+FORMAT_FILES := $(HEADERS) $(SOURCES) $(wildcard mrbgems/*/src/*.h mrbgems/*/src/*.c)
 STATIC_OBJECTS := $(subst src/,build/static/,$(SOURCES:.c=.o))
 
 UNICODE_RUBY_SOURCES := $(wildcard tools/unicode/*.rb)
@@ -100,6 +101,11 @@ src/encoding/.gen/case_map_shift_jis.gen.h: tools/gen-case-map.rb $(UNICODE_RUBY
 build-mruby: build/libnaraku.a
 	$(ECHO) "building mruby"
 	$(Q) cd submodules/mruby && rake MRUBY_CONFIG=$(MRUBY_CONFIG)
+
+.PHONY: format
+format:
+	$(ECHO) "formatting C files"
+	$(Q) clang-format -i $(FORMAT_FILES)
 
 .PHONY: clean
 clean:

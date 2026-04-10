@@ -1,15 +1,12 @@
 #include <naraku_syntax.h>
 #include <naraku_syntax_internal.h>
 
-#include <stdlib.h> // for malloc, free
-#include <string.h> // for memcpy
+#include <stdlib.h>  // for malloc, free
+#include <string.h>  // for memcpy
 
-nk_error_t pbuf_concat(
-    const nk_pbuf_t* buf1,
-    const nk_pbuf_t* buf2,
-    nk_pbuf_t* out_buf
-) {
-  // Special case: if both buffers are views and they are contiguous, we can create a new view that spans both buffers without copying.
+nk_error_t pbuf_concat(const nk_pbuf_t* buf1, const nk_pbuf_t* buf2, nk_pbuf_t* out_buf) {
+  // Special case: if both buffers are views and they are contiguous, we can
+  // create a new view that spans both buffers without copying.
   if (buf1->type == NK_PBUF_VIEW && buf2->type == NK_PBUF_VIEW && buf1->bytes_end == buf2->bytes) {
     out_buf->type = NK_PBUF_VIEW;
     out_buf->bytes = buf1->bytes;
@@ -17,7 +14,8 @@ nk_error_t pbuf_concat(
     return NK_SUCCESS;
   }
 
-  // General case: we need to allocate a new buffer and copy the contents of both buffers into it.
+  // General case: we need to allocate a new buffer and copy the contents of
+  // both buffers into it.
 
   size_t len1 = (size_t)(buf1->bytes_end - buf1->bytes);
   size_t len2 = (size_t)(buf2->bytes_end - buf2->bytes);
@@ -48,6 +46,23 @@ void nk_pbuf_free(nk_pbuf_t* pbuf) {
   pbuf->bytes_end = NULL;
 }
 
+nk_error_t nk_pbuf_to_owned(nk_pbuf_t* pbuf) {
+  if (pbuf == NULL || pbuf->type == NK_PBUF_OWNED) {
+    return NK_SUCCESS;
+  }
+
+  size_t len = (size_t)(pbuf->bytes_end - pbuf->bytes);
+  uint8_t* copy = (uint8_t*)malloc(len);
+  if (copy == NULL) {
+    return NK_ERR_MEMORY_ALLOCATION_FAILED;
+  }
+  memcpy(copy, pbuf->bytes, len);
+  pbuf->type = NK_PBUF_OWNED;
+  pbuf->bytes = copy;
+  pbuf->bytes_end = copy + len;
+  return NK_SUCCESS;
+}
+
 static void char_class_union_free(nk_char_class_union_t* u);
 
 void nodes_free(nk_node_t** nodes, size_t len) {
@@ -68,11 +83,8 @@ void nk_node_free(nk_node_t* node) {
   }
 
   switch (node->base.type) {
-    case NK_NODE_TYPE_UNKNOWN:
-      break;
-    case NK_NODE_TYPE_LITERAL:
-      nk_pbuf_free(&node->literal.buf);
-      break;
+    case NK_NODE_TYPE_UNKNOWN: break;
+    case NK_NODE_TYPE_LITERAL: nk_pbuf_free(&node->literal.buf); break;
     case NK_NODE_TYPE_CHAR_CLASS:
       if (node->char_class.unions != NULL) {
         for (size_t i = 0; i < node->char_class.unions_len; i++) {
@@ -87,8 +99,7 @@ void nk_node_free(nk_node_t* node) {
     case NK_NODE_TYPE_DOT:
     case NK_NODE_TYPE_NEWLINE:
     case NK_NODE_TYPE_GRAPHEME_CLUSTER:
-    case NK_NODE_TYPE_KEEP:
-      break;
+    case NK_NODE_TYPE_KEEP: break;
     case NK_NODE_TYPE_BACK_REF:
       if (node->back_ref.has_name) {
         nk_pbuf_free(&node->back_ref.name_buf);
@@ -162,8 +173,7 @@ static void char_class_item_free(nk_char_class_item_t* item) {
     case NK_CHAR_CLASS_ITEM_TYPE_RANGE:
     case NK_CHAR_CLASS_ITEM_TYPE_CHAR_TYPE:
     case NK_CHAR_CLASS_ITEM_TYPE_CHAR_PROP:
-    case NK_CHAR_CLASS_ITEM_TYPE_POSIX_CHAR_CLASS:
-      break;
+    case NK_CHAR_CLASS_ITEM_TYPE_POSIX_CHAR_CLASS: break;
     case NK_CHAR_CLASS_ITEM_TYPE_NESTED_CHAR_CLASS:
       if (item->data.nested_char_class.unions != NULL) {
         for (size_t i = 0; i < item->data.nested_char_class.unions_len; i++) {
@@ -188,4 +198,108 @@ static void char_class_union_free(nk_char_class_union_t* u) {
     free(u->items);
     u->items = NULL;
   }
+}
+
+nk_error_t nk_node_to_owned(nk_node_t* node) {
+  if (node == NULL) {
+    return NK_SUCCESS;
+  }
+
+  nk_error_t err;
+  switch (node->base.type) {
+    case NK_NODE_TYPE_UNKNOWN:
+    case NK_NODE_TYPE_DOT:
+    case NK_NODE_TYPE_NEWLINE:
+    case NK_NODE_TYPE_GRAPHEME_CLUSTER:
+    case NK_NODE_TYPE_KEEP:
+    case NK_NODE_TYPE_CHAR_CLASS:
+    case NK_NODE_TYPE_CHAR_TYPE:
+    case NK_NODE_TYPE_CHAR_PROP: break;
+    case NK_NODE_TYPE_LITERAL:
+      err = nk_pbuf_to_owned(&node->literal.buf);
+      if (err != NK_SUCCESS) {
+        return err;
+      }
+      break;
+    case NK_NODE_TYPE_BACK_REF:
+      if (node->back_ref.has_name) {
+        err = nk_pbuf_to_owned(&node->back_ref.name_buf);
+        if (err != NK_SUCCESS) {
+          return err;
+        }
+      }
+      break;
+    case NK_NODE_TYPE_CALL:
+      if (node->call.has_name) {
+        err = nk_pbuf_to_owned(&node->call.name_buf);
+        if (err != NK_SUCCESS) {
+          return err;
+        }
+      }
+      break;
+    case NK_NODE_TYPE_ASSERTION:
+      err = nk_node_to_owned(node->assertion.child);
+      if (err != NK_SUCCESS) {
+        return err;
+      }
+      break;
+    case NK_NODE_TYPE_QUANTIFIER:
+      err = nk_node_to_owned(node->quantifier.child);
+      if (err != NK_SUCCESS) {
+        return err;
+      }
+      break;
+    case NK_NODE_TYPE_GROUP:
+      if (node->group.has_name) {
+        err = nk_pbuf_to_owned(&node->group.name_buf);
+        if (err != NK_SUCCESS) {
+          return err;
+        }
+      }
+      err = nk_node_to_owned(node->group.child);
+      if (err != NK_SUCCESS) {
+        return err;
+      }
+      break;
+    case NK_NODE_TYPE_ATOMIC:
+      err = nk_node_to_owned(node->atomic.child);
+      if (err != NK_SUCCESS) {
+        return err;
+      }
+      break;
+    case NK_NODE_TYPE_CONDITIONAL:
+      if (node->conditional.has_name) {
+        err = nk_pbuf_to_owned(&node->conditional.name_buf);
+        if (err != NK_SUCCESS) {
+          return err;
+        }
+      }
+      err = nk_node_to_owned(node->conditional.yes_child);
+      if (err != NK_SUCCESS) {
+        return err;
+      }
+      err = nk_node_to_owned(node->conditional.no_child);
+      if (err != NK_SUCCESS) {
+        return err;
+      }
+      break;
+    case NK_NODE_TYPE_CONCAT:
+      for (size_t i = 0; i < node->concat.children_len; i++) {
+        err = nk_node_to_owned(node->concat.children[i]);
+        if (err != NK_SUCCESS) {
+          return err;
+        }
+      }
+      break;
+    case NK_NODE_TYPE_ALT:
+      for (size_t i = 0; i < node->alt.children_len; i++) {
+        err = nk_node_to_owned(node->alt.children[i]);
+        if (err != NK_SUCCESS) {
+          return err;
+        }
+      }
+      break;
+  }
+
+  return NK_SUCCESS;
 }

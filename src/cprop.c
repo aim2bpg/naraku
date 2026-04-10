@@ -1,21 +1,17 @@
 #include <naraku_encoding.h>
 
 #if defined(__GNUC__)
-#  define ARG_UNUSED __attribute__((unused))
+#define ARG_UNUSED __attribute__((unused))
 #else
-#  define ARG_UNUSED
+#define ARG_UNUSED
 #endif
 
 #include ".gen/name2cprop.gen.h"
 
 #include <stdio.h>
 
-nk_error_t nk_name_to_cprop(
-    const nk_encoding_t* enc,
-    const uint8_t* name_bytes,
-    const uint8_t* name_bytes_end,
-    nk_cprop_t* out_cprop
-) {
+nk_error_t nk_name_to_cprop(const nk_encoding_t* enc, const uint8_t* name_bytes, const uint8_t* name_bytes_end,
+                            nk_cprop_t* out_cprop) {
   uint8_t ascii_bytes[CPROP_NAME_MAX_BYTES];
   size_t ascii_bytes_len = 0;
 
@@ -44,7 +40,7 @@ nk_error_t nk_name_to_cprop(
     ascii_bytes[ascii_bytes_len++] = (uint8_t)folded_code;
   }
 
-  const struct name2cprop_entry *entry = name2cprop_lookup((const char*)ascii_bytes, (unsigned int)ascii_bytes_len);
+  const struct name2cprop_entry* entry = name2cprop_lookup((const char*)ascii_bytes, (unsigned int)ascii_bytes_len);
   if (entry == NULL) {
     return NK_ERR_INVALID_CHAR_PROP_NAME;
   }
@@ -53,11 +49,7 @@ nk_error_t nk_name_to_cprop(
   return NK_SUCCESS;
 }
 
-bool code_in_code_range(
-  uint32_t code,
-  size_t range_count,
-  const uint32_t* range_intervals
-) {
+bool code_in_code_range(uint32_t code, size_t range_count, const uint32_t* range_intervals) {
   size_t left = 0, right = range_count - 1;
   while (left <= right) {
     size_t mid = left + (right - left) / 2;

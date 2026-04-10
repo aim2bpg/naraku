@@ -13,7 +13,7 @@ extern "C" {
 
 /**
  * Type representing an error code.
- * 
+ *
  * The error codes are negative integers.
  */
 typedef enum {
@@ -97,4 +97,4 @@ typedef enum {
 }
 #endif
 
-#endif // NARAKU_ERROR_H
+#endif  // NARAKU_ERROR_H

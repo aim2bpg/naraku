@@ -88,7 +88,7 @@ module Encoding
 
     def test_adjust_mbc_head
       [false, true].each do |use_cache|
-        context = Naraku::Encoding::AdjustMBCHeadContext.new(
+        context = Naraku::Encoding::AdjustMbcHeadContext.new(
           # "あいうえおABCか0き1く2け3こ4" + "＝" * 100
           "\x82\xA0\x82\xA2\x82\xA4\x82\xA6\x82\xA8ABC\x82\xA90\x82\xAB1\x82\xAD2\x82\xAF3\x82\xB14" + "\x81\x81" * 100,
           use_cache
@@ -106,7 +106,7 @@ module Encoding
 
     def test_adjust_mbc_head_cache_effectiveness
       n = 100_000
-      context = Naraku::Encoding::AdjustMBCHeadContext.new(
+      context = Naraku::Encoding::AdjustMbcHeadContext.new(
         "\x81\x81" * n, # "＝" * n
         true            # use_cache: true
       )

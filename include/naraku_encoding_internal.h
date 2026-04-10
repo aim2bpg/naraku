@@ -7,7 +7,7 @@
 
 #include <naraku_encoding.h>
 
-#include <string.h> // for memset
+#include <string.h>  // for memset
 
 // ==========================================================================
 //
@@ -15,16 +15,10 @@
 //
 // ==========================================================================
 
-nk_error_t adjust_mbc_head_context_cache_ensure(
-  nk_adjust_mbc_head_context_t* context,
-  size_t target_offset,
-  size_t target_offset_end
-);
+nk_error_t adjust_mbc_head_context_cache_ensure(nk_adjust_mbc_head_context_t* context, size_t target_offset,
+                                                size_t target_offset_end);
 
-static inline bool adjust_mbc_head_context_cache_check(
-    nk_adjust_mbc_head_context_t* context,
-    size_t target_offset
-) {
+static inline bool adjust_mbc_head_context_cache_check(nk_adjust_mbc_head_context_t* context, size_t target_offset) {
   if (context->head_bits == NULL || context->cache_start_offset == NK_DONT_USE_CACHE_FOR_ADJUST_MBC_HEAD) {
     return false;
   }
@@ -40,10 +34,7 @@ static inline bool adjust_mbc_head_context_cache_check(
   return false;
 }
 
-static inline void adjust_mbc_head_context_cache_set(
-    nk_adjust_mbc_head_context_t* context,
-    size_t target_offset
-) {
+static inline void adjust_mbc_head_context_cache_set(nk_adjust_mbc_head_context_t* context, size_t target_offset) {
   if (context->head_bits == NULL || context->cache_start_offset == NK_DONT_USE_CACHE_FOR_ADJUST_MBC_HEAD) {
     return;
   }
@@ -57,12 +48,10 @@ static inline void adjust_mbc_head_context_cache_set(
   }
 }
 
-static inline void adjust_mbc_head_context_cache_fill_step2(
-    nk_adjust_mbc_head_context_t* context,
-    size_t target_offset,
-    size_t target_offset_end
-) {
-  if (context->head_bits == NULL || context->cache_start_offset == NK_DONT_USE_CACHE_FOR_ADJUST_MBC_HEAD || target_offset >= target_offset_end) {
+static inline void adjust_mbc_head_context_cache_fill_step2(nk_adjust_mbc_head_context_t* context, size_t target_offset,
+                                                            size_t target_offset_end) {
+  if (context->head_bits == NULL || context->cache_start_offset == NK_DONT_USE_CACHE_FOR_ADJUST_MBC_HEAD ||
+      target_offset >= target_offset_end) {
     return;
   }
 
@@ -70,7 +59,7 @@ static inline void adjust_mbc_head_context_cache_fill_step2(
   size_t end = context->cache_start_offset + context->head_bits_capacity * 64;
 
   if (target_offset < start || target_offset_end > end) {
-    return; 
+    return;
   }
 
   size_t rel_start = target_offset - start;
@@ -84,7 +73,7 @@ static inline void adjust_mbc_head_context_cache_fill_step2(
   if (start_word == end_word) {
     int shift_bottom = rel_start % 64;
     int shift_top = 63 - ((rel_end - 1) % 64);
-        
+
     uint64_t mask = (~0ULL << shift_bottom) & (~0ULL >> shift_top);
     context->head_bits[start_word] |= (pattern & mask);
   } else {
@@ -108,10 +97,6 @@ static inline void adjust_mbc_head_context_cache_fill_step2(
 //
 // ==========================================================================
 
-bool code_in_code_range(
-  uint32_t code,
-  size_t range_count,
-  const uint32_t* range_intervals
-);
+bool code_in_code_range(uint32_t code, size_t range_count, const uint32_t* range_intervals);
 
-#endif // NARAKU_ENCODING_INTERNAL_H
+#endif  // NARAKU_ENCODING_INTERNAL_H

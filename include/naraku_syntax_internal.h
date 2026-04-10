@@ -17,11 +17,7 @@
 /**
  * Concatenates two pattern buffers and outputs the result in `out_buf`.
  */
-nk_error_t pbuf_concat(
-  const nk_pbuf_t* buf1,
-  const nk_pbuf_t* buf2,
-  nk_pbuf_t* out_buf
-);
+nk_error_t pbuf_concat(const nk_pbuf_t* buf1, const nk_pbuf_t* buf2, nk_pbuf_t* out_buf);
 
 /**
  * Releases the allocated memory for regex AST nodes in the array `nodes` of length `len`.
@@ -38,13 +34,13 @@ typedef enum {
   TK_END,
   TK_STRING,
   TK_ESCAPE_CHAR,
-  TK_CHAR_CLASS_OPEN,  // `[`
-  TK_CHAR_PROP,        // e.g., `\p{Lu}`, `\P{Lu}`
-  TK_CHAR_TYPE,        // e.g., `\d`, `\w`, `\s`, `\h`
-  TK_DOT,              // `.`
-  TK_NEWLINE,          // `\R`
-  TK_GRAPHEME_CLUSTER, // `\X`
-  TK_KEEP,             // `\K`
+  TK_CHAR_CLASS_OPEN,   // `[`
+  TK_CHAR_PROP,         // e.g., `\p{Lu}`, `\P{Lu}`
+  TK_CHAR_TYPE,         // e.g., `\d`, `\w`, `\s`, `\h`
+  TK_DOT,               // `.`
+  TK_NEWLINE,           // `\R`
+  TK_GRAPHEME_CLUSTER,  // `\X`
+  TK_KEEP,              // `\K`
   TK_BACK_REF,
   TK_CALL,
   TK_ASSERTION,        // e.g., `^`, `$`, `\b`
@@ -57,10 +53,10 @@ typedef enum {
 
   // Only available in character class context:
   TK_CHAR_CLASS_CHAR,
-  TK_CHAR_CLASS_RANGE_DASH, // `-`
-  TK_CHAR_CLASS_CLOSE,      // `]`
-  TK_CHAR_CLASS_AND,        // `&&`
-  TK_POSIX_CHAR_CLASS_OPEN, // `[:`, `[:^`, `[^:`
+  TK_CHAR_CLASS_RANGE_DASH,  // `-`
+  TK_CHAR_CLASS_CLOSE,       // `]`
+  TK_CHAR_CLASS_AND,         // `&&`
+  TK_POSIX_CHAR_CLASS_OPEN,  // `[:`, `[:^`, `[^:`
 } token_type_t;
 
 typedef struct {
@@ -77,4 +73,4 @@ typedef struct {
   } data;
 } token_t;
 
-#endif // NARAKU_SYNTAX_INTERNAL_H
+#endif  // NARAKU_SYNTAX_INTERNAL_H

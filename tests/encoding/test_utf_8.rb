@@ -90,7 +90,7 @@ module Encoding
     end
 
     def test_adjust_mbc_head
-      context = Naraku::Encoding::AdjustMBCHeadContext.new(
+      context = Naraku::Encoding::AdjustMbcHeadContext.new(
         "ABC\xC3\x9F\xE3\x81\x82\xF0\x9F\x98\x80",
         false
       )

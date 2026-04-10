@@ -2,57 +2,35 @@
 #include <naraku_encoding_internal.h>
 
 #if defined(__GNUC__)
-#  define ARG_UNUSED __attribute__((unused))
+#define ARG_UNUSED __attribute__((unused))
 #else
-#  define ARG_UNUSED
+#define ARG_UNUSED
 #endif
 
 #include ".gen/cprop_range_shift_jis.gen.h"
 #include ".gen/case_map_shift_jis.gen.h"
 
 static const int8_t SHIFT_JIS_FIRST_BYTE_TABLE[] = {
-  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-  0, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
-  2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
-  0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-  2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
-  2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 0, 0, 0,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+    2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 0, 0, 0,
 };
 
 static const int8_t SHIFT_JIS_SECOND_BYTE_TABLE[] = {
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
-  2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
-  2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
-  2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 0,
-  2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
-  2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
-  2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
-  2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
-  2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
-  2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
-  2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
-  2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 0, 0, 0
-};
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+    2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+    2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 0, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+    2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+    2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+    2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 0, 0, 0};
 
-static int8_t shift_jis_scan_mbc_width(
-    const nk_encoding_t* enc ARG_UNUSED,
-    const uint8_t* bytes,
-    const uint8_t* bytes_end ARG_UNUSED
-) {
+static int8_t shift_jis_scan_mbc_width(const nk_encoding_t* enc ARG_UNUSED, const uint8_t* bytes,
+                                       const uint8_t* bytes_end ARG_UNUSED) {
   int8_t first_byte_width = SHIFT_JIS_FIRST_BYTE_TABLE[*bytes++];
   if (first_byte_width <= 1) return first_byte_width;
 
@@ -64,12 +42,8 @@ static int8_t shift_jis_scan_mbc_width(
   return SHIFT_JIS_SECOND_BYTE_TABLE[*bytes];
 }
 
-static nk_error_t shift_jis_encode_mbc(
-    const nk_encoding_t* enc ARG_UNUSED,
-    uint32_t code,
-    size_t* out_width,
-    uint8_t* out_bytes
-) {
+static nk_error_t shift_jis_encode_mbc(const nk_encoding_t* enc ARG_UNUSED, uint32_t code, size_t* out_width,
+                                       uint8_t* out_bytes) {
   if (code > 0xFFFF) {
     return NK_ERR_TOO_LARGE_CODE_POINT;
   }
@@ -102,11 +76,8 @@ static nk_error_t shift_jis_encode_mbc(
   return NK_SUCCESS;
 }
 
-static uint32_t shift_jis_decode_mbc(
-    const nk_encoding_t* enc ARG_UNUSED,
-    const uint8_t* bytes,
-    const uint8_t* bytes_end ARG_UNUSED
-) {
+static uint32_t shift_jis_decode_mbc(const nk_encoding_t* enc ARG_UNUSED, const uint8_t* bytes,
+                                     const uint8_t* bytes_end ARG_UNUSED) {
   uint8_t first_byte = bytes[0];
   int8_t width = SHIFT_JIS_FIRST_BYTE_TABLE[first_byte];
   if (width <= 1) {
@@ -122,11 +93,8 @@ static uint32_t shift_jis_decode_mbc(
   return code;
 }
 
-nk_error_t shift_jis_adjust_mbc_head(
-    const nk_encoding_t* enc ARG_UNUSED,
-    const uint8_t** bytes_to_adjust,
-    nk_adjust_mbc_head_context_t* context
-) {
+nk_error_t shift_jis_adjust_mbc_head(const nk_encoding_t* enc ARG_UNUSED, const uint8_t** bytes_to_adjust,
+                                     nk_adjust_mbc_head_context_t* context) {
   const uint8_t* target = *bytes_to_adjust;
   const uint8_t* bytes = target;
 
@@ -168,28 +136,25 @@ nk_error_t shift_jis_adjust_mbc_head(
   return 0;
 }
 
-bool shift_jis_is_self_sync_string(
-    const nk_encoding_t* enc ARG_UNUSED,
-    const uint8_t* bytes,
-    const uint8_t* bytes_end ARG_UNUSED
-) {
+bool shift_jis_is_self_sync_string(const nk_encoding_t* enc ARG_UNUSED, const uint8_t* bytes,
+                                   const uint8_t* bytes_end ARG_UNUSED) {
   return SHIFT_JIS_SECOND_BYTE_TABLE[*bytes] != 2;
 }
 
 const nk_encoding_t* nk_enc_shift_jis = &(const nk_encoding_t){
-  .name = "Shift_JIS",
-  .min_mbc_width = 1,
-  .max_mbc_width = 2,
-  .single_byte_threshold = 0x80,
-  .flags = 0,
-  .scan_mbc_width = shift_jis_scan_mbc_width,
-  .encode_mbc = shift_jis_encode_mbc,
-  .decode_mbc = shift_jis_decode_mbc,
-  .adjust_mbc_head = shift_jis_adjust_mbc_head,
-  .is_self_sync_string = shift_jis_is_self_sync_string,
-  .get_case_fold = shift_jis_get_case_fold,
-  .expand_case_unfold = shift_jis_expand_case_unfold,
-  .iterate_case_fold = shift_jis_iterate_case_fold,
-  .code_is_cprop = shift_jis_code_is_cprop,
-  .get_cprop_code_range = shift_jis_get_cprop_code_range,
+    .name = "Shift_JIS",
+    .min_mbc_width = 1,
+    .max_mbc_width = 2,
+    .single_byte_threshold = 0x80,
+    .flags = 0,
+    .scan_mbc_width = shift_jis_scan_mbc_width,
+    .encode_mbc = shift_jis_encode_mbc,
+    .decode_mbc = shift_jis_decode_mbc,
+    .adjust_mbc_head = shift_jis_adjust_mbc_head,
+    .is_self_sync_string = shift_jis_is_self_sync_string,
+    .get_case_fold = shift_jis_get_case_fold,
+    .expand_case_unfold = shift_jis_expand_case_unfold,
+    .iterate_case_fold = shift_jis_iterate_case_fold,
+    .code_is_cprop = shift_jis_code_is_cprop,
+    .get_cprop_code_range = shift_jis_get_cprop_code_range,
 };

@@ -2,9 +2,9 @@
 #include <naraku_encoding_internal.h>
 
 #if defined(__GNUC__)
-#  define ARG_UNUSED __attribute__((unused))
+#define ARG_UNUSED __attribute__((unused))
 #else
-#  define ARG_UNUSED
+#define ARG_UNUSED
 #endif
 
 #define FOLD (1 << 0)
@@ -131,12 +131,8 @@ uint32_t unicode_unfold3_lookup(uint32_t code1, uint32_t code2, uint32_t code3) 
   return entry->index;
 }
 
-size_t nk_enc_unicode_get_case_fold(
-    const nk_encoding_t* enc ARG_UNUSED,
-    nk_fold_flag_t flags,
-    uint32_t code,
-    uint32_t* out_folded_codes
-) {
+size_t nk_enc_unicode_get_case_fold(const nk_encoding_t* enc ARG_UNUSED, nk_fold_flag_t flags, uint32_t code,
+                                    uint32_t* out_folded_codes) {
   struct unicode_fold_item* item = unicode_fold_item_lookup(code);
   if (item == NULL) {
     out_folded_codes[0] = code;
@@ -151,13 +147,13 @@ size_t nk_enc_unicode_get_case_fold(
   }
 
   if ((flags & NK_FOLD_TURKISH_AZERI) != 0) {
-    if (code == 0x0049) { // LATIN CAPITAL LETTER I
-      out_folded_codes[0] = 0x0131; // LATIN SMALL LETTER DOTLESS I
+    if (code == 0x0049) {            // LATIN CAPITAL LETTER I
+      out_folded_codes[0] = 0x0131;  // LATIN SMALL LETTER DOTLESS I
       return 1;
     }
 
-    if (code == 0x0130) { // LATIN CAPITAL LETTER I WITH DOT ABOVE
-      out_folded_codes[0] = 0x0069; // LATIN SMALL LETTER I
+    if (code == 0x0130) {            // LATIN CAPITAL LETTER I WITH DOT ABOVE
+      out_folded_codes[0] = 0x0069;  // LATIN SMALL LETTER I
       return 1;
     }
   }
@@ -185,13 +181,9 @@ size_t nk_enc_unicode_get_case_fold(
   return 1;
 }
 
-size_t nk_enc_unicode_expand_case_unfold(
-    const nk_encoding_t* enc ARG_UNUSED,
-    nk_fold_flag_t flags,
-    const uint32_t* folded_codes,
-    size_t folded_codes_len,
-    nk_unfold_item_t* out_unfold_items
-) {
+size_t nk_enc_unicode_expand_case_unfold(const nk_encoding_t* enc ARG_UNUSED, nk_fold_flag_t flags,
+                                         const uint32_t* folded_codes, size_t folded_codes_len,
+                                         nk_unfold_item_t* out_unfold_items) {
   uint32_t type_flags = 0;
   if ((flags & NK_FOLD_FULL) != 0) {
     type_flags |= FOLD_FULL;
@@ -202,15 +194,15 @@ size_t nk_enc_unicode_expand_case_unfold(
   size_t unfold_items_len = 0;
 
   if ((flags & NK_FOLD_TURKISH_AZERI) != 0) {
-    if (folded_codes[0] == 0x0131) { // LATIN SMALL LETTER DOTLESS I
+    if (folded_codes[0] == 0x0131) {  // LATIN SMALL LETTER DOTLESS I
       out_unfold_items[unfold_items_len].folded_codes_len = 1;
-      out_unfold_items[unfold_items_len].unfolded_code = 0x0049; // LATIN CAPITAL LETTER I
+      out_unfold_items[unfold_items_len].unfolded_code = 0x0049;  // LATIN CAPITAL LETTER I
       unfold_items_len++;
     }
 
-    if (folded_codes[0] == 0x0069) { // LATIN SMALL LETTER I
+    if (folded_codes[0] == 0x0069) {  // LATIN SMALL LETTER I
       out_unfold_items[unfold_items_len].folded_codes_len = 1;
-      out_unfold_items[unfold_items_len].unfolded_code = 0x0130; // LATIN CAPITAL LETTER I WITH DOT ABOVE
+      out_unfold_items[unfold_items_len].unfolded_code = 0x0130;  // LATIN CAPITAL LETTER I WITH DOT ABOVE
       unfold_items_len++;
     }
   }
@@ -298,24 +290,20 @@ size_t nk_enc_unicode_expand_case_unfold(
   return unfold_items_len;
 }
 
-nk_error_t nk_enc_unicode_iterate_case_fold(
-    const nk_encoding_t* enc ARG_UNUSED,
-    nk_fold_flag_t flags,
-    nk_case_fold_callback_t callback,
-    void* user_data
-) {
+nk_error_t nk_enc_unicode_iterate_case_fold(const nk_encoding_t* enc ARG_UNUSED, nk_fold_flag_t flags,
+                                            nk_case_fold_callback_t callback, void* user_data) {
   uint32_t type_flags = 0;
   if ((flags & NK_FOLD_FULL) != 0) {
     type_flags |= FOLD_FULL;
   } else {
     type_flags |= FOLD;
   }
-  
+
   for (size_t i = 0; i < sizeof(UNICODE_FOLD_ITEMS) / sizeof(struct unicode_fold_item); i++) {
     const struct unicode_fold_item* item = &UNICODE_FOLD_ITEMS[i];
 
-    if (item->from_code == 0x0049 && (flags & NK_FOLD_TURKISH_AZERI) != 0) { // LATIN CAPITAL LETTER I
-      uint32_t folded_code = 0x0131; // LATIN SMALL LETTER DOTLESS I
+    if (item->from_code == 0x0049 && (flags & NK_FOLD_TURKISH_AZERI) != 0) {  // LATIN CAPITAL LETTER I
+      uint32_t folded_code = 0x0131;                                          // LATIN SMALL LETTER DOTLESS I
       nk_error_t err = callback(item->from_code, &folded_code, 1, user_data);
       if (err != 0) {
         return err;
@@ -323,8 +311,8 @@ nk_error_t nk_enc_unicode_iterate_case_fold(
       continue;
     }
 
-    if (item->from_code == 0x0130 && (flags & NK_FOLD_TURKISH_AZERI) != 0) { // LATIN CAPITAL LETTER I WITH DOT ABOVE
-      uint32_t folded_code = 0x0069; // LATIN SMALL LETTER I
+    if (item->from_code == 0x0130 && (flags & NK_FOLD_TURKISH_AZERI) != 0) {  // LATIN CAPITAL LETTER I WITH DOT ABOVE
+      uint32_t folded_code = 0x0069;                                          // LATIN SMALL LETTER I
       nk_error_t err = callback(item->from_code, &folded_code, 1, user_data);
       if (err != 0) {
         return err;
@@ -346,7 +334,7 @@ nk_error_t nk_enc_unicode_iterate_case_fold(
       }
       continue;
     }
-    
+
     if ((type_flags & FOLD_FULL) != 0 && (item->to_type_flags & SPECIAL_FOLD_FULL) != 0) {
       size_t special_index = SPECIAL_INDEX(item->to_type_flags);
       size_t len = UNICODE_SPECIAL_LENGTH(UNICODE_SPECIALS[special_index]);
@@ -364,11 +352,7 @@ nk_error_t nk_enc_unicode_iterate_case_fold(
   return NK_SUCCESS;
 }
 
-bool nk_enc_unicode_code_is_cprop(
-    const nk_encoding_t* enc ARG_UNUSED,
-    uint32_t code,
-    nk_cprop_t cprop
-) {
+bool nk_enc_unicode_code_is_cprop(const nk_encoding_t* enc ARG_UNUSED, uint32_t code, nk_cprop_t cprop) {
   if (cprop > NK_MAX_CPROP) {
     return false;
   }
@@ -378,12 +362,9 @@ bool nk_enc_unicode_code_is_cprop(
   return code_in_code_range(code, len, intervals);
 }
 
-nk_error_t nk_enc_unicode_get_cprop_code_range(
-    const nk_encoding_t* enc ARG_UNUSED,
-    nk_cprop_t cprop,
-    nk_code_range_delegation_t* out_delegation,
-    nk_static_code_range_t* out_code_range
-) {
+nk_error_t nk_enc_unicode_get_cprop_code_range(const nk_encoding_t* enc ARG_UNUSED, nk_cprop_t cprop,
+                                               nk_code_range_delegation_t* out_delegation,
+                                               nk_static_code_range_t* out_code_range) {
   if (cprop > NK_MAX_CPROP) {
     return NK_ERR_UNSUPPORTED_CHAR_PROPERTY;
   }
