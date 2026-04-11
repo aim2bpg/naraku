@@ -60,6 +60,9 @@ const uint8_t* nk_error_message(nk_error_t err) {
       return (const uint8_t*)"number in quantifier is too big";
     case NK_ERR_NUMBERS_OUT_OF_ORDER_IN_QUANTIFIER:
       return (const uint8_t*)"numbers in quantifier are out of order";
+    case NK_ERR_UNMATCHED_CLOSE_PARENTHESIS:
+      return (const uint8_t*)"unmatched close parenthesis";
+    // Encoding-related errors:
     case NK_ERR_INVALID_CODE_POINT:
       return (const uint8_t*)"invalid code point";
     case NK_ERR_TOO_LARGE_CODE_POINT:

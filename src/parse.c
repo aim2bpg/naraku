@@ -1403,9 +1403,10 @@ static nk_error_t parse_atom(nk_parser_t* parser, token_t* tok, nk_node_t** out_
       *out_node_ptr = newline_node;
       break;
     }
+    case TK_GROUP_CLOSE:
+      return NK_ERR_UNMATCHED_CLOSE_PARENTHESIS;
     default:
-      // TODO: Fix error code for this case
-      return NK_ERR_INTERNAL_ERROR;
+      return NK_ERR_PARSER_BUG;
   }
 
   nk_error_t err = lex(parser, tok);
@@ -1649,20 +1650,19 @@ nk_error_t nk_parser_parse(nk_parser_t* parser, nk_node_t** out_node_ptr) {
 
   err = parse_alt(parser, &tok, out_node_ptr);
   if (err != NK_SUCCESS) {
+    if (parser->error_bytes == NULL) {
+      parser->error_bytes = tok.span_bytes;
+      parser->error_bytes_end = tok.span_bytes_end;
+    }
+
     return err;
   }
 
-  if (parser->in_unicode_escape_brace) {
+  if (parser->in_unicode_escape_brace || tok.type != TK_END) {
     nk_node_free(*out_node_ptr);
     *out_node_ptr = NULL;
-    return NK_ERR_UNCLOSED_UNICODE_ESCAPE_BRACE;
-  }
 
-  if (tok.type != TK_END) {
-    nk_node_free(*out_node_ptr);
-    *out_node_ptr = NULL;
-    // FIXME: correct error code
-    return NK_ERR_INTERNAL_ERROR;
+    return NK_ERR_PARSER_BUG;
   }
 
   return NK_SUCCESS;

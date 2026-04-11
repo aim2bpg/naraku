@@ -84,6 +84,9 @@ typedef enum {
   NK_ERR_TOO_BIG_NUMBER_IN_QUANTIFIER = -400,
   NK_ERR_NUMBERS_OUT_OF_ORDER_IN_QUANTIFIER = -401,
 
+  // Errors related to groups:
+  NK_ERR_UNMATCHED_CLOSE_PARENTHESIS = -410,
+
   // ============================================================================
   //
   // Encoding-related errors (-500..-599):
