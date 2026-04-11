@@ -51,6 +51,18 @@ nk_error_t pbuf_append(nk_pbuf_t* buf1, const nk_pbuf_t* buf2) {
   return NK_SUCCESS;
 }
 
+nk_error_t pbuf_append_code(nk_pbuf_t* buf, const nk_encoding_t* enc, uint32_t code) {
+  uint8_t mbc_bytes[NK_ENC_MAX_MBC_WIDTH];
+  size_t mbc_width;
+  nk_error_t err = nk_enc_encode_mbc(enc, code, &mbc_width, mbc_bytes);
+  if (err != NK_SUCCESS) {
+    return err;
+  }
+
+  nk_pbuf_t mbc_pbuf = {.type = NK_PBUF_VIEW, .bytes = mbc_bytes, .bytes_end = mbc_bytes + mbc_width};
+  return pbuf_append(buf, &mbc_pbuf);
+}
+
 nk_error_t pbuf_resize(nk_pbuf_t* buf) {
   if (buf->type == NK_PBUF_VIEW) {
     return NK_SUCCESS;
@@ -173,6 +185,12 @@ void nk_node_free(nk_node_t* node) {
       if (node->atomic.child != NULL) {
         nk_node_free(node->atomic.child);
         node->atomic.child = NULL;
+      }
+      break;
+    case NK_NODE_TYPE_ABSENCE:
+      if (node->absence.child != NULL) {
+        nk_node_free(node->absence.child);
+        node->absence.child = NULL;
       }
       break;
     case NK_NODE_TYPE_CONDITIONAL:
@@ -307,6 +325,12 @@ nk_error_t nk_node_to_owned(nk_node_t* node) {
       break;
     case NK_NODE_TYPE_ATOMIC:
       err = nk_node_to_owned(node->atomic.child);
+      if (err != NK_SUCCESS) {
+        return err;
+      }
+      break;
+    case NK_NODE_TYPE_ABSENCE:
+      err = nk_node_to_owned(node->absence.child);
       if (err != NK_SUCCESS) {
         return err;
       }

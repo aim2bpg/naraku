@@ -67,6 +67,7 @@ typedef struct nk_assertion_node nk_assertion_node_t;
 typedef struct nk_quantifier_node nk_quantifier_node_t;
 typedef struct nk_group_node nk_group_node_t;
 typedef struct nk_atomic_node nk_atomic_node_t;
+typedef struct nk_absence_node nk_absence_node_t;
 typedef struct nk_conditional_node nk_conditional_node_t;
 typedef struct nk_concat_node nk_concat_node_t;
 typedef struct nk_alt_node nk_alt_node_t;
@@ -94,6 +95,7 @@ typedef enum {
   NK_NODE_TYPE_QUANTIFIER,
   NK_NODE_TYPE_GROUP,
   NK_NODE_TYPE_ATOMIC,
+  NK_NODE_TYPE_ABSENCE,
   NK_NODE_TYPE_CONDITIONAL,
   NK_NODE_TYPE_CONCAT,
   NK_NODE_TYPE_ALT
@@ -372,6 +374,14 @@ struct nk_atomic_node {
 };
 
 /**
+ * Structure representing an absence node in the regex AST (e.g., `(?~abc)`).
+ */
+struct nk_absence_node {
+  nk_node_base_t base;
+  nk_node_t* child;
+};
+
+/**
  * Structure representing a conditional node in the regex AST (e.g.,
  * `(?(condition)yes|no)`).
  */
@@ -421,6 +431,7 @@ union nk_node {
   nk_quantifier_node_t quantifier;
   nk_group_node_t group;
   nk_atomic_node_t atomic;
+  nk_absence_node_t absence;
   nk_conditional_node_t conditional;
   nk_concat_node_t concat;
   nk_alt_node_t alt;
@@ -497,12 +508,13 @@ struct nk_parser {
   bool posix_char_class_is_ascii_only;
   nk_fold_flag_t fold_flags;
 
-  // Lexer state:
+  // Internal states:
   bool in_unicode_escape_brace;
   uint32_t num_capture_groups;
-
   bool has_named_groups;
-  uint32_t num_groups;
+
+  const uint8_t* error_bytes;
+  const uint8_t* error_bytes_end;
 };
 
 /**

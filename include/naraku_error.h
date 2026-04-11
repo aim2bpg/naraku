@@ -5,6 +5,8 @@
 #ifndef NARAKU_ERROR_H
 #define NARAKU_ERROR_H
 
+#include <naraku_common.h>
+
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -19,92 +21,95 @@ extern "C" {
 typedef enum {
   // ============================================================================
   //
-  // Normal cases:
+  // Normal cases (0..-99):
   //
   // ============================================================================
 
-  /**
-   * Indicates success (i.e., no error).
-   */
   NK_SUCCESS = 0,
-
-  /**
-   * Indicates that a search operation did not find a match.
-   */
   NK_NO_MATCH = -1,
 
   // ============================================================================
   //
-  // General and internal errors:
+  // General errors (-100..-199):
   //
   // ============================================================================
 
-  /**
-   * Indicates that a memory allocation failed.
-   */
-  NK_ERR_MEMORY_ALLOCATION_FAILED = -5,
-
-  /**
-   * Indicates an internal error.
-   */
-  NK_ERR_INTERNAL_ERROR = -7,
+  NK_ERR_MEMORY_ALLOCATION_FAILED = -100,
 
   // ============================================================================
   //
-  // Parsing errors:
+  // Internal errors (-200..-299):
   //
   // ============================================================================
 
-  NK_ERR_INVALID_BYTE_SEQUENCE_IN_PATTERN = -100,
-  NK_ERR_INVALID_ESCAPED_BYTE_SEQUENCE = -101,
-  NK_ERR_INCOMPLETE_ESCAPE_SEQUENCE = -102,
-  NK_ERR_TOO_LONG_ESCAPE_SEQUENCE = -103,
-  NK_ERR_DUPLICATE_META_ESCAPE = -104,
-  NK_ERR_DUPLICATE_CONTROL_ESCAPE = -105,
-  NK_ERR_TOO_SHORT_META_ESCAPE = -106,
-  NK_ERR_TOO_SHORT_CONTROL_ESCAPE = -107,
-  NK_ERR_UNEXPECTED_ESCAPE_SEQUENCE = -108,
-
-  NK_ERR_TOO_BIG_NUMBER_IN_QUANTIFIER = -201,
-  NK_ERR_NUMBERS_OUT_OF_ORDER_IN_QUANTIFIER = -202,
-  NK_ERR_TOO_SHORT_ESCAPE_SEQUENCE = -210,
-  NK_ERR_UNMATCHED_CLOSE_PAREN = -211,
-  NK_ERR_TOO_SHORT_HEX_NUMBER = -212,
-  NK_ERR_INVALID_UNICODE_CODE_POINT_ESCAPE = -213,
+  NK_ERR_INTERNAL_ERROR = -200,
+  NK_ERR_PARSER_BUG = -201,
 
   // ============================================================================
   //
-  // Character property related errors:
+  // Parser-related errors (-300..-499):
   //
   // ============================================================================
 
-  /**
-   * Indicates an invalid character property name.
-   */
-  NK_ERR_INVALID_CHAR_PROP_NAME = -223,
+  // Errors on reading bytes from the pattern:
+  NK_ERR_INVALID_BYTE_SEQUENCE = -300,
+  NK_ERR_INCOMPLETE_BYTE_SEQUENCE = -301,
 
-  /**
-   * Indicates an unsupported character property.
-   */
-  NK_ERR_UNSUPPORTED_CHAR_PROPERTY = -224,
+  // Errors related to general escape:
+  NK_ERR_INCOMPLETE_ESCAPE = -310,
+  NK_ERR_INVALID_ESCAPE = -311,
+
+  // Errors related to byte escape sequence (e.g., `\xHH`, `\OOO`, `\cX`, `\M-X`):
+  NK_ERR_INVALID_ESCAPED_BYTE_SEQUENCE = -320,
+  NK_ERR_INCOMPLETE_ESCAPED_BYTE_SEQUENCE = -321,
+  NK_ERR_INCOMPLETE_HEX_ESCAPE = -322,
+  NK_ERR_INCOMPLETE_META_ESCAPE = -323,
+  NK_ERR_INCOMPLETE_CONTROL_ESCAPE = -324,
+  NK_ERR_INVALID_META_ESCAPE_CODE = -325,
+  NK_ERR_INVALID_CONTROL_ESCAPE_CODE = -326,
+  NK_ERR_DUPLICATE_META_ESCAPE = -327,
+  NK_ERR_DUPLICATE_CONTROL_ESCAPE = -328,
+
+  // Errors related to Unicode code point escape sequence (`\uHHHH` and `\u{...}`):
+  NK_ERR_INCOMPLETE_UNICODE_ESCAPE = -330,
+  NK_ERR_EMPTY_UNICODE_ESCAPE_BRACE = -331,
+  NK_ERR_INVALID_UNICODE_ESCAPE = -332,
+  NK_ERR_UNCLOSED_UNICODE_ESCAPE_BRACE = -333,
+  NK_ERR_UNICODE_ESCAPE_IN_NON_UNICODE_ENCODING = -334,
+
+  // Errors related to character properties (e.g., `\p{Lu}`, `\P{Lu}`):
+  NK_ERR_UNCLOSED_CHAR_PROP_ESCAPE_BRACE = -341,
+
+  // Errors related to bounded quantifiers (e.g., `{m,n}`):
+  NK_ERR_TOO_BIG_NUMBER_IN_QUANTIFIER = -400,
+  NK_ERR_NUMBERS_OUT_OF_ORDER_IN_QUANTIFIER = -401,
 
   // ============================================================================
   //
-  // Code-points related errors:
+  // Encoding-related errors (-500..-599):
   //
   // ============================================================================
 
-  /**
-   * Indicates an invalid code point.
-   */
-  NK_ERR_INVALID_CODE_POINT = -400,
+  // Errors related to code points:
+  NK_ERR_INVALID_CODE_POINT = -500,
+  NK_ERR_TOO_LARGE_CODE_POINT = -502,
 
-  /**
-   * Indicates a code point that is too large to be encoded in the encoding
-   * (e.g. above U+10FFFF for UTF-8).
-   */
-  NK_ERR_TOO_LARGE_CODE_POINT = -401,
+  // Errors related to character properties:
+  NK_ERR_INVALID_CHAR_PROP_NAME = -513,
+  NK_ERR_UNSUPPORTED_CHAR_PROPERTY = -514,
 } nk_error_t;
+
+// ==========================================================================
+//
+// src/error.c
+//
+// ==========================================================================
+
+/**
+ * Returns a human-readable error message corresponding to the given error code `err`.
+ */
+NARAKU_EXPORTED_FUNCTION
+const uint8_t* nk_error_message(nk_error_t err);
 
 #ifdef __cplusplus
 }

@@ -45,8 +45,7 @@ module Naraku
         h[:group_num] = group_num
       when :assertion
         h[:assertion_type] = assertion_type
-        c = child
-        h[:child] = c&.to_h
+        h[:child] = child&.to_h
       when :quantifier
         h[:min] = min
         h[:max] = max
@@ -58,6 +57,8 @@ module Naraku
         h[:group_num] = group_num
         h[:child] = child.to_h
       when :atomic
+        h[:child] = child.to_h
+      when :absence
         h[:child] = child.to_h
       when :conditional
         h[:has_name] = has_name

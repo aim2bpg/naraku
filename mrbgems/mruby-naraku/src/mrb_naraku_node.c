@@ -430,6 +430,8 @@ static const char* node_type_name(nk_node_type_t type) {
       return "group";
     case NK_NODE_TYPE_ATOMIC:
       return "atomic";
+    case NK_NODE_TYPE_ABSENCE:
+      return "absence";
     case NK_NODE_TYPE_CONDITIONAL:
       return "conditional";
     case NK_NODE_TYPE_CONCAT:
@@ -659,6 +661,8 @@ static mrb_value mrb_naraku_node_child(mrb_state* mrb, mrb_value self) {
       return mrb_naraku_node_wrap(mrb, node->group.child, root_ref);
     case NK_NODE_TYPE_ATOMIC:
       return mrb_naraku_node_wrap(mrb, node->atomic.child, root_ref);
+    case NK_NODE_TYPE_ABSENCE:
+      return mrb_naraku_node_wrap(mrb, node->absence.child, root_ref);
     default:
       mrb_raisef(mrb, E_RUNTIME_ERROR, "child is not available for %s node", node_type_name(node->base.type));
       return mrb_nil_value();

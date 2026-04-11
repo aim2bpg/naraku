@@ -180,9 +180,11 @@ struct nk_encoding {
    * Function pointer to determine the width of a multi-byte character starting at `bytes`.
    * The function returns:
    *
-   * - a positive value of the width in bytes of the multi-byte character if `bytes` is valid and complete,
+   * - a positive value of the width in bytes of the multi-byte character if `bytes` is valid and
+   * complete,
    * - `0` if `bytes` is invalid,
-   * - a negative value of the remaining bytes needed to complete the character if `bytes` is incomplete.
+   * - a negative value of the remaining bytes needed to complete the character if `bytes` is
+   * incomplete.
    *
    * The function should not read beyond `bytes_end`, and `bytes < bytes_end` must hold.
    */

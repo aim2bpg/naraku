@@ -314,7 +314,8 @@ nk_error_t nk_enc_unicode_iterate_case_fold(
   for (size_t i = 0; i < sizeof(UNICODE_FOLD_ITEMS) / sizeof(struct unicode_fold_item); i++) {
     const struct unicode_fold_item* item = &UNICODE_FOLD_ITEMS[i];
 
-    if (item->from_code == 0x0049 && (flags & NK_FOLD_TURKISH_AZERI) != 0) {  // LATIN CAPITAL LETTER I
+    if (item->from_code == 0x0049 && (flags & NK_FOLD_TURKISH_AZERI) != 0) {  // LATIN CAPITAL
+                                                                              // LETTER I
       uint32_t folded_code = 0x0131;                                          // LATIN SMALL LETTER DOTLESS I
       nk_error_t err = callback(item->from_code, &folded_code, 1, user_data);
       if (err != 0) {
@@ -323,7 +324,9 @@ nk_error_t nk_enc_unicode_iterate_case_fold(
       continue;
     }
 
-    if (item->from_code == 0x0130 && (flags & NK_FOLD_TURKISH_AZERI) != 0) {  // LATIN CAPITAL LETTER I WITH DOT ABOVE
+    if (item->from_code == 0x0130 && (flags & NK_FOLD_TURKISH_AZERI) != 0) {  // LATIN CAPITAL
+                                                                              // LETTER I WITH DOT
+                                                                              // ABOVE
       uint32_t folded_code = 0x0069;                                          // LATIN SMALL LETTER I
       nk_error_t err = callback(item->from_code, &folded_code, 1, user_data);
       if (err != 0) {
