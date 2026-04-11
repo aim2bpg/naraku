@@ -705,6 +705,11 @@ static nk_error_t lex_escape_bytes(nk_parser_t* parser, uint32_t* out_code) {
     }
   }
 
+  width = nk_enc_scan_mbc_width(parser->enc, bytes, bytes + 1 + remaining_width);
+  if (width != 1 + remaining_width) {
+    return NK_ERR_INVALID_ESCAPED_BYTE_SEQUENCE;
+  }
+
   *out_code = nk_enc_decode_mbc(parser->enc, bytes, bytes + 1 + remaining_width);
   return NK_SUCCESS;
 }
@@ -1107,6 +1112,8 @@ static nk_error_t lex_internal(nk_parser_t* parser, token_t* out_token) {
 
             parser->pattern_bytes += brace_width;  // consume `{`
 
+            const uint8_t* name_bytes_for_error_report = parser->pattern_bytes;
+
             nk_pbuf_t name_buf;
             err = lex_name(parser, &name_buf, '}', NK_ERR_UNCLOSED_CHAR_PROP_ESCAPE_BRACE, false);
             if (err != NK_SUCCESS) {
@@ -1134,6 +1141,8 @@ static nk_error_t lex_internal(nk_parser_t* parser, token_t* out_token) {
             err = nk_name_to_cprop(parser->enc, name_buf.bytes, name_buf.bytes_end, &out_token->data.char_prop.cprop);
             if (err != NK_SUCCESS) {
               nk_pbuf_free(&name_buf);
+              parser->error_bytes = name_bytes_for_error_report;
+              parser->error_bytes_end = parser->pattern_bytes - brace_width;  // point to the unclosed `}`
               return err;
             }
 
@@ -1661,6 +1670,16 @@ nk_error_t nk_parser_parse(nk_parser_t* parser, nk_node_t** out_node_ptr) {
   if (parser->in_unicode_escape_brace || tok.type != TK_END) {
     nk_node_free(*out_node_ptr);
     *out_node_ptr = NULL;
+
+    if (parser->in_unicode_escape_brace) {
+      return NK_ERR_UNCLOSED_UNICODE_ESCAPE_BRACE;
+    }
+
+    if (tok.type == TK_GROUP_CLOSE) {
+      parser->error_bytes = tok.span_bytes;
+      parser->error_bytes_end = tok.span_bytes_end;
+      return NK_ERR_UNMATCHED_CLOSE_PARENTHESIS;
+    }
 
     return NK_ERR_PARSER_BUG;
   }

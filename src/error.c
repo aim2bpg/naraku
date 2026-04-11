@@ -65,8 +65,8 @@ const uint8_t* nk_error_message(nk_error_t err) {
     // Encoding-related errors:
     case NK_ERR_INVALID_CODE_POINT:
       return (const uint8_t*)"invalid code point";
-    case NK_ERR_TOO_LARGE_CODE_POINT:
-      return (const uint8_t*)"code point is too large";
+    case NK_ERR_CODE_POINT_OUT_OF_RANGE:
+      return (const uint8_t*)"code point is out of range";
     case NK_ERR_INVALID_CHAR_PROP_NAME:
       return (const uint8_t*)"invalid character property name";
     case NK_ERR_UNSUPPORTED_CHAR_PROPERTY:

@@ -28,7 +28,7 @@ us_ascii_encode_mbc(const nk_encoding_t* enc ARG_UNUSED, uint32_t code, size_t* 
     return NK_SUCCESS;
   }
 
-  return NK_ERR_TOO_LARGE_CODE_POINT;
+  return NK_ERR_CODE_POINT_OUT_OF_RANGE;
 }
 
 const nk_encoding_t* nk_enc_us_ascii = &(const nk_encoding_t){

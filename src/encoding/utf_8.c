@@ -218,7 +218,7 @@ utf_8_encode_mbc(const nk_encoding_t* enc ARG_UNUSED, uint32_t code, size_t* out
   } else if (code <= 0x10FFFF) {
     mbc_len = 4;
   } else {
-    return NK_ERR_TOO_LARGE_CODE_POINT;
+    return NK_ERR_CODE_POINT_OUT_OF_RANGE;
   }
 
   *out_width = (size_t)mbc_len;

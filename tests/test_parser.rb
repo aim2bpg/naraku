@@ -309,34 +309,34 @@ module Parser
       assert_equal "\u{10FFFF}", result[:buf]
 
       # U+110000 is out of range for UTF-8.
-      assert_raises(RuntimeError, '') { parse('\u{110000}') }
+      assert_raises(Naraku::ParseError, 'code point is out of range (at offset 0)') { parse('\u{110000}') }
     end
 
     def test_unicode_escape_surrogate
       # Surrogate code points are invalid in UTF-8.
-      assert_raises(RuntimeError, '') { parse('\u{D800}') }
-      assert_raises(RuntimeError, '') { parse('\u{DFFF}') }
+      assert_raises(Naraku::ParseError, 'invalid code point (at offset 0)') { parse('\u{D800}') }
+      assert_raises(Naraku::ParseError, 'invalid code point (at offset 0)') { parse('\u{DFFF}') }
     end
 
     def test_unicode_escape_encoding_constraint
       # U+0080 is out of range for US-ASCII.
-      assert_raises(RuntimeError, '') { parse('\u0080', encoding: Naraku::Encoding::US_ASCII) }
-      assert_raises(RuntimeError, '') { parse('\u{80}', encoding: Naraku::Encoding::US_ASCII) }
+      assert_raises(Naraku::ParseError, 'Unicode escape sequence in non-Unicode encoding (at offset 2)') { parse('\u0080', encoding: Naraku::Encoding::US_ASCII) }
+      assert_raises(Naraku::ParseError, 'Unicode escape sequence in non-Unicode encoding (at offset 2)') { parse('\u{80}', encoding: Naraku::Encoding::US_ASCII) }
     end
 
     def test_unicode_escape_errors
       # Trailing \u
-      assert_raises(RuntimeError, '') { parse('\u') }
+      assert_raises(Naraku::ParseError, 'unclosed Unicode escape sequence brace (at offset 2)') { parse('\u') }
       # Too short fixed escape
-      assert_raises(RuntimeError, '') { parse('\u123') }
+      assert_raises(Naraku::ParseError, 'incomplete Unicode escape sequence (at offset 5)') { parse('\u123') }
       # Invalid hex digit
-      assert_raises(RuntimeError, '') { parse('\u123G') }
+      assert_raises(Naraku::ParseError, 'incomplete Unicode escape sequence (at offset 5)') { parse('\u123G') }
       # Unclosed brace
-      assert_raises(RuntimeError, '') { parse('\u{61') }
+      assert_raises(Naraku::ParseError, 'unclosed Unicode escape sequence brace (at offset 5)') { parse('\u{61') }
       # Invalid hex in brace
-      assert_raises(RuntimeError, '') { parse('\u{G}') }
+      assert_raises(Naraku::ParseError, 'invalid Unicode escape sequence (at offset 3)') { parse('\u{G}') }
       # Empty brace
-      assert_raises(RuntimeError, '') { parse('\u{}') }
+      assert_raises(Naraku::ParseError, 'empty Unicode escape sequence brace (at offset 3)') { parse('\u{}') }
     end
 
     # ========================================================================
@@ -440,22 +440,24 @@ module Parser
 
     def test_escape_errors
       # Missing hex digits
-      assert_raises(RuntimeError, '') { parse('\x') }
+      assert_raises(Naraku::ParseError, 'incomplete \x escape sequence (at offset 2)') { parse('\x') }
       # Invalid hex digit
-      assert_raises(RuntimeError, '') { parse('\xG') }
+      assert_raises(Naraku::ParseError, 'incomplete \x escape sequence (at offset 2)') { parse('\xG') }
       # Missing meta character
-      assert_raises(RuntimeError, '') { parse('\M') }
-      assert_raises(RuntimeError, '') { parse('\M-') }
+      assert_raises(Naraku::ParseError, 'incomplete \M- escape sequence (at offset 2)') { parse('\M') }
+      assert_raises(Naraku::ParseError, 'incomplete \M- escape sequence (at offset 3)') { parse('\M-') }
       # Duplicate prefixes
-      assert_raises(RuntimeError, '') { parse('\M-\M-a') }
-      assert_raises(RuntimeError, '') { parse('\C-\C-a') }
+      assert_raises(Naraku::ParseError, 'duplicate \M- escape sequence (at offset 5)') { parse('\M-\M-a') }
+      assert_raises(Naraku::ParseError, 'duplicate \c/\C- escape sequence (at offset 5)') { parse('\C-\C-a') }
       # Invalid control/meta character
-      assert_raises(RuntimeError, '') { parse('\C-あ') }
-      assert_raises(RuntimeError, '') { parse('\cあ') }
-      assert_raises(RuntimeError, '') { parse('\M-あ') }
+      assert_raises(Naraku::ParseError, 'invalid code in \c/\C- escape sequence (at offset 6)') { parse('\C-あ') }
+      assert_raises(Naraku::ParseError, 'invalid code in \c/\C- escape sequence (at offset 5)') { parse('\cあ') }
+      assert_raises(Naraku::ParseError, 'invalid code in \M- escape sequence (at offset 6)') { parse('\M-あ') }
       # Incomplete multibyte sequence (only first byte of 'あ')
-      assert_raises(RuntimeError, '') { parse('\xe3') }
-      assert_raises(RuntimeError, '') { parse('\xe3\x81') }
+      assert_raises(Naraku::ParseError, 'incomplete escaped byte sequence (at offset 4)') { parse('\xe3') }
+      assert_raises(Naraku::ParseError, 'incomplete escaped byte sequence (at offset 8)') { parse('\xe3\x81') }
+      # Invalid multibyte sequence (surrogate code point)
+      assert_raises(Naraku::ParseError, 'invalid escaped byte sequence (at offset 12)') { parse('\xED\xA0\x80') }
     end
 
     # ========================================================================
@@ -509,14 +511,21 @@ module Parser
       assert_equal Naraku::Encoding.name_to_cprop('Lu'), result[:cprop]
     end
 
+    def test_char_prop_missing_brace
+      result = parse('\p')
+      assert_equal :literal, result[:type]
+      assert_equal 'p', result[:buf]
+
+      result = parse('\P')
+      assert_equal :literal, result[:type]
+      assert_equal 'P', result[:buf]
+    end
+
     def test_char_prop_errors
-      # Missing brace
-      assert_raises(RuntimeError, '') { parse('\p') }
-      assert_raises(RuntimeError, '') { parse('\P') }
       # Unclosed brace
-      assert_raises(RuntimeError, '') { parse('\p{Lu') }
+      assert_raises(Naraku::ParseError, 'unclosed character property escape sequence brace (at offset 5)') { parse('\p{Lu') }
       # Invalid property name
-      assert_raises(RuntimeError, '') { parse('\p{InvalidProperty}') }
+      assert_raises(Naraku::ParseError, 'invalid character property name (at offset 3)') { parse('\p{InvalidProperty}') }
     end
 
     # ========================================================================
@@ -967,7 +976,7 @@ module Parser
     # ========================================================================
 
     def test_error_trailing_backslash
-      assert_raises(RuntimeError, '') { parse('\\') }
+      assert_raises(Naraku::ParseError, 'incomplete escape sequence (at offset 1)') { parse('\\') }
     end
 
     # ========================================================================
@@ -1030,14 +1039,6 @@ module Parser
 
     def test_atomic_group
       skip 'atomic groups are not yet implemented'
-    end
-
-    def test_char_property_positive
-      skip 'character properties are not yet implemented'
-    end
-
-    def test_char_property_negative
-      skip 'character properties are not yet implemented'
     end
 
     def test_back_ref_number

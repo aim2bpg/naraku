@@ -99,7 +99,9 @@ mrb_value mrb_naraku_node_create_root(mrb_state* mrb, nk_node_t* node) {
   if (err != NK_SUCCESS) {
     nk_node_free(node);
     free(node);
-    mrb_raise(mrb, E_RUNTIME_ERROR, "failed to convert node buffers to owned");
+    struct RClass* naraku_module = mrb_module_get(mrb, "Naraku");
+    struct RClass* error_class = mrb_class_get_under(mrb, naraku_module, "Error");
+    mrb_raise(mrb, error_class, (const char*)nk_error_message(err));
   }
 
   // Allocate the root wrapper.

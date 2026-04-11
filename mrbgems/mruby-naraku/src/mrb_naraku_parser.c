@@ -75,7 +75,9 @@ static mrb_value mrb_naraku_parser_new(mrb_state* mrb, mrb_value self) {
 
   nk_error_t err = nk_parser_init(enc, pattern_copy, pattern_copy + pattern_len, options, parser);
   if (err != NK_SUCCESS) {
-    mrb_raisef(mrb, E_ARGUMENT_ERROR, "failed to initialize parser: %d", err);
+    struct RClass* naraku_module = mrb_module_get(mrb, "Naraku");
+    struct RClass* error_class = mrb_class_get_under(mrb, naraku_module, "Error");
+    mrb_raise(mrb, error_class, (const char*)nk_error_message(err));
   }
 
   struct RClass* parser_class = mrb_class_ptr(self);
@@ -88,7 +90,23 @@ static mrb_value mrb_naraku_parser_parse(mrb_state* mrb, mrb_value self) {
   nk_node_t* node = NULL;
   nk_error_t err = nk_parser_parse(parser, &node);
   if (err != NK_SUCCESS) {
-    mrb_raisef(mrb, E_RUNTIME_ERROR, "failed to parse pattern: %d", err);
+    struct RClass* naraku_module = mrb_module_get(mrb, "Naraku");
+    struct RClass* parse_error_class = mrb_class_get_under(mrb, naraku_module, "ParseError");
+    mrb_value args[4];
+    args[0] = self;
+    args[1] = mrb_fixnum_value(err);
+    mrb_int offset = 0;
+    mrb_int length = 0;
+    if (parser->error_bytes != NULL && parser->error_bytes >= parser->pattern_bytes_begin) {
+      offset = (mrb_int)(parser->error_bytes - parser->pattern_bytes_begin);
+      if (parser->error_bytes_end != NULL && parser->error_bytes_end >= parser->error_bytes) {
+        length = (mrb_int)(parser->error_bytes_end - parser->error_bytes);
+      }
+    }
+    args[2] = mrb_fixnum_value(offset);
+    args[3] = mrb_fixnum_value(length);
+    mrb_value exc = mrb_obj_new(mrb, parse_error_class, 4, args);
+    mrb_exc_raise(mrb, exc);
   }
 
   if (node == NULL) {

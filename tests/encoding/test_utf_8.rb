@@ -69,14 +69,14 @@ module Encoding
       assert_equal "\xF0\x9F\x98\x80", E.encode_mbc(0x1F600) # "😀"
 
       (0xD800..0xDFFF).each do |code| # surrogate code points
-        assert_raises(ArgumentError, "invalid code point: #{code}") do
+        assert_raises(Naraku::Error, '') do
           E.encode_mbc(code)
         end
       end
 
-      assert_raises(ArgumentError, "too large code point: 110000") do
+      assert_raises(Naraku::Error, '') {
         E.encode_mbc(0x110000)
-      end
+      }
     end
 
     def test_decode_mbc

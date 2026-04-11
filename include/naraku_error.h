@@ -95,11 +95,11 @@ typedef enum {
 
   // Errors related to code points:
   NK_ERR_INVALID_CODE_POINT = -500,
-  NK_ERR_TOO_LARGE_CODE_POINT = -502,
+  NK_ERR_CODE_POINT_OUT_OF_RANGE = -501,
 
   // Errors related to character properties:
-  NK_ERR_INVALID_CHAR_PROP_NAME = -513,
-  NK_ERR_UNSUPPORTED_CHAR_PROPERTY = -514,
+  NK_ERR_INVALID_CHAR_PROP_NAME = -510,
+  NK_ERR_UNSUPPORTED_CHAR_PROPERTY = -511,
 } nk_error_t;
 
 // ==========================================================================

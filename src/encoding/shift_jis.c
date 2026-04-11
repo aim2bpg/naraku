@@ -49,7 +49,7 @@ static int8_t shift_jis_scan_mbc_width(
 static nk_error_t
 shift_jis_encode_mbc(const nk_encoding_t* enc ARG_UNUSED, uint32_t code, size_t* out_width, uint8_t* out_bytes) {
   if (code > 0xFFFF) {
-    return NK_ERR_TOO_LARGE_CODE_POINT;
+    return NK_ERR_CODE_POINT_OUT_OF_RANGE;
   }
 
   if (code & 0xFF00) {

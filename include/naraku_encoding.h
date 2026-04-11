@@ -210,8 +210,8 @@ struct nk_encoding {
    *
    * - `NK_ERR_INVALID_CODE_POINT` if the code point is not valid in the encoding
    *   (e.g., a surrogate code point for UTF-8).
-   * - `NK_ERR_TOO_LARGE_CODE_POINT` if the code point is too large to be encoded
-   *   in the encoding (e.g., above U+10FFFF for UTF-8).
+   * - `NK_ERR_CODE_POINT_OUT_OF_RANGE` if the code point is out of range to be
+   *   encoded in the encoding (e.g., above U+10FFFF for UTF-8).
    */
   nk_error_t (*encode_mbc)(
     const nk_encoding_t* enc,

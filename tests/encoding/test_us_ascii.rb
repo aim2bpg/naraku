@@ -41,7 +41,7 @@ module Encoding
       end
 
       (0x80..0xFF).each do |code|
-        assert_raises(ArgumentError, "too large code point: #{code}") do
+        assert_raises(Naraku::Error, '') do
           E.encode_mbc(code)
         end
       end

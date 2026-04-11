@@ -15,7 +15,7 @@ module Naraku
 
       fold_flags = Naraku::Encoding.parse_fold_flags(fold_flags) if fold_flags.is_a?(Array)
 
-      _new(
+      parser = _new(
         enc,
         pattern,
         is_extended_mode,
@@ -26,6 +26,15 @@ module Naraku
         posix_char_class_is_ascii_only,
         fold_flags
       )
+      parser.set_pattern(enc, pattern)
+      parser
+    end
+
+    attr_reader :enc, :pattern
+
+    def set_pattern(enc, pattern)
+      @enc = enc
+      @pattern = pattern
     end
   end
 end

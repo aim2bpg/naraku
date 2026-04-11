@@ -233,7 +233,7 @@ module Mtest
       assert(object.nil?, message)
     end
     
-    def assert_raises(expected_error_class, expected_message = nil, message, &block)
+    def assert_raises(expected_error_class, expected_message = nil, message = nil, &block)
       @num_assertions += 1
 
       message ||= begin
@@ -245,15 +245,17 @@ module Mtest
 
       begin
         yield
+        raise Assertion, "#{message}\nBut, no error was raised"
       rescue expected_error_class => ex
         if expected_message && !ex.message.include?(expected_message)
           raise Assertion, "#{message}\nBut, the raised error is #{ex.class} with message #{ex.message.inspect}"
         end
-      rescue Mtest::Assertion, NoMemoryError, SystemExit
-        raise
+      rescue Mtest::Assertion, NoMemoryError, SystemExit => ex
+        raise ex
       rescue Exception => ex
         raise Assertion, "#{message}\nBut, the raised error is #{ex.class} with message #{ex.message.inspect}"
       end
+
     end
 
     def assert_timeout(seconds, message = nil, &block)

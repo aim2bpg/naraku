@@ -49,14 +49,9 @@ static mrb_value mrb_naraku_encoding_name_to_cprop(mrb_state* mrb, mrb_value sel
   nk_error_t err =
     nk_name_to_cprop(nk_enc_ascii_8bit, (const uint8_t*)prop_name, (const uint8_t*)prop_name + len, &cprop);
   if (err != NK_SUCCESS) {
-    switch (err) {
-      case NK_ERR_INVALID_CHAR_PROP_NAME:
-        mrb_raisef(mrb, E_ARGUMENT_ERROR, "invalid character property name: %l", prop_name, len);
-        break;
-      default:
-        mrb_raisef(mrb, E_ARGUMENT_ERROR, "unknown error: %d", err);
-        break;
-    }
+    struct RClass* naraku_module = mrb_module_get(mrb, "Naraku");
+    struct RClass* error_class = mrb_class_get_under(mrb, naraku_module, "Error");
+    mrb_raise(mrb, error_class, (const char*)nk_error_message(err));
   }
 
   return mrb_fixnum_value((nk_cprop_t)cprop);
@@ -122,17 +117,9 @@ static mrb_value mrb_naraku_encoding_encode_mbc_width(mrb_state* mrb, mrb_value 
   size_t width;
   nk_error_t err = nk_enc_encode_mbc(enc, (uint32_t)code, &width, NULL);
   if (err != NK_SUCCESS) {
-    switch (err) {
-      case NK_ERR_INVALID_CODE_POINT:
-        mrb_raisef(mrb, E_ARGUMENT_ERROR, "invalid code point: %d", code);
-        break;
-      case NK_ERR_TOO_LARGE_CODE_POINT:
-        mrb_raisef(mrb, E_ARGUMENT_ERROR, "too large code point: %d", code);
-        break;
-      default:
-        mrb_raisef(mrb, E_ARGUMENT_ERROR, "unknown error: %d", err);
-        break;
-    }
+    struct RClass* naraku_module = mrb_module_get(mrb, "Naraku");
+    struct RClass* error_class = mrb_class_get_under(mrb, naraku_module, "Error");
+    mrb_raise(mrb, error_class, (const char*)nk_error_message(err));
   }
 
   return mrb_fixnum_value((mrb_int)width);
@@ -147,17 +134,9 @@ static mrb_value mrb_naraku_encoding_encode_mbc(mrb_state* mrb, mrb_value self) 
   uint8_t bytes[NK_ENC_MAX_MBC_WIDTH];
   nk_error_t err = nk_enc_encode_mbc(enc, (uint32_t)code, &width, bytes);
   if (err != NK_SUCCESS) {
-    switch (err) {
-      case NK_ERR_INVALID_CODE_POINT:
-        mrb_raisef(mrb, E_ARGUMENT_ERROR, "invalid code point: %d", code);
-        break;
-      case NK_ERR_TOO_LARGE_CODE_POINT:
-        mrb_raisef(mrb, E_ARGUMENT_ERROR, "too large code point: %d", code);
-        break;
-      default:
-        mrb_raisef(mrb, E_ARGUMENT_ERROR, "unknown error: %d", err);
-        break;
-    }
+    struct RClass* naraku_module = mrb_module_get(mrb, "Naraku");
+    struct RClass* error_class = mrb_class_get_under(mrb, naraku_module, "Error");
+    mrb_raise(mrb, error_class, (const char*)nk_error_message(err));
   }
 
   return mrb_str_new(mrb, (const char*)bytes, (size_t)width);
@@ -186,14 +165,9 @@ static mrb_value mrb_naraku_encoding_adjust_mbc_head(mrb_state* mrb, mrb_value s
   const uint8_t* byte_pos = context->bytes_begin + (size_t)offset;
   nk_error_t err = nk_enc_adjust_mbc_head(enc, &byte_pos, context);
   if (err != 0) {
-    switch (err) {
-      case NK_ERR_MEMORY_ALLOCATION_FAILED:
-        mrb_raise(mrb, E_RUNTIME_ERROR, "memory allocation failed during adjust_mbc_head");
-        break;
-      default:
-        mrb_raisef(mrb, E_RUNTIME_ERROR, "unknown error: %d", err);
-        break;
-    }
+    struct RClass* naraku_module = mrb_module_get(mrb, "Naraku");
+    struct RClass* error_class = mrb_class_get_under(mrb, naraku_module, "Error");
+    mrb_raise(mrb, error_class, (const char*)nk_error_message(err));
   }
 
   return mrb_fixnum_value((mrb_int)(byte_pos - context->bytes_begin));
@@ -315,12 +289,10 @@ static mrb_value mrb_naraku_encoding_iterate_case_fold(mrb_state* mrb, mrb_value
     nk_enc_iterate_case_fold(enc, (nk_fold_flag_t)flags, mrb_naraku_encoding_iterate_case_fold_callback, &data);
 
   if (err != 0) {
-    switch (err) {
-      case NK_ERR_INTERNAL_ERROR:
-        break;
-      default:
-        mrb_raisef(mrb, E_RUNTIME_ERROR, "unknown error: %d", err);
-        break;
+    if (err != NK_ERR_INTERNAL_ERROR) {
+      struct RClass* naraku_module = mrb_module_get(mrb, "Naraku");
+      struct RClass* error_class = mrb_class_get_under(mrb, naraku_module, "Error");
+      mrb_raise(mrb, error_class, (const char*)nk_error_message(err));
     }
   }
 
@@ -346,14 +318,9 @@ static mrb_value mrb_naraku_encoding_get_cprop_code_range(mrb_state* mrb, mrb_va
   nk_static_code_range_t code_range;
   nk_error_t err = nk_enc_get_cprop_code_range(enc, (nk_cprop_t)cprop, &delegation, &code_range);
   if (err != NK_SUCCESS) {
-    switch (err) {
-      case NK_ERR_UNSUPPORTED_CHAR_PROPERTY:
-        mrb_raisef(mrb, E_ARGUMENT_ERROR, "unsupported character property: %d", cprop);
-        break;
-      default:
-        mrb_raisef(mrb, E_ARGUMENT_ERROR, "unknown error: %d", err);
-        break;
-    }
+    struct RClass* naraku_module = mrb_module_get(mrb, "Naraku");
+    struct RClass* error_class = mrb_class_get_under(mrb, naraku_module, "Error");
+    mrb_raise(mrb, error_class, (const char*)nk_error_message(err));
   }
 
   switch (delegation) {
