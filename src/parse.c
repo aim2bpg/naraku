@@ -71,8 +71,11 @@ static inline bool is_ascii_printable(uint32_t code) {
   return ('\t' <= code && code <= '\r') || (' ' <= code && code <= '~');
 }
 
-#define RANGE_QUANTIFIER_MAX_REPETITION 100000
-#define BACK_REF_MAX_NUM 1000
+#define RANGE_QUANTIFIER_MAX_REPETITION 1000000
+#define BARE_BACK_REF_MAX_NUM 10000
+#define MAX_GROUP_NUM 10000000
+#define BACK_REF_MAX_NUM 10000000
+#define MAX_CAPTURE_DEPTH 1000
 
 /**
  * Peeks at the next Unicode code point in the pattern buffer.
@@ -165,7 +168,7 @@ static nk_error_t lex_bounded_quantifier(
   bool has_explicit_min = false;
   if ('0' <= code && code <= '9') {
     nk_error_t err =
-      lex_decimal_number(parser, out_min, RANGE_QUANTIFIER_MAX_REPETITION, NK_ERR_TOO_BIG_NUMBER_IN_QUANTIFIER);
+      lex_decimal_number(parser, out_min, RANGE_QUANTIFIER_MAX_REPETITION, NK_ERR_TOO_LARGE_NUMBER_IN_QUANTIFIER);
     if (err != NK_SUCCESS) {
       return err;
     }
@@ -199,7 +202,7 @@ static nk_error_t lex_bounded_quantifier(
 
     if ('0' <= code && code <= '9') {
       nk_error_t err =
-        lex_decimal_number(parser, out_max, RANGE_QUANTIFIER_MAX_REPETITION, NK_ERR_TOO_BIG_NUMBER_IN_QUANTIFIER);
+        lex_decimal_number(parser, out_max, RANGE_QUANTIFIER_MAX_REPETITION, NK_ERR_TOO_LARGE_NUMBER_IN_QUANTIFIER);
       if (err != NK_SUCCESS) {
         return err;
       }
@@ -640,6 +643,23 @@ static nk_error_t lex_escape_single_byte(nk_parser_t* parser, uint8_t* out_byte)
         break;
       }
 
+      case '\r':
+      {
+        if (parser->pattern_bytes < parser->pattern_bytes_end) {
+          int8_t next_width;
+          uint32_t next_code;
+          nk_error_t err = peek(parser, &next_width, &next_code);
+          if (err != NK_SUCCESS) {
+            return err;
+          }
+
+          if (next_code == '\n') {
+            code = '\n';
+          }
+        }
+        FALLTHROUGH;
+      }
+
       default:
         if (!is_ascii_printable(code)) {
           return NK_ERR_INVALID_ESCAPE;
@@ -716,9 +736,9 @@ static nk_error_t lex_escape_bytes(nk_parser_t* parser, uint32_t* out_code) {
 
 static nk_error_t lex_name(
   nk_parser_t* parser,
-  nk_pbuf_t* out_name_buf,
   uint32_t terminator,
-  bool is_capture_name,
+  bool with_depth,
+  nk_pbuf_t* out_name_buf,
   nk_error_t unterminated_error
 ) {
   out_name_buf->type = NK_PBUF_VIEW;
@@ -733,7 +753,7 @@ static nk_error_t lex_name(
       return err;
     }
 
-    if (code == terminator || (is_capture_name && (code == '+' || code == '-'))) {
+    if (code == terminator || (with_depth && (code == '+' || code == '-'))) {
       parser->pattern_bytes -= width;  // put back the terminator
 
       nk_error_t err = pbuf_resize(out_name_buf);
@@ -815,6 +835,144 @@ static nk_error_t lex_name(
 
   nk_pbuf_free(out_name_buf);
   return unterminated_error;
+}
+
+static nk_error_t lex_group_num_or_name(
+  nk_parser_t* parser,
+  uint32_t terminator,
+  bool with_depth,
+  uint32_t* out_num,
+  bool* out_has_name,
+  nk_pbuf_t* out_name_buf,
+  nk_error_t unterminated_error
+) {
+  *out_has_name = true;
+
+  if (parser->pattern_bytes >= parser->pattern_bytes_end) {
+    return unterminated_error;
+  }
+
+  int8_t width;
+  uint32_t code;
+  nk_error_t err = peek(parser, &width, &code);
+  if (err != NK_SUCCESS) {
+    return err;
+  }
+
+  int32_t sign = 1;
+  if (is_decimal_digit(code)) {
+    *out_has_name = false;
+  } else if (code == '-') {
+    sign = -1;
+    parser->pattern_bytes += width;  // consume `-`
+
+    err = peek(parser, &width, &code);
+    if (err != NK_SUCCESS) {
+      return err;
+    }
+
+    if (!is_decimal_digit(code)) {
+      return NK_ERR_INVALID_GROUP_NAME;
+    }
+
+    *out_has_name = false;
+  }
+
+  if (*out_has_name) {
+    nk_error_t err = lex_name(parser, terminator, with_depth, out_name_buf, unterminated_error);
+    if (err != NK_SUCCESS) {
+      return err;
+    }
+
+    if (out_name_buf->bytes >= out_name_buf->bytes_end) {
+      nk_pbuf_free(out_name_buf);
+      return NK_ERR_EMPTY_GROUP_NAME;
+    }
+
+    return NK_SUCCESS;
+  }
+
+  uint32_t num;
+  err = lex_decimal_number(parser, &num, BACK_REF_MAX_NUM, NK_ERR_TOO_LARGE_GROUP_NUMBER);
+  if (err != NK_SUCCESS) {
+    return err;
+  }
+
+  int32_t num_or_relative_num = sign * (int32_t)num;
+  if (num_or_relative_num >= 0) {
+    *out_num = (uint32_t)num_or_relative_num;
+  } else {
+    if ((int64_t)parser->num_capture_groups + 1 + num_or_relative_num <= 0) {
+      return NK_ERR_GROUP_NUMBER_OUT_OF_RANGE;
+    }
+
+    *out_num = (uint32_t)((int32_t)parser->num_capture_groups + 1 + num_or_relative_num);
+  }
+
+  return NK_SUCCESS;
+}
+
+static nk_error_t lex_group_num_or_name_with_depth(
+  nk_parser_t* parser,
+  uint32_t terminator,
+  uint32_t* out_num,
+  bool* out_has_name,
+  nk_pbuf_t* out_name_buf,
+  bool* out_has_depth,
+  int32_t* out_depth,
+  nk_error_t unterminated_error
+) {
+  *out_has_depth = false;
+
+  nk_error_t err = lex_group_num_or_name(parser, terminator, true, out_num, out_has_name, out_name_buf, unterminated_error);
+  if (err != NK_SUCCESS) {
+    return err;
+  }
+
+  if (parser->pattern_bytes >= parser->pattern_bytes_end) {
+    return NK_SUCCESS;
+  }
+
+  int8_t width;
+  uint32_t code;
+  err = peek(parser, &width, &code);
+  if (err != NK_SUCCESS) {
+    return err;
+  }
+
+  if (code == '+' || code == '-') {
+    parser->pattern_bytes += width;  // consume `+` or `-`
+    int sign = code == '+' ? 1 : -1;
+
+    if (parser->pattern_bytes >= parser->pattern_bytes_end) {
+      if (*out_has_name) {
+        nk_pbuf_free(out_name_buf);
+      }
+      return NK_ERR_INCOMPLETE_CAPTURE_DEPTH;
+    }
+
+    err = peek(parser, &width, &code);
+    if (err != NK_SUCCESS) {
+      if (*out_has_name) {
+        nk_pbuf_free(out_name_buf);
+      }
+      return err;
+    }
+
+    uint32_t depth;
+    err = lex_decimal_number(parser, &depth, MAX_CAPTURE_DEPTH, NK_ERR_TOO_LARGE_CAPTURE_DEPTH);
+    if (err != NK_SUCCESS) {
+      if (*out_has_name) {
+        nk_pbuf_free(out_name_buf);
+      }
+      return err;
+    }
+
+    *out_has_depth = true;
+    *out_depth = sign * (int32_t)depth;
+  }
+
+  return NK_SUCCESS;
 }
 
 static nk_error_t lex_internal(nk_parser_t* parser, token_t* out_token) {
@@ -982,8 +1140,275 @@ static nk_error_t lex_internal(nk_parser_t* parser, token_t* out_token) {
 
       case '(':
       {
-        // TODO: implement
-        return NK_ERR_INTERNAL_ERROR;
+        if (parser->pattern_bytes < parser->pattern_bytes_end) {
+          int8_t width;
+          uint32_t code;
+          nk_error_t err = peek(parser, &width, &code);
+          if (err != NK_SUCCESS) {
+            return err;
+          }
+
+          if (code == '?') {
+            parser->pattern_bytes += width;  // consume `?`
+
+            if (parser->pattern_bytes >= parser->pattern_bytes_end) {
+              return NK_ERR_INCOMPLETE_GROUP_SPECIFIER;
+            }
+
+            err = peek(parser, &width, &code);
+            if (err != NK_SUCCESS) {
+              return err;
+            }
+
+            switch (code) {
+              case '#':
+                parser->pattern_bytes += width;
+                while (parser->pattern_bytes < parser->pattern_bytes_end) {
+                  int8_t width;
+                  uint32_t code;
+                  nk_error_t err = consume(parser, &width, &code);
+                  if (err != NK_SUCCESS) {
+                    return err;
+                  }
+
+                  if (code == ')') {
+                    break;
+                  }
+                }
+                retry = true;
+                continue;
+
+              case '=':
+                parser->pattern_bytes += width;
+                out_token->type = TK_LOOKAROUND_OPEN;
+                out_token->data.assertion.type = NK_ASSERTION_TYPE_POSITIVE_LOOKAHEAD;
+                return NK_SUCCESS;
+              case '!':
+                parser->pattern_bytes += width;
+                out_token->type = TK_LOOKAROUND_OPEN;
+                out_token->data.assertion.type = NK_ASSERTION_TYPE_NEGATIVE_LOOKAHEAD;
+                return NK_SUCCESS;
+              case '>':
+                parser->pattern_bytes += width;
+                out_token->type = TK_ATOMIC_OPEN;
+                return NK_SUCCESS;
+              case '~':
+                parser->pattern_bytes += width;
+                out_token->type = TK_ABSENCE_OPEN;
+                return NK_SUCCESS;
+
+              case '<':
+              {
+                parser->pattern_bytes += width;
+                if (parser->pattern_bytes >= parser->pattern_bytes_end) {
+                  return NK_ERR_INCOMPLETE_GROUP_SPECIFIER;
+                }
+
+                int8_t lookbehind_width;
+                uint32_t lookbehind_code;
+                nk_error_t err = peek(parser, &lookbehind_width, &lookbehind_code);
+                if (err != NK_SUCCESS) {
+                  return err;
+                }
+
+                if (lookbehind_code == '=') {
+                  parser->pattern_bytes += lookbehind_width;
+                  out_token->type = TK_LOOKAROUND_OPEN;
+                  out_token->data.assertion.type = NK_ASSERTION_TYPE_POSITIVE_LOOKBEHIND;
+                  return NK_SUCCESS;
+                } else if (lookbehind_code == '!') {
+                  parser->pattern_bytes += lookbehind_width;
+                  out_token->type = TK_LOOKAROUND_OPEN;
+                  out_token->data.assertion.type = NK_ASSERTION_TYPE_NEGATIVE_LOOKBEHIND;
+                  return NK_SUCCESS;
+                }
+
+                parser->pattern_bytes -= width;  // put back `<`
+                FALLTHROUGH;
+              }
+
+              case '\'':
+              {
+                parser->pattern_bytes += width;  // consume `'` or `<`
+
+                uint32_t name_terminator = code == '\'' ? '\'' : '>';
+                uint32_t group_num;
+                bool has_name;
+                nk_pbuf_t name_buf;
+                nk_error_t err = lex_group_num_or_name(
+                  parser,
+                  name_terminator,
+                  false,
+                  &group_num,
+                  &has_name,
+                  &name_buf,
+                  NK_ERR_INCOMPLETE_GROUP_SPECIFIER
+                );
+                if (err != NK_SUCCESS) {
+                  return err;
+                }
+
+                if (!has_name) {
+                  return NK_ERR_INVALID_GROUP_NAME;
+                }
+
+                err = peek(parser, &width, &code);
+                if (err != NK_SUCCESS) {
+                  nk_pbuf_free(&name_buf);
+                  return err;
+                }
+
+                if (code != name_terminator) {
+                  nk_pbuf_free(&name_buf);
+                  return NK_ERR_INCOMPLETE_GROUP_SPECIFIER;
+                }
+                parser->pattern_bytes += width;  // consume `'` or `>`
+
+                out_token->type = TK_NAMED_GROUP_OPEN;
+                out_token->data.named_group.name_buf = name_buf;
+
+                return NK_SUCCESS;
+              }
+
+              case '(':
+              {
+                // TODO: conditional group
+                return NK_ERR_PARSER_BUG;
+              }
+
+              case 'i':
+              case 'm':
+              case 'x':
+              case 'v':
+              case 'd':
+              case 'a':
+              case 'u':
+              case 'S':
+              case 'F':
+              case 'A':
+              case 'T':
+              case '-':
+              case ':':
+              {
+                out_token->data.option.is_extended_mode = parser->is_extended_mode;
+                out_token->data.option.is_ignore_case = parser->is_ignore_case;
+                out_token->data.option.dot_allows_newline = parser->dot_allows_newline;
+                out_token->data.option.char_class_is_strict = parser->char_class_is_strict;
+                out_token->data.option.char_type_is_ascii_only = parser->char_type_is_ascii_only;
+                out_token->data.option.posix_char_class_is_ascii_only = parser->posix_char_class_is_ascii_only;
+                out_token->data.option.fold_flags = parser->fold_flags;
+
+                bool is_positive = true;
+
+                while (parser->pattern_bytes < parser->pattern_bytes_end) {
+                  int8_t width;
+                  uint32_t code;
+                  nk_error_t err = peek(parser, &width, &code);
+                  if (err != NK_SUCCESS) {
+                    return err;
+                  }
+
+                  switch (code) {
+                    case 'i':
+                      parser->pattern_bytes += width;
+                      out_token->data.option.is_ignore_case = is_positive;
+                      break;
+                    case 'm':
+                      parser->pattern_bytes += width;
+                      out_token->data.option.dot_allows_newline = is_positive;
+                      break;
+                    case 'x':
+                      parser->pattern_bytes += width;
+                      out_token->data.option.is_extended_mode = is_positive;
+                      break;
+                    case 'v':
+                      parser->pattern_bytes += width;
+                      out_token->data.option.char_class_is_strict = is_positive;
+                      break;
+                    case 'd':
+                      if (!is_positive) {
+                        return NK_ERR_UNDEFINED_GROUP_OPTION;
+                      }
+                      parser->pattern_bytes += width;
+                      out_token->data.option.char_type_is_ascii_only = true;
+                      out_token->data.option.posix_char_class_is_ascii_only = false;
+                      break;
+                    case 'a':
+                      if (!is_positive) {
+                        return NK_ERR_UNDEFINED_GROUP_OPTION;
+                      }
+                      parser->pattern_bytes += width;
+                      out_token->data.option.char_type_is_ascii_only = true;
+                      out_token->data.option.posix_char_class_is_ascii_only = true;
+                      break;
+                    case 'u':
+                      if (!is_positive) {
+                        return NK_ERR_UNDEFINED_GROUP_OPTION;
+                      }
+                      parser->pattern_bytes += width;
+                      out_token->data.option.char_type_is_ascii_only = false;
+                      out_token->data.option.posix_char_class_is_ascii_only = false;
+                      break;
+                    case 'S':
+                      if (!is_positive) {
+                        return NK_ERR_UNDEFINED_GROUP_OPTION;
+                      }
+                      parser->pattern_bytes += width;
+                      out_token->data.option.fold_flags &= (nk_fold_flag_t)~NK_FOLD_FULL;
+                      break;
+                    case 'F':
+                      if (!is_positive) {
+                        return NK_ERR_UNDEFINED_GROUP_OPTION;
+                      }
+                      parser->pattern_bytes += width;
+                      out_token->data.option.fold_flags |= NK_FOLD_FULL;
+                      break;
+                    case 'A':
+                      if (!is_positive) {
+                        return NK_ERR_UNDEFINED_GROUP_OPTION;
+                      }
+                      parser->pattern_bytes += width;
+                      out_token->data.option.fold_flags |= NK_FOLD_ASCII_ONLY;
+                      break;
+                    case 'T':
+                      if (!is_positive) {
+                        return NK_ERR_UNDEFINED_GROUP_OPTION;
+                      }
+                      parser->pattern_bytes += width;
+                      out_token->data.option.fold_flags |= NK_FOLD_TURKISH_AZERI;
+                      break;
+                    case '-':
+                      if (!is_positive) {
+                        // Onigmo allows redundant `-`, but we disallow it for simplicity.
+                        return NK_ERR_UNDEFINED_GROUP_OPTION;
+                      }
+                      parser->pattern_bytes += width;
+                      is_positive = false;
+                      break;
+                    case ':':
+                      parser->pattern_bytes += width;
+                      out_token->type = TK_OPTION_GROUP_OPEN;
+                      return NK_SUCCESS;
+                    case ')':
+                      parser->pattern_bytes += width;
+                      out_token->type = TK_OPTION;
+                      return NK_SUCCESS;
+                    default:
+                      return NK_ERR_UNDEFINED_GROUP_OPTION;
+                  }
+                }
+
+                return NK_ERR_INCOMPLETE_GROUP_SPECIFIER;
+              }
+
+              default:
+                return NK_ERR_UNDEFINED_GROUP_OPTION;
+            }
+          }
+        }
+
+        out_token->type = TK_GROUP_OPEN;
+        return NK_SUCCESS;
       }
 
       case ')':
@@ -1111,11 +1536,10 @@ static nk_error_t lex_internal(nk_parser_t* parser, token_t* out_token) {
             }
 
             parser->pattern_bytes += brace_width;  // consume `{`
-
             const uint8_t* name_bytes_for_error_report = parser->pattern_bytes;
 
             nk_pbuf_t name_buf;
-            err = lex_name(parser, &name_buf, '}', NK_ERR_UNCLOSED_CHAR_PROP_ESCAPE_BRACE, false);
+            err = lex_name(parser, '}', false, &name_buf, NK_ERR_UNCLOSED_CHAR_PROP_ESCAPE_BRACE);
             if (err != NK_SUCCESS) {
               return err;
             }
@@ -1123,6 +1547,13 @@ static nk_error_t lex_internal(nk_parser_t* parser, token_t* out_token) {
             if (parser->pattern_bytes >= parser->pattern_bytes_end) {
               nk_pbuf_free(&name_buf);
               return NK_ERR_UNCLOSED_CHAR_PROP_ESCAPE_BRACE;
+            }
+
+            if (name_buf.bytes >= name_buf.bytes_end) {
+              nk_pbuf_free(&name_buf);
+              parser->error_bytes = name_bytes_for_error_report;
+              parser->error_bytes_end = parser->pattern_bytes;
+              return NK_ERR_EMPTY_CHAR_PROP_NAME;
             }
 
             err = consume(parser, &brace_width, &brace_code);
@@ -1142,7 +1573,7 @@ static nk_error_t lex_internal(nk_parser_t* parser, token_t* out_token) {
             if (err != NK_SUCCESS) {
               nk_pbuf_free(&name_buf);
               parser->error_bytes = name_bytes_for_error_report;
-              parser->error_bytes_end = parser->pattern_bytes - brace_width;  // point to the unclosed `}`
+              parser->error_bytes_end = parser->pattern_bytes - brace_width;  // point to `}`
               return err;
             }
 
@@ -1154,15 +1585,180 @@ static nk_error_t lex_internal(nk_parser_t* parser, token_t* out_token) {
           // Named back-reference (`\k<name>`, `\k'name'`):
           case 'k':
           {
-            // TODO: implement
-            return NK_ERR_PARSER_BUG;
+            if (parser->pattern_bytes >= parser->pattern_bytes_end) {
+              // TODO: add a warning
+              out_token->type = TK_CODE;
+              out_token->data.code = 'k';
+              return NK_SUCCESS;
+            }
+
+            int8_t next_width;
+            uint32_t next_code;
+            nk_error_t err = peek(parser, &next_width, &next_code);
+            if (err != NK_SUCCESS) {
+              return err;
+            }
+
+            if (next_code != '<' && next_code != '\'') {
+              // TODO: add a warning
+              out_token->type = TK_CODE;
+              out_token->data.code = 'k';
+              return NK_SUCCESS;
+            }
+
+            parser->pattern_bytes += next_width;  // consume `<` or `'`
+            const uint8_t* name_bytes_for_error_report = parser->pattern_bytes;
+
+            uint32_t name_terminator = next_code == '\'' ? '\'' : '>';
+            bool has_name = true;
+            nk_pbuf_t name_buf;
+            uint32_t group_num;
+            bool has_depth;
+            int32_t depth;
+            err = lex_group_num_or_name_with_depth(
+              parser,
+              name_terminator,
+              &group_num,
+              &has_name,
+              &name_buf,
+              &has_depth,
+              &depth,
+              NK_ERR_INCOMPLETE_BACK_REF
+            );
+            if (err != NK_SUCCESS) {
+              return err;
+            }
+
+            if (parser->pattern_bytes >= parser->pattern_bytes_end) {
+              if (has_name) {
+                nk_pbuf_free(&name_buf);
+              }
+              return NK_ERR_INCOMPLETE_BACK_REF;
+            }
+
+            if (has_name && name_buf.bytes >= name_buf.bytes_end) {
+              if (has_name) {
+                nk_pbuf_free(&name_buf);
+              }
+              parser->error_bytes = name_bytes_for_error_report;
+              parser->error_bytes_end = parser->pattern_bytes;
+              return NK_ERR_EMPTY_GROUP_NAME;
+            }
+
+            if (!has_name && group_num == 0) {
+              parser->error_bytes = name_bytes_for_error_report;
+              parser->error_bytes_end = parser->pattern_bytes;
+              return NK_ERR_INVALID_BACK_REF;
+            }
+
+            err = consume(parser, &next_width, &next_code);
+            if (err != NK_SUCCESS) {
+              if (has_name) {
+                nk_pbuf_free(&name_buf);
+              }
+              return err;
+            }
+
+            if (next_code != name_terminator) {
+              if (has_name) {
+                nk_pbuf_free(&name_buf);
+              }
+              return NK_ERR_INCOMPLETE_BACK_REF;
+            }
+
+            out_token->type = TK_BACK_REF;
+            out_token->data.back_ref.has_name = has_name;
+            if (has_name) {
+              out_token->data.back_ref.name_buf = name_buf;
+            }
+            out_token->data.back_ref.group_num = has_name ? 0 : group_num;
+            out_token->data.back_ref.has_depth = has_depth;
+            out_token->data.back_ref.depth = has_depth ? depth : 0;
+
+            return NK_SUCCESS;
           }
 
           // Sub-expression call (`\g<name>` or `\g'name'`):
           case 'g':
           {
-            // TODO: implement
-            return NK_ERR_PARSER_BUG;
+            if (parser->pattern_bytes >= parser->pattern_bytes_end) {
+              // TODO: add a warning
+              out_token->type = TK_CODE;
+              out_token->data.code = 'g';
+              return NK_SUCCESS;
+            }
+
+            int8_t next_width;
+            uint32_t next_code;
+            nk_error_t err = peek(parser, &next_width, &next_code);
+            if (err != NK_SUCCESS) {
+              return err;
+            }
+
+            if (next_code != '<' && next_code != '\'') {
+              // TODO: add a warning
+              out_token->type = TK_CODE;
+              out_token->data.code = code;  // 'g'
+              return NK_SUCCESS;
+            }
+
+            parser->pattern_bytes += next_width;  // consume `<` or `'`
+            const uint8_t* name_bytes_for_error_report = parser->pattern_bytes;
+
+            uint32_t name_terminator = next_code == '\'' ? '\'' : '>';
+            uint32_t group_num;
+            bool has_name;
+            nk_pbuf_t name_buf;
+            err = lex_group_num_or_name(
+              parser,
+              name_terminator,
+              false,
+              &group_num,
+              &has_name,
+              &name_buf,
+              NK_ERR_INCOMPLETE_SUBEXP_CALL
+            );
+            if (err != NK_SUCCESS) {
+              return err;
+            }
+
+            if (parser->pattern_bytes >= parser->pattern_bytes_end) {
+              if (has_name) {
+                nk_pbuf_free(&name_buf);
+              }
+              return NK_ERR_INCOMPLETE_SUBEXP_CALL;
+            }
+
+            if (has_name && name_buf.bytes >= name_buf.bytes_end) {
+              nk_pbuf_free(&name_buf);
+              parser->error_bytes = name_bytes_for_error_report;
+              parser->error_bytes_end = parser->pattern_bytes;
+              return NK_ERR_EMPTY_GROUP_NAME;
+            }
+
+            err = consume(parser, &next_width, &next_code);
+            if (err != NK_SUCCESS) {
+              if (has_name) {
+                nk_pbuf_free(&name_buf);
+              }
+              return err;
+            }
+
+            if (next_code != name_terminator) {
+              if (has_name) {
+                nk_pbuf_free(&name_buf);
+              }
+              return NK_ERR_INCOMPLETE_SUBEXP_CALL;
+            }
+
+            out_token->type = TK_CALL;
+            out_token->data.call.has_name = has_name;
+            out_token->data.call.group_num = has_name ? 0 : group_num;
+            if (has_name) {
+              out_token->data.call.name_buf = name_buf;
+            }
+
+            return NK_SUCCESS;
           }
 
           // Unicode code point:
@@ -1196,9 +1792,10 @@ static nk_error_t lex_internal(nk_parser_t* parser, token_t* out_token) {
           case '9':
           {
             const uint8_t* pattern_bytes_backup = parser->pattern_bytes;
+            parser->pattern_bytes -= width;  // put back the digit for lexing the back-reference number
 
             uint32_t num;
-            nk_error_t err = lex_decimal_number(parser, &num, BACK_REF_MAX_NUM, NK_ERR_INTERNAL_ERROR);
+            nk_error_t err = lex_decimal_number(parser, &num, BARE_BACK_REF_MAX_NUM, NK_ERR_INTERNAL_ERROR);
             if (err != NK_SUCCESS && err != NK_ERR_INTERNAL_ERROR) {
               return err;
             }
@@ -1206,6 +1803,9 @@ static nk_error_t lex_internal(nk_parser_t* parser, token_t* out_token) {
             if (err == NK_SUCCESS && (num <= 9 || num <= parser->num_capture_groups)) {
               out_token->type = TK_BACK_REF;
               out_token->data.back_ref.group_num = num;
+              out_token->data.back_ref.has_name = false;
+              out_token->data.back_ref.has_depth = false;
+              out_token->data.back_ref.depth = 0;
               return NK_SUCCESS;
             }
 
@@ -1213,8 +1813,8 @@ static nk_error_t lex_internal(nk_parser_t* parser, token_t* out_token) {
             FALLTHROUGH;
           }
 
-          // Other single-character escape sequences (e.g., `\n`, `\t`, `\r`, `\f`, `\v`, `\a`,
-          // `\e`, etc.):
+          // Other single-character escape sequences
+          // (e.g., `\n`, `\t`, `\r`, `\f`, `\v`, `\a`, `\e`, etc.):
           case '0':
           case 'x':
           case 'c':
@@ -1240,6 +1840,34 @@ static nk_error_t lex_internal(nk_parser_t* parser, token_t* out_token) {
             out_token->type = TK_CODE;
             out_token->data.code = escaped_code;
             return NK_SUCCESS;
+          }
+
+          case '\r':
+          {
+            bool is_crlf = false;
+            if (parser->pattern_bytes < parser->pattern_bytes_end) {
+              nk_error_t err = peek(parser, &width, &code);
+              if (err != NK_SUCCESS) {
+                return err;
+              }
+
+              is_crlf = code == '\n';
+            }
+            
+            if (!is_crlf) {
+              out_token->type = TK_CODE;
+              out_token->data.code = '\r';
+              return NK_SUCCESS;
+            }
+            
+            parser->pattern_bytes += width;  // consume `\n` if it's CRLF
+            FALLTHROUGH;
+          }
+
+          case '\n':
+          {
+            retry = true;
+            continue;
           }
 
           // Other case: treat the escaped character as a code itself.
@@ -1283,6 +1911,8 @@ static nk_error_t lex(nk_parser_t* parser, token_t* out_token) {
 // Parser implementation:
 //
 // ==========================================================================
+
+static nk_error_t parse_alt(nk_parser_t* parser, token_t* tok, nk_node_t** out_node_ptr);
 
 static nk_error_t parse_atom(nk_parser_t* parser, token_t* tok, nk_node_t** out_node_ptr) {
   switch (tok->type) {
@@ -1353,6 +1983,8 @@ static nk_error_t parse_atom(nk_parser_t* parser, token_t* tok, nk_node_t** out_
       *out_node_ptr = assertion_node;
       break;
     }
+    case TK_QUANTIFIER:
+      return NK_ERR_NOTHING_TO_REPEAT;
     case TK_CHAR_TYPE:
     {
       nk_node_t* char_type_node = (nk_node_t*)malloc(sizeof(nk_node_t));
@@ -1411,6 +2043,322 @@ static nk_error_t parse_atom(nk_parser_t* parser, token_t* tok, nk_node_t** out_
       newline_node->base.type = NK_NODE_TYPE_NEWLINE;
       *out_node_ptr = newline_node;
       break;
+    }
+    case TK_BACK_REF:
+    {
+      nk_node_t* back_ref_node = (nk_node_t*)malloc(sizeof(nk_node_t));
+      if (back_ref_node == NULL) {
+        return NK_ERR_MEMORY_ALLOCATION_FAILED;
+      }
+      back_ref_node->base.type = NK_NODE_TYPE_BACK_REF;
+      back_ref_node->back_ref.has_name = tok->data.back_ref.has_name;
+      back_ref_node->back_ref.group_num = tok->data.back_ref.group_num;
+      back_ref_node->back_ref.has_depth = tok->data.back_ref.has_depth;
+      back_ref_node->back_ref.depth = tok->data.back_ref.depth;
+      if (tok->data.back_ref.has_name) {
+        back_ref_node->back_ref.name_buf = tok->data.back_ref.name_buf;
+      }
+      *out_node_ptr = back_ref_node;
+      break;
+    }
+    case TK_CALL:
+    {
+      nk_node_t* call_node = (nk_node_t*)malloc(sizeof(nk_node_t));
+      if (call_node == NULL) {
+        return NK_ERR_MEMORY_ALLOCATION_FAILED;
+      }
+      call_node->base.type = NK_NODE_TYPE_CALL;
+      call_node->call.has_name = tok->data.call.has_name;
+      call_node->call.group_num = tok->data.call.group_num;
+      if (tok->data.call.has_name) {
+        call_node->call.name_buf = tok->data.call.name_buf;
+      }
+      *out_node_ptr = call_node;
+      break;
+    }
+    case TK_GROUP_OPEN:
+    {
+      parser->num_capture_groups++;
+      if (parser->num_capture_groups > MAX_GROUP_NUM) {
+        return NK_ERR_TOO_MANY_CAPTURE_GROUPS;
+      }
+
+      uint32_t group_num = parser->num_capture_groups;
+
+      nk_error_t err = lex(parser, tok);
+      if (err != NK_SUCCESS) {
+        return err;
+      }
+
+      nk_node_t* child_node;
+      err = parse_alt(parser, tok, &child_node);
+      if (err != NK_SUCCESS) {
+        return err;
+      }
+
+      if (tok->type != TK_GROUP_CLOSE) {
+        nk_node_free(child_node);
+        return NK_ERR_UNTERMINATED_GROUP;
+      }
+
+      nk_node_t* group_node = (nk_node_t*)malloc(sizeof(nk_node_t));
+      if (group_node == NULL) {
+        nk_node_free(child_node);
+        return NK_ERR_MEMORY_ALLOCATION_FAILED;
+      }
+
+      group_node->base.type = NK_NODE_TYPE_GROUP;
+      group_node->group.child = child_node;
+      group_node->group.has_name = false;
+      group_node->group.group_num = group_num;
+
+      *out_node_ptr = group_node;
+
+      break;
+    }
+    case TK_NAMED_GROUP_OPEN:
+    {
+      parser->has_named_groups = true;
+      parser->num_capture_groups++;
+      if (parser->num_capture_groups > MAX_GROUP_NUM) {
+        return NK_ERR_TOO_MANY_CAPTURE_GROUPS;
+      }
+
+      nk_pbuf_t name_buf = tok->data.named_group.name_buf;
+
+      nk_error_t err = lex(parser, tok);
+      if (err != NK_SUCCESS) {
+        nk_pbuf_free(&name_buf);
+        return err;
+      }
+
+      nk_node_t* child_node;
+      err = parse_alt(parser, tok, &child_node);
+      if (err != NK_SUCCESS) {
+        nk_pbuf_free(&name_buf);
+        return err;
+      }
+
+      if (tok->type != TK_GROUP_CLOSE) {
+        nk_node_free(child_node);
+        nk_pbuf_free(&name_buf);
+        return NK_ERR_UNTERMINATED_GROUP;
+      }
+
+      nk_node_t* group_node = (nk_node_t*)malloc(sizeof(nk_node_t));
+      if (group_node == NULL) {
+        nk_node_free(child_node);
+        nk_pbuf_free(&name_buf);
+        return NK_ERR_MEMORY_ALLOCATION_FAILED;
+      }
+
+      group_node->base.type = NK_NODE_TYPE_GROUP;
+      group_node->group.child = child_node;
+      group_node->group.has_name = true;
+      group_node->group.name_buf = name_buf;
+      group_node->group.group_num = 0;
+
+      *out_node_ptr = group_node;
+
+      break;
+    }
+    case TK_LOOKAROUND_OPEN:
+    {
+      nk_assertion_type_t type = tok->data.assertion.type;
+      nk_error_t err = lex(parser, tok);
+      if (err != NK_SUCCESS) {
+        return err;
+      }
+
+      nk_node_t* child_node;
+      err = parse_alt(parser, tok, &child_node);
+      if (err != NK_SUCCESS) {
+        return err;
+      }
+
+      if (tok->type != TK_GROUP_CLOSE) {
+        nk_node_free(child_node);
+        return NK_ERR_UNTERMINATED_GROUP;
+      }
+
+      nk_node_t* lookaround_node = (nk_node_t*)malloc(sizeof(nk_node_t));
+      if (lookaround_node == NULL) {
+        nk_node_free(child_node);
+        return NK_ERR_MEMORY_ALLOCATION_FAILED;
+      }
+
+      lookaround_node->base.type = NK_NODE_TYPE_ASSERTION;
+      lookaround_node->assertion.type = type;
+      lookaround_node->assertion.child = child_node;
+      *out_node_ptr = lookaround_node;
+      break;
+    }
+    case TK_ATOMIC_OPEN:
+    {
+      nk_error_t err = lex(parser, tok);
+      if (err != NK_SUCCESS) {
+        return err;
+      }
+
+      nk_node_t* child_node;
+      err = parse_alt(parser, tok, &child_node);
+      if (err != NK_SUCCESS) {
+        return err;
+      }
+
+      if (tok->type != TK_GROUP_CLOSE) {
+        nk_node_free(child_node);
+        return NK_ERR_UNTERMINATED_GROUP;
+      }
+
+      nk_node_t* atomic_node = (nk_node_t*)malloc(sizeof(nk_node_t));
+      if (atomic_node == NULL) {
+        nk_node_free(child_node);
+        return NK_ERR_MEMORY_ALLOCATION_FAILED;
+      }
+
+      atomic_node->base.type = NK_NODE_TYPE_ATOMIC;
+      atomic_node->atomic.child = child_node;
+      *out_node_ptr = atomic_node;
+      break;
+    }
+    case TK_ABSENCE_OPEN:
+    {
+      nk_error_t err = lex(parser, tok);
+      if (err != NK_SUCCESS) {
+        return err;
+      }
+
+      nk_node_t* child_node;
+      err = parse_alt(parser, tok, &child_node);
+      if (err != NK_SUCCESS) {
+        return err;
+      }
+
+      if (tok->type != TK_GROUP_CLOSE) {
+        nk_node_free(child_node);
+        return NK_ERR_UNTERMINATED_GROUP;
+      }
+
+      nk_node_t* absence_node = (nk_node_t*)malloc(sizeof(nk_node_t));
+      if (absence_node == NULL) {
+        nk_node_free(child_node);
+        return NK_ERR_MEMORY_ALLOCATION_FAILED;
+      }
+      absence_node->base.type = NK_NODE_TYPE_ABSENCE;
+      absence_node->absence.child = child_node;
+      *out_node_ptr = absence_node;
+      break;
+    }
+    case TK_OPTION_GROUP_OPEN:
+    {
+      bool is_extended_mode = parser->is_extended_mode;
+      bool is_ignore_case = parser->is_ignore_case;
+      bool dot_allows_newline = parser->dot_allows_newline;
+      bool char_class_is_strict = parser->char_class_is_strict;
+      bool char_type_is_ascii_only = parser->char_type_is_ascii_only;
+      bool posix_char_class_is_ascii_only = parser->posix_char_class_is_ascii_only;
+      nk_fold_flag_t fold_flags = parser->fold_flags;
+
+      parser->is_extended_mode = tok->data.option.is_extended_mode;
+      parser->is_ignore_case = tok->data.option.is_ignore_case;
+      parser->dot_allows_newline = tok->data.option.dot_allows_newline;
+      parser->char_class_is_strict = tok->data.option.char_class_is_strict;
+      parser->char_type_is_ascii_only = tok->data.option.char_type_is_ascii_only;
+      parser->posix_char_class_is_ascii_only = tok->data.option.posix_char_class_is_ascii_only;
+      parser->fold_flags = tok->data.option.fold_flags;
+
+      nk_error_t err = lex(parser, tok);
+      if (err != NK_SUCCESS) {
+        return err;
+      }
+
+      nk_node_t* child_node;
+      err = parse_alt(parser, tok, &child_node);
+      if (err != NK_SUCCESS) {
+        return err;
+      }
+
+      if (tok->type != TK_GROUP_CLOSE) {
+        nk_node_free(child_node);
+        return NK_ERR_UNTERMINATED_GROUP;
+      }
+
+      nk_node_t* group_node = (nk_node_t*)malloc(sizeof(nk_node_t));
+      if (group_node == NULL) {
+        nk_node_free(child_node);
+        return NK_ERR_MEMORY_ALLOCATION_FAILED;
+      }
+
+      group_node->base.type = NK_NODE_TYPE_GROUP;
+      group_node->group.child = child_node;
+      group_node->group.has_name = false;
+      group_node->group.group_num = 0;
+
+      parser->is_extended_mode = is_extended_mode;
+      parser->is_ignore_case = is_ignore_case;
+      parser->dot_allows_newline = dot_allows_newline;
+      parser->char_class_is_strict = char_class_is_strict;
+      parser->char_type_is_ascii_only = char_type_is_ascii_only;
+      parser->posix_char_class_is_ascii_only = posix_char_class_is_ascii_only;
+      parser->fold_flags = fold_flags;
+
+      *out_node_ptr = group_node;
+      break;
+    }
+    case TK_OPTION:
+    {
+      bool is_extended_mode = parser->is_extended_mode;
+      bool is_ignore_case = parser->is_ignore_case;
+      bool dot_allows_newline = parser->dot_allows_newline;
+      bool char_class_is_strict = parser->char_class_is_strict;
+      bool char_type_is_ascii_only = parser->char_type_is_ascii_only;
+      bool posix_char_class_is_ascii_only = parser->posix_char_class_is_ascii_only;
+      nk_fold_flag_t fold_flags = parser->fold_flags;
+
+      parser->is_extended_mode = tok->data.option.is_extended_mode;
+      parser->is_ignore_case = tok->data.option.is_ignore_case;
+      parser->dot_allows_newline = tok->data.option.dot_allows_newline;
+      parser->char_class_is_strict = tok->data.option.char_class_is_strict;
+      parser->char_type_is_ascii_only = tok->data.option.char_type_is_ascii_only;
+      parser->posix_char_class_is_ascii_only = tok->data.option.posix_char_class_is_ascii_only;
+      parser->fold_flags = tok->data.option.fold_flags;
+
+      nk_error_t err = lex(parser, tok);
+      if (err != NK_SUCCESS) {
+        return err;
+      }
+
+      nk_node_t* child_node;
+      err = parse_alt(parser, tok, &child_node);
+      if (err != NK_SUCCESS) {
+        return err;
+      }
+
+      nk_node_t* group_node = (nk_node_t*)malloc(sizeof(nk_node_t));
+      if (group_node == NULL) {
+        nk_node_free(child_node);
+        return NK_ERR_MEMORY_ALLOCATION_FAILED;
+      }
+
+      group_node->base.type = NK_NODE_TYPE_GROUP;
+      group_node->group.child = child_node;
+      group_node->group.has_name = false;
+      group_node->group.group_num = 0;
+
+      parser->is_extended_mode = is_extended_mode;
+      parser->is_ignore_case = is_ignore_case;
+      parser->dot_allows_newline = dot_allows_newline;
+      parser->char_class_is_strict = char_class_is_strict;
+      parser->char_type_is_ascii_only = char_type_is_ascii_only;
+      parser->posix_char_class_is_ascii_only = posix_char_class_is_ascii_only;
+      parser->fold_flags = fold_flags;
+
+      *out_node_ptr = group_node;
+
+      // The next token is already lexed in `parse_alt`, so we return here
+      // without lexing the next token again.
+      return NK_SUCCESS;
     }
     case TK_GROUP_CLOSE:
       return NK_ERR_UNMATCHED_CLOSE_PARENTHESIS;

@@ -284,7 +284,8 @@ struct nk_back_ref_node {
   nk_fold_flag_t fold_flags;
   bool has_name;
   nk_pbuf_t name_buf;
-  int32_t group_num;
+  uint32_t group_num;
+  bool has_depth;
   int32_t depth;
 };
 
@@ -300,7 +301,7 @@ struct nk_call_node {
   nk_node_base_t base;
   bool has_name;
   nk_pbuf_t name_buf;
-  int32_t group_num;
+  uint32_t group_num;
 };
 
 /**
@@ -360,7 +361,7 @@ struct nk_group_node {
   nk_node_base_t base;
   bool has_name;
   nk_pbuf_t name_buf;
-  int32_t group_num;
+  uint32_t group_num;
   nk_node_t* child;
 };
 
@@ -511,8 +512,11 @@ struct nk_parser {
   // Internal states:
   bool in_unicode_escape_brace;
   uint32_t num_capture_groups;
+
+  // Statistics:
   bool has_named_groups;
 
+  // Error reporting:
   const uint8_t* error_bytes;
   const uint8_t* error_bytes_end;
 };

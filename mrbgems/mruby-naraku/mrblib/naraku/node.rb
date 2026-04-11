@@ -38,6 +38,7 @@ module Naraku
         h[:has_name] = has_name
         h[:name] = name
         h[:group_num] = group_num
+        h[:has_depth] = has_depth
         h[:depth] = depth
       when :call
         h[:has_name] = has_name

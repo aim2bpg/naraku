@@ -56,12 +56,42 @@ const uint8_t* nk_error_message(nk_error_t err) {
       return (const uint8_t*)"Unicode escape sequence in non-Unicode encoding";
     case NK_ERR_UNCLOSED_CHAR_PROP_ESCAPE_BRACE:
       return (const uint8_t*)"unclosed character property escape sequence brace";
-    case NK_ERR_TOO_BIG_NUMBER_IN_QUANTIFIER:
-      return (const uint8_t*)"number in quantifier is too big";
+    case NK_ERR_EMPTY_CHAR_PROP_NAME:
+      return (const uint8_t*)"empty character property name";
+    case NK_ERR_TOO_LARGE_NUMBER_IN_QUANTIFIER:
+      return (const uint8_t*)"number in quantifier is too large";
     case NK_ERR_NUMBERS_OUT_OF_ORDER_IN_QUANTIFIER:
       return (const uint8_t*)"numbers in quantifier are out of order";
+    case NK_ERR_NOTHING_TO_REPEAT:
+      return (const uint8_t*)"nothing to repeat";
     case NK_ERR_UNMATCHED_CLOSE_PARENTHESIS:
       return (const uint8_t*)"unmatched close parenthesis";
+    case NK_ERR_INCOMPLETE_GROUP_SPECIFIER:
+      return (const uint8_t*)"incomplete group specifier";
+    case NK_ERR_UNDEFINED_GROUP_OPTION:
+      return (const uint8_t*)"undefined group option";
+    case NK_ERR_UNTERMINATED_GROUP:
+      return (const uint8_t*)"unterminated group: missing closing parenthesis";
+    case NK_ERR_TOO_MANY_CAPTURE_GROUPS:
+      return (const uint8_t*)"too many capture groups";
+    case NK_ERR_INVALID_GROUP_NAME:
+      return (const uint8_t*)"invalid group name";
+    case NK_ERR_EMPTY_GROUP_NAME:
+      return (const uint8_t*)"empty group name";
+    case NK_ERR_TOO_LARGE_GROUP_NUMBER:
+      return (const uint8_t*)"group number is too large";
+    case NK_ERR_GROUP_NUMBER_OUT_OF_RANGE:
+      return (const uint8_t*)"group number is out of range";
+    case NK_ERR_INCOMPLETE_CAPTURE_DEPTH:
+      return (const uint8_t*)"incomplete capture depth";
+    case NK_ERR_TOO_LARGE_CAPTURE_DEPTH:
+      return (const uint8_t*)"capture depth is too large";
+    case NK_ERR_INCOMPLETE_SUBEXP_CALL:
+      return (const uint8_t*)"incomplete sub-expression call";
+    case NK_ERR_INCOMPLETE_BACK_REF:
+      return (const uint8_t*)"incomplete back reference";
+    case NK_ERR_INVALID_BACK_REF:
+      return (const uint8_t*)"invalid back reference";
     // Encoding-related errors:
     case NK_ERR_INVALID_CODE_POINT:
       return (const uint8_t*)"invalid code point";

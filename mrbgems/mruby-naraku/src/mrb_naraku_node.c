@@ -444,10 +444,11 @@ static const char* node_type_name(nk_node_type_t type) {
   return "unknown";
 }
 
-#define NODE_CHECK_TYPE(mrb, node, expected, method_name)                                                            \
-  if (node->base.type != (expected)) {                                                                               \
-    mrb_raisef(mrb, E_RUNTIME_ERROR, #method_name " is not available for %s node", node_type_name(node->base.type)); \
+static inline void node_check_type(mrb_state* mrb, nk_node_t* node, nk_node_type_t expected, const char* method_name) {
+  if (node->base.type != expected) {
+    mrb_raisef(mrb, E_RUNTIME_ERROR, "%s is not available for %s node", method_name, node_type_name(node->base.type));
   }
+}
 
 static mrb_value mrb_naraku_node_type_method(mrb_state* mrb, mrb_value self) {
   nk_node_t* node = mrb_naraku_node_get_ptr(mrb, self);
@@ -456,7 +457,7 @@ static mrb_value mrb_naraku_node_type_method(mrb_state* mrb, mrb_value self) {
 
 static mrb_value mrb_naraku_node_buf(mrb_state* mrb, mrb_value self) {
   nk_node_t* node = mrb_naraku_node_get_ptr(mrb, self);
-  NODE_CHECK_TYPE(mrb, node, NK_NODE_TYPE_LITERAL, buf);
+  node_check_type(mrb, node, NK_NODE_TYPE_LITERAL, "buf");
   return mrb_naraku_pbuf_to_str(mrb, &node->literal.buf);
 }
 
@@ -500,7 +501,7 @@ static mrb_value mrb_naraku_node_fold_flags(mrb_state* mrb, mrb_value self) {
 
 static mrb_value mrb_naraku_node_is_strict(mrb_state* mrb, mrb_value self) {
   nk_node_t* node = mrb_naraku_node_get_ptr(mrb, self);
-  NODE_CHECK_TYPE(mrb, node, NK_NODE_TYPE_CHAR_CLASS, is_strict);
+  node_check_type(mrb, node, NK_NODE_TYPE_CHAR_CLASS, "is_strict");
   return mrb_bool_value(node->char_class.is_strict);
 }
 
@@ -521,7 +522,7 @@ static mrb_value mrb_naraku_node_is_positive(mrb_state* mrb, mrb_value self) {
 
 static mrb_value mrb_naraku_node_unions(mrb_state* mrb, mrb_value self) {
   nk_node_t* node = mrb_naraku_node_get_ptr(mrb, self);
-  NODE_CHECK_TYPE(mrb, node, NK_NODE_TYPE_CHAR_CLASS, unions);
+  node_check_type(mrb, node, NK_NODE_TYPE_CHAR_CLASS, "unions");
   mrb_value root_ref = mrb_naraku_node_get_root_ref(mrb, self);
   mrb_value ary = mrb_ary_new_capa(mrb, node->char_class.unions_len);
   for (size_t i = 0; i < node->char_class.unions_len; i++) {
@@ -532,25 +533,25 @@ static mrb_value mrb_naraku_node_unions(mrb_state* mrb, mrb_value self) {
 
 static mrb_value mrb_naraku_node_is_ascii_only(mrb_state* mrb, mrb_value self) {
   nk_node_t* node = mrb_naraku_node_get_ptr(mrb, self);
-  NODE_CHECK_TYPE(mrb, node, NK_NODE_TYPE_CHAR_TYPE, is_ascii_only);
+  node_check_type(mrb, node, NK_NODE_TYPE_CHAR_TYPE, "is_ascii_only");
   return mrb_bool_value(node->char_type.is_ascii_only);
 }
 
 static mrb_value mrb_naraku_node_char_type(mrb_state* mrb, mrb_value self) {
   nk_node_t* node = mrb_naraku_node_get_ptr(mrb, self);
-  NODE_CHECK_TYPE(mrb, node, NK_NODE_TYPE_CHAR_TYPE, char_type);
+  node_check_type(mrb, node, NK_NODE_TYPE_CHAR_TYPE, "char_type");
   return mrb_symbol_value(mrb_intern_cstr(mrb, char_type_sym_name(node->char_type.char_type)));
 }
 
 static mrb_value mrb_naraku_node_cprop(mrb_state* mrb, mrb_value self) {
   nk_node_t* node = mrb_naraku_node_get_ptr(mrb, self);
-  NODE_CHECK_TYPE(mrb, node, NK_NODE_TYPE_CHAR_PROP, cprop);
+  node_check_type(mrb, node, NK_NODE_TYPE_CHAR_PROP, "cprop");
   return mrb_fixnum_value(node->char_prop.cprop);
 }
 
 static mrb_value mrb_naraku_node_allows_newline(mrb_state* mrb, mrb_value self) {
   nk_node_t* node = mrb_naraku_node_get_ptr(mrb, self);
-  NODE_CHECK_TYPE(mrb, node, NK_NODE_TYPE_DOT, allows_newline);
+  node_check_type(mrb, node, NK_NODE_TYPE_DOT, "allows_newline");
   return mrb_bool_value(node->dot.allows_newline);
 }
 
@@ -609,10 +610,16 @@ static mrb_value mrb_naraku_node_group_num(mrb_state* mrb, mrb_value self) {
   }
 }
 
+static mrb_value mrb_naraku_node_has_depth(mrb_state* mrb, mrb_value self) {
+  nk_node_t* node = mrb_naraku_node_get_ptr(mrb, self);
+  node_check_type(mrb, node, NK_NODE_TYPE_BACK_REF, "has_depth");
+  return mrb_bool_value(node->back_ref.has_depth);
+}
+
 static mrb_value mrb_naraku_node_depth(mrb_state* mrb, mrb_value self) {
   nk_node_t* node = mrb_naraku_node_get_ptr(mrb, self);
-  NODE_CHECK_TYPE(mrb, node, NK_NODE_TYPE_BACK_REF, depth);
-  return mrb_fixnum_value(node->back_ref.depth);
+  node_check_type(mrb, node, NK_NODE_TYPE_BACK_REF, "depth");
+  return node->back_ref.has_depth ? mrb_fixnum_value(node->back_ref.depth) : mrb_nil_value();
 }
 
 static const char* assertion_type_sym_name(nk_assertion_type_t type) {
@@ -647,7 +654,7 @@ static const char* assertion_type_sym_name(nk_assertion_type_t type) {
 
 static mrb_value mrb_naraku_node_assertion_type(mrb_state* mrb, mrb_value self) {
   nk_node_t* node = mrb_naraku_node_get_ptr(mrb, self);
-  NODE_CHECK_TYPE(mrb, node, NK_NODE_TYPE_ASSERTION, assertion_type);
+  node_check_type(mrb, node, NK_NODE_TYPE_ASSERTION, "assertion_type");
   return mrb_symbol_value(mrb_intern_cstr(mrb, assertion_type_sym_name(node->assertion.type)));
 }
 
@@ -673,19 +680,19 @@ static mrb_value mrb_naraku_node_child(mrb_state* mrb, mrb_value self) {
 
 static mrb_value mrb_naraku_node_min(mrb_state* mrb, mrb_value self) {
   nk_node_t* node = mrb_naraku_node_get_ptr(mrb, self);
-  NODE_CHECK_TYPE(mrb, node, NK_NODE_TYPE_QUANTIFIER, min);
+  node_check_type(mrb, node, NK_NODE_TYPE_QUANTIFIER, "min");
   return mrb_fixnum_value(node->quantifier.min);
 }
 
 static mrb_value mrb_naraku_node_max(mrb_state* mrb, mrb_value self) {
   nk_node_t* node = mrb_naraku_node_get_ptr(mrb, self);
-  NODE_CHECK_TYPE(mrb, node, NK_NODE_TYPE_QUANTIFIER, max);
+  node_check_type(mrb, node, NK_NODE_TYPE_QUANTIFIER, "max");
   return mrb_fixnum_value(node->quantifier.max);
 }
 
 static mrb_value mrb_naraku_node_quantifier_type(mrb_state* mrb, mrb_value self) {
   nk_node_t* node = mrb_naraku_node_get_ptr(mrb, self);
-  NODE_CHECK_TYPE(mrb, node, NK_NODE_TYPE_QUANTIFIER, quantifier_type);
+  node_check_type(mrb, node, NK_NODE_TYPE_QUANTIFIER, "quantifier_type");
   switch (node->quantifier.type) {
     case NK_QUANTIFIER_TYPE_GREEDY:
       return mrb_symbol_value(mrb_intern_cstr(mrb, "greedy"));
@@ -699,13 +706,13 @@ static mrb_value mrb_naraku_node_quantifier_type(mrb_state* mrb, mrb_value self)
 
 static mrb_value mrb_naraku_node_yes_child(mrb_state* mrb, mrb_value self) {
   nk_node_t* node = mrb_naraku_node_get_ptr(mrb, self);
-  NODE_CHECK_TYPE(mrb, node, NK_NODE_TYPE_CONDITIONAL, yes_child);
+  node_check_type(mrb, node, NK_NODE_TYPE_CONDITIONAL, "yes_child");
   return mrb_naraku_node_wrap(mrb, node->conditional.yes_child, mrb_naraku_node_get_root_ref(mrb, self));
 }
 
 static mrb_value mrb_naraku_node_no_child(mrb_state* mrb, mrb_value self) {
   nk_node_t* node = mrb_naraku_node_get_ptr(mrb, self);
-  NODE_CHECK_TYPE(mrb, node, NK_NODE_TYPE_CONDITIONAL, no_child);
+  node_check_type(mrb, node, NK_NODE_TYPE_CONDITIONAL, "no_child");
   return mrb_naraku_node_wrap(mrb, node->conditional.no_child, mrb_naraku_node_get_root_ref(mrb, self));
 }
 
@@ -763,6 +770,7 @@ void mrb_naraku_node_gem_init(mrb_state* mrb, struct RClass* naraku_module) {
   mrb_define_method(mrb, node_class, "has_name", mrb_naraku_node_has_name, MRB_ARGS_NONE());
   mrb_define_method(mrb, node_class, "name", mrb_naraku_node_name, MRB_ARGS_NONE());
   mrb_define_method(mrb, node_class, "group_num", mrb_naraku_node_group_num, MRB_ARGS_NONE());
+  mrb_define_method(mrb, node_class, "has_depth", mrb_naraku_node_has_depth, MRB_ARGS_NONE());
   mrb_define_method(mrb, node_class, "depth", mrb_naraku_node_depth, MRB_ARGS_NONE());
   mrb_define_method(mrb, node_class, "assertion_type", mrb_naraku_node_assertion_type, MRB_ARGS_NONE());
   mrb_define_method(mrb, node_class, "child", mrb_naraku_node_child, MRB_ARGS_NONE());

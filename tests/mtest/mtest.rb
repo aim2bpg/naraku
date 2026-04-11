@@ -10,8 +10,6 @@ module Mtest
   # Shell special characters that need to be escaped when included in command-line arguments.
   SHELL_SPECIAL_CHARS = " \t|&<>$()".chars
 
-  @@seed = nil
-
   # Converts an absolute path to a relative path from the current working directory if it is under it.
   def self.relative_path(path)
     path.delete_prefix("#{Dir.pwd}/")
@@ -122,6 +120,8 @@ module Mtest
 
   def self.run(cmd_path, args)
     options = process_args(cmd_path, args)
+
+    srand options[:seed]
 
     reporters = Reporter.reporters
     reporters.each { |reporter| reporter.options = options }

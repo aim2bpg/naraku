@@ -79,13 +79,35 @@ typedef enum {
 
   // Errors related to character properties (e.g., `\p{Lu}`, `\P{Lu}`):
   NK_ERR_UNCLOSED_CHAR_PROP_ESCAPE_BRACE = -341,
+  NK_ERR_EMPTY_CHAR_PROP_NAME = -342,
 
-  // Errors related to bounded quantifiers (e.g., `{m,n}`):
-  NK_ERR_TOO_BIG_NUMBER_IN_QUANTIFIER = -400,
-  NK_ERR_NUMBERS_OUT_OF_ORDER_IN_QUANTIFIER = -401,
+  // Errors related to quantifiers (e.g., `*`, `{m,n}`):
+  NK_ERR_TOO_LARGE_NUMBER_IN_QUANTIFIER = -350,
+  NK_ERR_NUMBERS_OUT_OF_ORDER_IN_QUANTIFIER = -351,
+  NK_ERR_NOTHING_TO_REPEAT = -352,
 
   // Errors related to groups:
-  NK_ERR_UNMATCHED_CLOSE_PARENTHESIS = -410,
+  NK_ERR_UNMATCHED_CLOSE_PARENTHESIS = -360,
+  NK_ERR_INCOMPLETE_GROUP_SPECIFIER = -361,
+  NK_ERR_UNDEFINED_GROUP_OPTION = -362,
+  NK_ERR_UNTERMINATED_GROUP = -363,
+  NK_ERR_TOO_MANY_CAPTURE_GROUPS = -364,
+
+  // Errors related to group names and group numbers
+  // (for named groups, named back-references, and sub-expression calls):
+  NK_ERR_INVALID_GROUP_NAME = -370,
+  NK_ERR_EMPTY_GROUP_NAME = -371,
+  NK_ERR_TOO_LARGE_GROUP_NUMBER = -372,
+  NK_ERR_GROUP_NUMBER_OUT_OF_RANGE = -373,
+  NK_ERR_INCOMPLETE_CAPTURE_DEPTH = -374,
+  NK_ERR_TOO_LARGE_CAPTURE_DEPTH = -375,
+
+  // Errors related to sub-expression calls:
+  NK_ERR_INCOMPLETE_SUBEXP_CALL = -380,
+
+  // Errors related to back-references:
+  NK_ERR_INCOMPLETE_BACK_REF = -390,
+  NK_ERR_INVALID_BACK_REF = -391,
 
   // ============================================================================
   //

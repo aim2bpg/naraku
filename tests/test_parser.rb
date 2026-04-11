@@ -345,6 +345,20 @@ module Parser
     #
     # ========================================================================
 
+    def test_trailing_backslash
+      assert_raises(Naraku::ParseError, 'incomplete escape sequence (at offset 1)') { parse('\\') }
+    end
+
+    def test_backslash_and_newline
+      result = parse("\\\n")
+      assert_equal :concat, result[:type]
+      assert_equal 0, result[:children].size
+
+      result = parse("\\\r\n")
+      assert_equal :concat, result[:type]
+      assert_equal 0, result[:children].size
+    end
+
     def test_hex_escape
       result = parse('\x61')
       assert_equal :literal, result[:type]
@@ -732,6 +746,13 @@ module Parser
       assert_equal :digit, result[:child][:char_type]
     end
 
+    def test_quantifier_nothing_to_repeat
+      assert_raises(Naraku::ParseError, 'nothing to repeat (at offset 0)') { parse('*') }
+      assert_raises(Naraku::ParseError, 'nothing to repeat (at offset 0)') { parse('+') }
+      assert_raises(Naraku::ParseError, 'nothing to repeat (at offset 0)') { parse('?') }
+      assert_raises(Naraku::ParseError, 'nothing to repeat (at offset 0)') { parse('{1}') }
+    end
+
     # ========================================================================
     #
     # Concatenation:
@@ -971,17 +992,154 @@ module Parser
 
     # ========================================================================
     #
-    # Error cases:
+    # Groups:
     #
     # ========================================================================
 
-    def test_error_trailing_backslash
-      assert_raises(Naraku::ParseError, 'incomplete escape sequence (at offset 1)') { parse('\\') }
+    def test_group_capturing
+      result = parse('(a)')
+      assert_equal :group, result[:type]
+      assert_equal 1, result[:group_num]
+      assert_equal :literal, result[:child][:type]
+      assert_equal 'a', result[:child][:buf]
+    end
+
+    def test_group_nested
+      result = parse('(a(b))')
+      assert_equal :group, result[:type]
+      assert_equal 1, result[:group_num]
+
+      child = result[:child]
+      assert_equal :concat, child[:type]
+      assert_equal 2, child[:children].length
+      assert_equal :literal, child[:children][0][:type]
+      assert_equal 'a', child[:children][0][:buf]
+
+      inner_group = child[:children][1]
+      assert_equal :group, inner_group[:type]
+      assert_equal 2, inner_group[:group_num]
+      assert_equal 'b', inner_group[:child][:buf]
+    end
+
+    def test_group_non_capturing
+      result = parse('(?:a)')
+      assert_equal :group, result[:type]
+      assert_equal false, result[:has_name]
+      assert_equal 0, result[:group_num]
+      assert_equal :literal, result[:child][:type]
+      assert_equal 'a', result[:child][:buf]
+    end
+
+    def test_group_inline_options
+      result = parse('(?i:a)a')
+      assert_equal :concat, result[:type]
+      assert_equal 2, result[:children].length
+
+      group = result[:children][0]
+      assert_equal :group, group[:type]
+      assert_equal :literal, group[:child][:type]
+      assert_equal true, group[:child][:is_ignore_case]
+
+      literal = result[:children][1]
+      assert_equal :literal, literal[:type]
+      assert_equal 'a', literal[:buf]
+      assert_equal false, literal[:is_ignore_case]
+    end
+
+    def test_group_named
+      result = parse('(?<name>a)')
+      assert_equal :group, result[:type]
+      assert_equal true, result[:has_name]
+      assert_equal 'name', result[:name]
+      assert_equal 0, result[:group_num]
+
+      result = parse("(?'name'a)")
+      assert_equal :group, result[:type]
+      assert_equal true, result[:has_name]
+      assert_equal 'name', result[:name]
+      assert_equal 0, result[:group_num]
+    end
+
+    def test_lookahead_positive
+      result = parse('(?=a)')
+      assert_equal :assertion, result[:type]
+      assert_equal :positive_lookahead, result[:assertion_type]
+      assert_equal :literal, result[:child][:type]
+      assert_equal 'a', result[:child][:buf]
+    end
+
+    def test_lookahead_negative
+      result = parse('(?!a)')
+      assert_equal :assertion, result[:type]
+      assert_equal :negative_lookahead, result[:assertion_type]
+      assert_equal :literal, result[:child][:type]
+      assert_equal 'a', result[:child][:buf]
+    end
+
+    def test_lookbehind_positive
+      result = parse('(?<=a)')
+      assert_equal :assertion, result[:type]
+      assert_equal :positive_lookbehind, result[:assertion_type]
+      assert_equal :literal, result[:child][:type]
+      assert_equal 'a', result[:child][:buf]
+    end
+
+    def test_lookbehind_negative
+      result = parse('(?<!a)')
+      assert_equal :assertion, result[:type]
+      assert_equal :negative_lookbehind, result[:assertion_type]
+      assert_equal :literal, result[:child][:type]
+      assert_equal 'a', result[:child][:buf]
+    end
+
+    def test_atomic_group
+      result = parse('(?>a)')
+      assert_equal :atomic, result[:type]
+      assert_equal :literal, result[:child][:type]
+      assert_equal 'a', result[:child][:buf]
+    end
+
+    def test_absence_group
+      result = parse('(?~a)')
+      assert_equal :absence, result[:type]
+      assert_equal :literal, result[:child][:type]
+      assert_equal 'a', result[:child][:buf]
+    end
+
+    def test_conditional
+      skip 'conditionals are not yet implemented'
+    end
+
+    def test_unclosed_group
+      assert_raises(Naraku::ParseError, 'unterminated group: missing closing parenthesis (at offset 1)') { parse('(') }
+      assert_raises(Naraku::ParseError, 'unterminated group: missing closing parenthesis (at offset 4)') { parse('(abc') }
+    end
+
+    def test_unmatched_close_paren
+      assert_raises(Naraku::ParseError, 'unmatched close parenthesis (at offset 0)') { parse(')') }
+      assert_raises(Naraku::ParseError, 'unmatched close parenthesis (at offset 3)') { parse('abc)') }
+    end
+
+    def test_incomplete_group_specifier
+      assert_raises(Naraku::ParseError, 'incomplete group specifier (at offset 2)') { parse('(?') }
+    end
+
+    def test_undefined_group_option
+      assert_raises(Naraku::ParseError, 'undefined group option (at offset 2)') { parse('(?z)') }
+    end
+
+    def test_error_invalid_group_name
+      assert_raises(Naraku::ParseError, 'invalid group name (at offset 4)') { parse('(?<-a>)') }
+    end
+
+    def test_error_empty_group_name
+      assert_raises(Naraku::ParseError, 'empty group name (at offset 3)') { parse('(?<>)') }
+      assert_raises(Naraku::ParseError, 'empty group name (at offset 3)') { parse("(?'')") }
     end
 
     # ========================================================================
     #
-    # Stubs for unimplemented features:
+    # Character classes:
     #
     # ========================================================================
 
@@ -1008,53 +1166,132 @@ module Parser
     def test_char_class_posix
       skip 'character classes are not yet implemented'
     end
-
-    def test_group_capturing
-      skip 'groups are not yet implemented'
-    end
-
-    def test_group_non_capturing
-      skip 'groups are not yet implemented'
-    end
-
-    def test_group_named
-      skip 'groups are not yet implemented'
-    end
-
-    def test_lookahead_positive
-      skip 'lookahead is not yet implemented'
-    end
-
-    def test_lookahead_negative
-      skip 'lookahead is not yet implemented'
-    end
-
-    def test_lookbehind_positive
-      skip 'lookbehind is not yet implemented'
-    end
-
-    def test_lookbehind_negative
-      skip 'lookbehind is not yet implemented'
-    end
-
-    def test_atomic_group
-      skip 'atomic groups are not yet implemented'
-    end
+    # ========================================================================
+    #
+    # Back references:
+    #
+    # ========================================================================
 
     def test_back_ref_number
-      skip 'back references are not yet implemented'
+      result = parse('\1')
+      assert_equal :back_ref, result[:type]
+      assert_equal false, result[:has_name]
+      assert_equal 1, result[:group_num]
+
+      result = parse('\k<1>')
+      assert_equal :back_ref, result[:type]
+      assert_equal false, result[:has_name]
+      assert_equal 1, result[:group_num]
+
+      # Relative back-reference
+      result = parse('()\k<-1>')
+      assert_equal :concat, result[:type]
+      assert_equal 2, result[:children].length
+      assert_equal :back_ref, result[:children][1][:type]
+      assert_equal 1, result[:children][1][:group_num]
     end
 
     def test_back_ref_named
-      skip 'back references are not yet implemented'
+      result = parse('\k<name>')
+      assert_equal :back_ref, result[:type]
+      assert_equal true, result[:has_name]
+      assert_equal 'name', result[:name]
+
+      result = parse(%q{\k'name'})
+      assert_equal :back_ref, result[:type]
+      assert_equal true, result[:has_name]
+      assert_equal 'name', result[:name]
+
+      # With depth
+      result = parse('\k<name+1>')
+      assert_equal :back_ref, result[:type]
+      assert_equal true, result[:has_name]
+      assert_equal 'name', result[:name]
+      assert_equal true, result[:has_depth]
+      assert_equal 1, result[:depth]
+
+      result = parse('\k<name-1>')
+      assert_equal :back_ref, result[:type]
+      assert_equal true, result[:has_name]
+      assert_equal 'name', result[:name]
+      assert_equal true, result[:has_depth]
+      assert_equal(-1, result[:depth])
     end
 
-    def test_call_subroutine
-      skip 'subroutine calls are not yet implemented'
+    def test_back_ref_literal
+      result = parse('\k')
+      assert_equal :literal, result[:type]
+      assert_equal 'k', result[:buf]
+
+      result = parse('\ka')
+      assert_equal :literal, result[:type]
+      assert_equal 'ka', result[:buf]
     end
 
-    def test_conditional
-      skip 'conditionals are not yet implemented'
+    def test_error_group_number_out_of_range
+      # In \k<-1>, the error is reported at > (offset 5)
+      assert_raises(Naraku::ParseError, 'group number is out of range (at offset 5)') { parse('\k<-1>') }
+      assert_raises(Naraku::ParseError, 'group number is out of range (at offset 5)') { parse('\g<-1>') }
+    end
+
+    def test_error_incomplete_back_ref
+      assert_raises(Naraku::ParseError, 'incomplete back reference (at offset 3)') { parse('\k<') }
+      assert_raises(Naraku::ParseError, 'incomplete back reference (at offset 7)') { parse('\k<name') }
+    end
+
+    def test_error_incomplete_capture_depth
+      assert_raises(Naraku::ParseError, 'incomplete capture depth (at offset 8)') { parse('\k<name+') }
+      assert_raises(Naraku::ParseError, 'incomplete capture depth (at offset 8)') { parse('\k<name-') }
+    end
+
+    # ========================================================================
+    #
+    # Sub-expression calls:
+    #
+    # ========================================================================
+
+    def test_subexp_call
+      result = parse('\g<1>')
+      assert_equal :call, result[:type]
+      assert_equal false, result[:has_name]
+      assert_equal 1, result[:group_num]
+
+      result = parse('\g<0>')
+      assert_equal :call, result[:type]
+      assert_equal false, result[:has_name]
+      assert_equal 0, result[:group_num]
+
+      result = parse('\g<name>')
+      assert_equal :call, result[:type]
+      assert_equal true, result[:has_name]
+      assert_equal 'name', result[:name]
+
+      result = parse(%q{\g'name'})
+      assert_equal :call, result[:type]
+      assert_equal true, result[:has_name]
+      assert_equal 'name', result[:name]
+
+      # Relative call
+      result = parse('()\g<-1>')
+      assert_equal :concat, result[:type]
+      assert_equal 2, result[:children].length
+      assert_equal :call, result[:children][1][:type]
+      assert_equal 1, result[:children][1][:group_num]
+    end
+
+    def test_subexp_call_literal
+      result = parse('\g')
+      assert_equal :literal, result[:type]
+      assert_equal 'g', result[:buf]
+
+      result = parse('\ga')
+      assert_equal :literal, result[:type]
+      assert_equal 'ga', result[:buf]
+    end
+
+    def test_error_incomplete_subexp_call
+      assert_raises(Naraku::ParseError, 'incomplete sub-expression call (at offset 3)') { parse('\g<') }
+      assert_raises(Naraku::ParseError, 'incomplete sub-expression call (at offset 7)') { parse('\g<name') }
     end
   end
 end

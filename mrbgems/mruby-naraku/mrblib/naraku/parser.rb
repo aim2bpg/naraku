@@ -5,13 +5,13 @@ module Naraku
     end
 
     def self.new(enc, pattern, **options)
-      is_extended_mode = options[:is_extended_mode] || false
-      is_ignore_case = options[:is_ignore_case] || false
-      dot_allows_newline = options[:dot_allows_newline] || false
-      char_class_is_strict = options[:char_class_is_strict] || false
-      char_type_is_ascii_only = options[:char_type_is_ascii_only] || false
-      posix_char_class_is_ascii_only = options[:posix_char_class_is_ascii_only] || false
-      fold_flags = options[:fold_flags] || []
+      is_extended_mode = options.include?(:is_extended_mode) ? options[:is_extended_mode] : false
+      is_ignore_case = options.include?(:is_ignore_case) ? options[:is_ignore_case] : false
+      dot_allows_newline = options.include?(:dot_allows_newline) ? options[:dot_allows_newline] : false
+      char_class_is_strict = options.include?(:char_class_is_strict) ? options[:char_class_is_strict] : false
+      char_type_is_ascii_only = options.include?(:char_type_is_ascii_only) ? options[:char_type_is_ascii_only] : true
+      posix_char_class_is_ascii_only = options.include?(:posix_char_class_is_ascii_only) ? options[:posix_char_class_is_ascii_only] : false
+      fold_flags = options.include?(:fold_flags) ? options[:fold_flags] : []
 
       fold_flags = Naraku::Encoding.parse_fold_flags(fold_flags) if fold_flags.is_a?(Array)
 

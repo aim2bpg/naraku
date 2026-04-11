@@ -60,8 +60,7 @@ typedef enum {
   TK_OPTION_GROUP_OPEN,  // `(?imxvdauSFAT-imxv:`
   TK_OPTION,             // `(?imxvdauSFAT-imxv)`
   TK_NAMED_GROUP_OPEN,   // `(?<name>`, `(?'name'`
-  TK_LOOKAHEAD_OPEN,     // `(?=`, `(?!`
-  TK_LOOKBEHIND_OPEN,    // `(?<=`, `(?<!`
+  TK_LOOKAROUND_OPEN,    // `(?=`, `(?!`, `(?<=`, `(?<!`
   TK_ATOMIC_OPEN,        // `(?>`
   TK_ABSENCE_OPEN,       // `(?~`
   TK_CONDITIONAL_OPEN,   // `(?(condition)`
@@ -99,6 +98,8 @@ typedef struct {
       bool has_name;
       nk_pbuf_t name_buf;
       uint32_t group_num;
+      bool has_depth;
+      int32_t depth;
     } back_ref;
     struct {
       nk_assertion_type_t type;
@@ -108,6 +109,23 @@ typedef struct {
       uint32_t max;
       nk_quantifier_type_t type;
     } quantifier;
+    struct {
+      bool is_extended_mode;                // corresponds to `x`
+      bool is_ignore_case;                  // corresponds to `i`
+      bool dot_allows_newline;              // corresponds to `m`
+      bool char_class_is_strict;            // corresponds to `v`
+      bool char_type_is_ascii_only;         // corresponds to `a`, `d`, `u`
+      bool posix_char_class_is_ascii_only;  // corresponds to `a`, `d`, `u`
+      nk_fold_flag_t fold_flags;            // corresponds to `S`, `F`, `T`, `A`
+    } option;
+    struct {
+      nk_pbuf_t name_buf;
+    } named_group;
+    struct {
+      bool has_name;
+      nk_pbuf_t name_buf;
+      uint32_t group_num;
+    } call;
   } data;
 } token_t;
 
