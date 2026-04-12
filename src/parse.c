@@ -2656,26 +2656,47 @@ static inline size_t span_length_from_bytes(const uint8_t* span_bytes, const uin
   return (size_t)(span_bytes_end - span_bytes);
 }
 
-static inline void set_node_span_from_bytes(
-  nk_parser_t* parser,
-  nk_node_t* node,
-  const uint8_t* span_bytes,
-  const uint8_t* span_bytes_end
-) {
-  node->base.span_offset = span_offset_from_bytes(parser, span_bytes);
-  node->base.span_length = span_length_from_bytes(span_bytes, span_bytes_end);
+static inline void char_class_unions_free(nk_char_class_union_t** unions, size_t unions_len) {
+  for (size_t i = 0; i < unions_len; i++) {
+    char_class_union_free(unions[i]);
+    unions[i] = NULL;
+  }
+  free(unions);
 }
 
-static inline void set_node_span_from_token(nk_parser_t* parser, nk_node_t* node, const token_t* tok) {
-  set_node_span_from_bytes(parser, node, tok->span_bytes, tok->span_bytes_end);
+static inline nk_error_t char_class_union_items_ensure_capacity(nk_char_class_union_t* u, size_t* items_cap) {
+  if (u->items_len < *items_cap) {
+    return NK_SUCCESS;
+  }
+
+  size_t new_items_cap = (*items_cap) * 2;
+  nk_char_class_item_t** new_items =
+    (nk_char_class_item_t**)realloc(u->items, sizeof(nk_char_class_item_t*) * new_items_cap);
+  if (new_items == NULL) {
+    return NK_ERR_MEMORY_ALLOCATION_FAILED;
+  }
+
+  u->items = new_items;
+  *items_cap = new_items_cap;
+  return NK_SUCCESS;
 }
 
-static inline const uint8_t* node_span_end_bytes(nk_parser_t* parser, const nk_node_t* node) {
-  return parser->pattern_bytes_begin + node->base.span_offset + node->base.span_length;
-}
+static inline nk_error_t
+char_class_unions_ensure_capacity(nk_char_class_union_t*** unions_ptr, size_t* unions_cap, size_t unions_len) {
+  if (unions_len < *unions_cap) {
+    return NK_SUCCESS;
+  }
 
-static inline const uint8_t* node_span_begin_bytes(nk_parser_t* parser, const nk_node_t* node) {
-  return parser->pattern_bytes_begin + node->base.span_offset;
+  size_t new_unions_cap = (*unions_cap) * 2;
+  nk_char_class_union_t** new_unions =
+    (nk_char_class_union_t**)realloc(*unions_ptr, sizeof(nk_char_class_union_t*) * new_unions_cap);
+  if (new_unions == NULL) {
+    return NK_ERR_MEMORY_ALLOCATION_FAILED;
+  }
+
+  *unions_ptr = new_unions;
+  *unions_cap = new_unions_cap;
+  return NK_SUCCESS;
 }
 
 static nk_error_t parse_char_class_intersection(
@@ -2863,18 +2884,11 @@ static nk_error_t parse_char_class_union(nk_parser_t* parser, token_t* tok, nk_c
       begin_item->span_offset = span_offset_from_bytes(parser, begin_tok.span_bytes);
       begin_item->span_length = span_length_from_bytes(begin_tok.span_bytes, tok->span_bytes_end);
 
-      if (u->items_len >= items_cap) {
-        size_t new_items_cap = items_cap * 2;
-        nk_char_class_item_t** new_items =
-          (nk_char_class_item_t**)realloc(u->items, sizeof(nk_char_class_item_t*) * new_items_cap);
-        if (new_items == NULL) {
-          char_class_union_free(u);
-          char_class_item_free(begin_item);
-          return NK_ERR_MEMORY_ALLOCATION_FAILED;
-        }
-
-        u->items = new_items;
-        items_cap = new_items_cap;
+      err = char_class_union_items_ensure_capacity(u, &items_cap);
+      if (err != NK_SUCCESS) {
+        char_class_union_free(u);
+        char_class_item_free(begin_item);
+        return err;
       }
 
       u->items[u->items_len++] = begin_item;
@@ -2893,18 +2907,11 @@ static nk_error_t parse_char_class_union(nk_parser_t* parser, token_t* tok, nk_c
     }
 
     if (begin_item != NULL) {
-      if (u->items_len >= items_cap) {
-        size_t new_items_cap = items_cap * 2;
-        nk_char_class_item_t** new_items =
-          (nk_char_class_item_t**)realloc(u->items, sizeof(nk_char_class_item_t*) * new_items_cap);
-        if (new_items == NULL) {
-          char_class_union_free(u);
-          char_class_item_free(begin_item);
-          return NK_ERR_MEMORY_ALLOCATION_FAILED;
-        }
-
-        u->items = new_items;
-        items_cap = new_items_cap;
+      nk_error_t err = char_class_union_items_ensure_capacity(u, &items_cap);
+      if (err != NK_SUCCESS) {
+        char_class_union_free(u);
+        char_class_item_free(begin_item);
+        return err;
       }
 
       u->items[u->items_len++] = begin_item;
@@ -2928,18 +2935,11 @@ static nk_error_t parse_char_class_union(nk_parser_t* parser, token_t* tok, nk_c
   }
 
   if (begin_item != NULL) {
-    if (u->items_len >= items_cap) {
-      size_t new_items_cap = items_cap * 2;
-      nk_char_class_item_t** new_items =
-        (nk_char_class_item_t**)realloc(u->items, sizeof(nk_char_class_item_t*) * new_items_cap);
-      if (new_items == NULL) {
-        char_class_union_free(u);
-        char_class_item_free(begin_item);
-        return NK_ERR_MEMORY_ALLOCATION_FAILED;
-      }
-
-      u->items = new_items;
-      items_cap = new_items_cap;
+    nk_error_t err = char_class_union_items_ensure_capacity(u, &items_cap);
+    if (err != NK_SUCCESS) {
+      char_class_union_free(u);
+      char_class_item_free(begin_item);
+      return err;
     }
 
     u->items[u->items_len++] = begin_item;
@@ -3013,41 +3013,22 @@ static nk_error_t parse_char_class_intersection(
   while (tok.type == TK_CHAR_CLASS_INTERSECTION) {
     nk_error_t err = lex_in_char_class(parser, &tok, CC_STATE_WAIT_RANGE_BEGIN);
     if (err != NK_SUCCESS) {
-      for (size_t i = 0; i < unions_len; i++) {
-        char_class_union_free(unions[i]);
-        unions[i] = NULL;
-      }
-      free(unions);
+      char_class_unions_free(unions, unions_len);
       return err;
     }
 
     nk_char_class_union_t* u = NULL;
     err = parse_char_class_union(parser, &tok, &u);
     if (err != NK_SUCCESS) {
-      for (size_t i = 0; i < unions_len; i++) {
-        char_class_union_free(unions[i]);
-        unions[i] = NULL;
-      }
-      free(unions);
+      char_class_unions_free(unions, unions_len);
       return err;
     }
 
-    if (unions_len >= unions_cap) {
-      size_t new_unions_cap = unions_cap * 2;
-      nk_char_class_union_t** new_unions =
-        (nk_char_class_union_t**)realloc(unions, sizeof(nk_char_class_union_t*) * new_unions_cap);
-      if (new_unions == NULL) {
-        for (size_t i = 0; i < unions_len; i++) {
-          char_class_union_free(unions[i]);
-          unions[i] = NULL;
-        }
-        free(unions);
-        char_class_union_free(u);
-        return NK_ERR_MEMORY_ALLOCATION_FAILED;
-      }
-
-      unions = new_unions;
-      unions_cap = new_unions_cap;
+    err = char_class_unions_ensure_capacity(&unions, &unions_cap, unions_len);
+    if (err != NK_SUCCESS) {
+      char_class_unions_free(unions, unions_len);
+      char_class_union_free(u);
+      return err;
     }
 
     unions[unions_len++] = u;
@@ -3057,22 +3038,14 @@ static nk_error_t parse_char_class_intersection(
     nk_char_class_union_t** resized_unions =
       (nk_char_class_union_t**)realloc(unions, sizeof(nk_char_class_union_t*) * unions_len);
     if (resized_unions == NULL) {
-      for (size_t i = 0; i < unions_len; i++) {
-        char_class_union_free(unions[i]);
-        unions[i] = NULL;
-      }
-      free(unions);
+      char_class_unions_free(unions, unions_len);
       return NK_ERR_MEMORY_ALLOCATION_FAILED;
     }
     unions = resized_unions;
   }
 
   if (tok.type != TK_CHAR_CLASS_CLOSE) {
-    for (size_t i = 0; i < unions_len; i++) {
-      char_class_union_free(unions[i]);
-      unions[i] = NULL;
-    }
-    free(unions);
+    char_class_unions_free(unions, unions_len);
     parser->error_bytes = tok.span_bytes;
     parser->error_bytes_end = tok.span_bytes_end;
     return NK_ERR_UNTERMINATED_CHAR_CLASS;
@@ -3084,8 +3057,126 @@ static nk_error_t parse_char_class_intersection(
   return NK_SUCCESS;
 }
 
+static inline void set_node_span_from_bytes(
+  nk_parser_t* parser,
+  nk_node_t* node,
+  const uint8_t* span_bytes,
+  const uint8_t* span_bytes_end
+) {
+  node->base.span_offset = span_offset_from_bytes(parser, span_bytes);
+  node->base.span_length = span_length_from_bytes(span_bytes, span_bytes_end);
+}
+
+static inline void set_node_span_from_token(nk_parser_t* parser, nk_node_t* node, const token_t* tok) {
+  set_node_span_from_bytes(parser, node, tok->span_bytes, tok->span_bytes_end);
+}
+
+static inline const uint8_t* node_span_end_bytes(nk_parser_t* parser, const nk_node_t* node) {
+  return parser->pattern_bytes_begin + node->base.span_offset + node->base.span_length;
+}
+
+static inline const uint8_t* node_span_begin_bytes(nk_parser_t* parser, const nk_node_t* node) {
+  return parser->pattern_bytes_begin + node->base.span_offset;
+}
+
+static inline nk_error_t alloc_node(nk_node_type_t type, nk_node_t** out_node_ptr) {
+  nk_node_t* node = (nk_node_t*)malloc(sizeof(nk_node_t));
+  if (node == NULL) {
+    return NK_ERR_MEMORY_ALLOCATION_FAILED;
+  }
+  node->base.type = type;
+  *out_node_ptr = node;
+  return NK_SUCCESS;
+}
+
+static inline nk_error_t
+alloc_node_from_token(nk_parser_t* parser, nk_node_type_t type, const token_t* tok, nk_node_t** out_node_ptr) {
+  nk_error_t err = alloc_node(type, out_node_ptr);
+  if (err != NK_SUCCESS) {
+    return err;
+  }
+  set_node_span_from_token(parser, *out_node_ptr, tok);
+  return NK_SUCCESS;
+}
+
+static inline nk_error_t alloc_node_from_bytes(
+  nk_parser_t* parser,
+  nk_node_type_t type,
+  const uint8_t* span_bytes,
+  const uint8_t* span_bytes_end,
+  nk_node_t** out_node_ptr
+) {
+  nk_error_t err = alloc_node(type, out_node_ptr);
+  if (err != NK_SUCCESS) {
+    return err;
+  }
+  set_node_span_from_bytes(parser, *out_node_ptr, span_bytes, span_bytes_end);
+  return NK_SUCCESS;
+}
+
 static nk_error_t parse_alt(nk_parser_t* parser, token_t* tok, nk_node_t** out_node_ptr);
 static nk_error_t parse_concat(nk_parser_t* parser, token_t* tok, nk_node_t** out_node_ptr);
+
+static nk_error_t parse_group_alt_body(nk_parser_t* parser, token_t* tok, nk_node_t** out_child_node_ptr) {
+  nk_error_t err = lex(parser, tok);
+  if (err != NK_SUCCESS) {
+    return err;
+  }
+
+  nk_node_t* child_node = NULL;
+  err = parse_alt(parser, tok, &child_node);
+  if (err != NK_SUCCESS) {
+    return err;
+  }
+
+  if (tok->type != TK_GROUP_CLOSE) {
+    nk_node_free(child_node);
+    return NK_ERR_UNTERMINATED_GROUP;
+  }
+
+  *out_child_node_ptr = child_node;
+  return NK_SUCCESS;
+}
+
+typedef struct {
+  bool is_extended_mode;
+  bool is_ignore_case;
+  bool dot_allows_newline;
+  bool char_class_is_strict;
+  bool char_type_is_ascii_only;
+  bool posix_char_class_is_ascii_only;
+  nk_fold_flag_t fold_flags;
+} parser_state_t;
+
+static inline void parser_state_save(nk_parser_t* parser, parser_state_t* out_state) {
+  out_state->is_extended_mode = parser->is_extended_mode;
+  out_state->is_ignore_case = parser->is_ignore_case;
+  out_state->dot_allows_newline = parser->dot_allows_newline;
+  out_state->char_class_is_strict = parser->char_class_is_strict;
+  out_state->char_type_is_ascii_only = parser->char_type_is_ascii_only;
+  out_state->posix_char_class_is_ascii_only = parser->posix_char_class_is_ascii_only;
+  out_state->fold_flags = parser->fold_flags;
+}
+
+static inline void parser_state_apply_option(nk_parser_t* parser, const token_t* tok) {
+  parser->is_extended_mode = tok->data.option.is_extended_mode;
+  parser->is_ignore_case = tok->data.option.is_ignore_case;
+  parser->dot_allows_newline = tok->data.option.dot_allows_newline;
+  parser->char_class_is_strict = tok->data.option.char_class_is_strict;
+  parser->char_type_is_ascii_only = tok->data.option.char_type_is_ascii_only;
+  parser->posix_char_class_is_ascii_only = tok->data.option.posix_char_class_is_ascii_only;
+  parser->fold_flags = tok->data.option.fold_flags;
+}
+
+static inline void parser_state_restore(nk_parser_t* parser, const parser_state_t* state) {
+  parser->is_extended_mode = state->is_extended_mode;
+  parser->is_ignore_case = state->is_ignore_case;
+  parser->dot_allows_newline = state->dot_allows_newline;
+  parser->char_class_is_strict = state->char_class_is_strict;
+  parser->char_type_is_ascii_only = state->char_type_is_ascii_only;
+  parser->posix_char_class_is_ascii_only = state->posix_char_class_is_ascii_only;
+  parser->fold_flags = state->fold_flags;
+}
 
 static nk_error_t parse_atom(nk_parser_t* parser, token_t* tok, nk_node_t** out_node_ptr) {
   const uint8_t* atom_span_bytes = tok->span_bytes;
@@ -3093,31 +3184,30 @@ static nk_error_t parse_atom(nk_parser_t* parser, token_t* tok, nk_node_t** out_
   switch (tok->type) {
     case TK_LITERAL:
     {
-      nk_node_t* literal_node = (nk_node_t*)malloc(sizeof(nk_node_t));
-      if (literal_node == NULL) {
-        return NK_ERR_MEMORY_ALLOCATION_FAILED;
+      nk_node_t* literal_node = NULL;
+      nk_error_t err = alloc_node_from_token(parser, NK_NODE_TYPE_LITERAL, tok, &literal_node);
+      if (err != NK_SUCCESS) {
+        return err;
       }
-      literal_node->base.type = NK_NODE_TYPE_LITERAL;
       literal_node->literal.buf =
         (nk_pbuf_t){.type = NK_PBUF_VIEW, .bytes = tok->data.literal.bytes, .bytes_end = tok->data.literal.bytes_end};
       literal_node->literal.is_ignore_case = parser->is_ignore_case;
       literal_node->literal.fold_flags = parser->fold_flags;
-      set_node_span_from_token(parser, literal_node, tok);
       *out_node_ptr = literal_node;
       break;
     }
     case TK_CODE:
     {
-      nk_node_t* literal_node = (nk_node_t*)malloc(sizeof(nk_node_t));
-      if (literal_node == NULL) {
-        return NK_ERR_MEMORY_ALLOCATION_FAILED;
+      nk_node_t* literal_node = NULL;
+      nk_error_t err = alloc_node_from_token(parser, NK_NODE_TYPE_LITERAL, tok, &literal_node);
+      if (err != NK_SUCCESS) {
+        return err;
       }
-      literal_node->base.type = NK_NODE_TYPE_LITERAL;
 
       uint32_t code = tok->data.code;
       uint8_t buf[NK_ENC_MAX_MBC_WIDTH];
       size_t width;
-      nk_error_t err = nk_enc_encode_mbc(parser->enc, code, &width, buf);
+      err = nk_enc_encode_mbc(parser->enc, code, &width, buf);
       if (err != NK_SUCCESS) {
         free(literal_node);
         return err;
@@ -3133,7 +3223,7 @@ static nk_error_t parse_atom(nk_parser_t* parser, token_t* tok, nk_node_t** out_
       literal_node->literal.buf = (nk_pbuf_t){.type = NK_PBUF_OWNED, .bytes = bytes, .bytes_end = bytes + width};
       literal_node->literal.is_ignore_case = parser->is_ignore_case;
       literal_node->literal.fold_flags = parser->fold_flags;
-      set_node_span_from_token(parser, literal_node, tok);
+
       *out_node_ptr = literal_node;
       break;
     }
@@ -3147,50 +3237,53 @@ static nk_error_t parse_atom(nk_parser_t* parser, token_t* tok, nk_node_t** out_
         return err;
       }
 
-      nk_node_t* char_class_node = (nk_node_t*)malloc(sizeof(nk_node_t));
-      if (char_class_node == NULL) {
-        for (size_t i = 0; i < unions_len; i++) {
-          char_class_union_free(unions[i]);
-          unions[i] = NULL;
-        }
-        free(unions);
-        return NK_ERR_MEMORY_ALLOCATION_FAILED;
+      nk_node_t* char_class_node = NULL;
+      err = alloc_node_from_bytes(
+        parser,
+        NK_NODE_TYPE_CHAR_CLASS,
+        atom_span_bytes,
+        parser->pattern_bytes,
+        &char_class_node
+      );
+      if (err != NK_SUCCESS) {
+        char_class_unions_free(unions, unions_len);
+        return err;
       }
 
-      char_class_node->base.type = NK_NODE_TYPE_CHAR_CLASS;
       char_class_node->char_class.is_strict = parser->char_class_is_strict;
       char_class_node->char_class.is_ignore_case = parser->is_ignore_case;
       char_class_node->char_class.fold_flags = parser->fold_flags;
       char_class_node->char_class.is_positive = is_positive;
       char_class_node->char_class.unions_len = unions_len;
       char_class_node->char_class.unions = unions;
-      set_node_span_from_bytes(parser, char_class_node, atom_span_bytes, parser->pattern_bytes);
-      *out_node_ptr = char_class_node;
 
+      *out_node_ptr = char_class_node;
       break;
     }
     case TK_DOT:
     {
-      nk_node_t* dot_node = (nk_node_t*)malloc(sizeof(nk_node_t));
-      if (dot_node == NULL) {
-        return NK_ERR_MEMORY_ALLOCATION_FAILED;
+      nk_node_t* dot_node = NULL;
+      nk_error_t err = alloc_node_from_token(parser, NK_NODE_TYPE_DOT, tok, &dot_node);
+      if (err != NK_SUCCESS) {
+        return err;
       }
-      dot_node->base.type = NK_NODE_TYPE_DOT;
+
       dot_node->dot.allows_newline = parser->dot_allows_newline;
-      set_node_span_from_token(parser, dot_node, tok);
+
       *out_node_ptr = dot_node;
       break;
     }
     case TK_ASSERTION:
     {
-      nk_node_t* assertion_node = (nk_node_t*)malloc(sizeof(nk_node_t));
-      if (assertion_node == NULL) {
-        return NK_ERR_MEMORY_ALLOCATION_FAILED;
+      nk_node_t* assertion_node = NULL;
+      nk_error_t err = alloc_node_from_token(parser, NK_NODE_TYPE_ASSERTION, tok, &assertion_node);
+      if (err != NK_SUCCESS) {
+        return err;
       }
-      assertion_node->base.type = NK_NODE_TYPE_ASSERTION;
+
       assertion_node->assertion.type = tok->data.assertion.type;
       assertion_node->assertion.child = NULL;
-      set_node_span_from_token(parser, assertion_node, tok);
+
       *out_node_ptr = assertion_node;
       break;
     }
@@ -3198,101 +3291,104 @@ static nk_error_t parse_atom(nk_parser_t* parser, token_t* tok, nk_node_t** out_
       return NK_ERR_NOTHING_TO_REPEAT;
     case TK_CHAR_TYPE:
     {
-      nk_node_t* char_type_node = (nk_node_t*)malloc(sizeof(nk_node_t));
-      if (char_type_node == NULL) {
-        return NK_ERR_MEMORY_ALLOCATION_FAILED;
+      nk_node_t* char_type_node = NULL;
+      nk_error_t err = alloc_node_from_token(parser, NK_NODE_TYPE_CHAR_TYPE, tok, &char_type_node);
+      if (err != NK_SUCCESS) {
+        return err;
       }
-      char_type_node->base.type = NK_NODE_TYPE_CHAR_TYPE;
+
       char_type_node->char_type.char_type = tok->data.char_type.type;
       char_type_node->char_type.is_positive = tok->data.char_type.is_positive;
       char_type_node->char_type.is_ascii_only = parser->char_type_is_ascii_only;
       char_type_node->char_type.is_ignore_case = parser->is_ignore_case;
       char_type_node->char_type.fold_flags = parser->fold_flags;
-      set_node_span_from_token(parser, char_type_node, tok);
+
       *out_node_ptr = char_type_node;
       break;
     }
     case TK_CHAR_PROP:
     {
-      nk_node_t* char_prop_node = (nk_node_t*)malloc(sizeof(nk_node_t));
-      if (char_prop_node == NULL) {
-        return NK_ERR_MEMORY_ALLOCATION_FAILED;
+      nk_node_t* char_prop_node = NULL;
+      nk_error_t err = alloc_node_from_token(parser, NK_NODE_TYPE_CHAR_PROP, tok, &char_prop_node);
+      if (err != NK_SUCCESS) {
+        return err;
       }
-      char_prop_node->base.type = NK_NODE_TYPE_CHAR_PROP;
+
       char_prop_node->char_prop.cprop = tok->data.char_prop.cprop;
       char_prop_node->char_prop.is_positive = tok->data.char_prop.is_positive;
       char_prop_node->char_prop.is_ignore_case = parser->is_ignore_case;
       char_prop_node->char_prop.fold_flags = parser->fold_flags;
-      set_node_span_from_token(parser, char_prop_node, tok);
+
       *out_node_ptr = char_prop_node;
       break;
     }
     case TK_GRAPHEME_CLUSTER:
     {
-      nk_node_t* gc_node = (nk_node_t*)malloc(sizeof(nk_node_t));
-      if (gc_node == NULL) {
-        return NK_ERR_MEMORY_ALLOCATION_FAILED;
+      nk_node_t* gc_node = NULL;
+      nk_error_t err = alloc_node_from_token(parser, NK_NODE_TYPE_GRAPHEME_CLUSTER, tok, &gc_node);
+      if (err != NK_SUCCESS) {
+        return err;
       }
-      gc_node->base.type = NK_NODE_TYPE_GRAPHEME_CLUSTER;
-      set_node_span_from_token(parser, gc_node, tok);
+
       *out_node_ptr = gc_node;
       break;
     }
     case TK_KEEP:
     {
-      nk_node_t* keep_node = (nk_node_t*)malloc(sizeof(nk_node_t));
-      if (keep_node == NULL) {
-        return NK_ERR_MEMORY_ALLOCATION_FAILED;
+      nk_node_t* keep_node = NULL;
+      nk_error_t err = alloc_node_from_token(parser, NK_NODE_TYPE_KEEP, tok, &keep_node);
+      if (err != NK_SUCCESS) {
+        return err;
       }
-      keep_node->base.type = NK_NODE_TYPE_KEEP;
-      set_node_span_from_token(parser, keep_node, tok);
+
       *out_node_ptr = keep_node;
       break;
     }
     case TK_NEWLINE:
     {
-      nk_node_t* newline_node = (nk_node_t*)malloc(sizeof(nk_node_t));
-      if (newline_node == NULL) {
-        return NK_ERR_MEMORY_ALLOCATION_FAILED;
+      nk_node_t* newline_node = NULL;
+      nk_error_t err = alloc_node_from_token(parser, NK_NODE_TYPE_NEWLINE, tok, &newline_node);
+      if (err != NK_SUCCESS) {
+        return err;
       }
-      newline_node->base.type = NK_NODE_TYPE_NEWLINE;
-      set_node_span_from_token(parser, newline_node, tok);
+
       *out_node_ptr = newline_node;
       break;
     }
     case TK_BACK_REF:
     {
-      nk_node_t* back_ref_node = (nk_node_t*)malloc(sizeof(nk_node_t));
-      if (back_ref_node == NULL) {
-        return NK_ERR_MEMORY_ALLOCATION_FAILED;
+      nk_node_t* back_ref_node = NULL;
+      nk_error_t err = alloc_node_from_token(parser, NK_NODE_TYPE_BACK_REF, tok, &back_ref_node);
+      if (err != NK_SUCCESS) {
+        return err;
       }
-      back_ref_node->base.type = NK_NODE_TYPE_BACK_REF;
+
       back_ref_node->back_ref.is_ignore_case = parser->is_ignore_case;
       back_ref_node->back_ref.fold_flags = parser->fold_flags;
       back_ref_node->back_ref.has_name = tok->data.back_ref.has_name;
-      back_ref_node->back_ref.group_num = tok->data.back_ref.group_num;
-      back_ref_node->back_ref.has_depth = tok->data.back_ref.has_depth;
-      back_ref_node->back_ref.depth = tok->data.back_ref.depth;
       if (tok->data.back_ref.has_name) {
         back_ref_node->back_ref.name_buf = tok->data.back_ref.name_buf;
       }
-      set_node_span_from_token(parser, back_ref_node, tok);
+      back_ref_node->back_ref.group_num = tok->data.back_ref.group_num;
+      back_ref_node->back_ref.has_depth = tok->data.back_ref.has_depth;
+      back_ref_node->back_ref.depth = tok->data.back_ref.depth;
+
       *out_node_ptr = back_ref_node;
       break;
     }
     case TK_CALL:
     {
-      nk_node_t* call_node = (nk_node_t*)malloc(sizeof(nk_node_t));
-      if (call_node == NULL) {
-        return NK_ERR_MEMORY_ALLOCATION_FAILED;
+      nk_node_t* call_node = NULL;
+      nk_error_t err = alloc_node_from_token(parser, NK_NODE_TYPE_CALL, tok, &call_node);
+      if (err != NK_SUCCESS) {
+        return err;
       }
-      call_node->base.type = NK_NODE_TYPE_CALL;
       call_node->call.has_name = tok->data.call.has_name;
-      call_node->call.group_num = tok->data.call.group_num;
       if (tok->data.call.has_name) {
         call_node->call.name_buf = tok->data.call.name_buf;
       }
-      set_node_span_from_token(parser, call_node, tok);
+      call_node->call.group_num = tok->data.call.group_num;
+
       *out_node_ptr = call_node;
       break;
     }
@@ -3305,36 +3401,24 @@ static nk_error_t parse_atom(nk_parser_t* parser, token_t* tok, nk_node_t** out_
 
       uint32_t group_num = parser->num_capture_groups;
 
-      nk_error_t err = lex(parser, tok);
+      nk_node_t* child_node = NULL;
+      nk_error_t err = parse_group_alt_body(parser, tok, &child_node);
       if (err != NK_SUCCESS) {
         return err;
       }
 
-      nk_node_t* child_node;
-      err = parse_alt(parser, tok, &child_node);
+      nk_node_t* group_node = NULL;
+      err = alloc_node_from_bytes(parser, NK_NODE_TYPE_GROUP, atom_span_bytes, tok->span_bytes_end, &group_node);
       if (err != NK_SUCCESS) {
+        nk_node_free(child_node);
         return err;
       }
 
-      if (tok->type != TK_GROUP_CLOSE) {
-        nk_node_free(child_node);
-        return NK_ERR_UNTERMINATED_GROUP;
-      }
-
-      nk_node_t* group_node = (nk_node_t*)malloc(sizeof(nk_node_t));
-      if (group_node == NULL) {
-        nk_node_free(child_node);
-        return NK_ERR_MEMORY_ALLOCATION_FAILED;
-      }
-
-      group_node->base.type = NK_NODE_TYPE_GROUP;
       group_node->group.child = child_node;
       group_node->group.has_name = false;
       group_node->group.group_num = group_num;
-      set_node_span_from_bytes(parser, group_node, atom_span_bytes, tok->span_bytes_end);
 
       *out_node_ptr = group_node;
-
       break;
     }
     case TK_NAMED_GROUP_OPEN:
@@ -3347,242 +3431,160 @@ static nk_error_t parse_atom(nk_parser_t* parser, token_t* tok, nk_node_t** out_
 
       nk_pbuf_t name_buf = tok->data.named_group.name_buf;
 
-      nk_error_t err = lex(parser, tok);
+      nk_node_t* child_node = NULL;
+      nk_error_t err = parse_group_alt_body(parser, tok, &child_node);
       if (err != NK_SUCCESS) {
         nk_pbuf_free(&name_buf);
         return err;
       }
 
-      nk_node_t* child_node;
-      err = parse_alt(parser, tok, &child_node);
+      nk_node_t* group_node = NULL;
+      err = alloc_node_from_bytes(parser, NK_NODE_TYPE_GROUP, atom_span_bytes, tok->span_bytes_end, &group_node);
       if (err != NK_SUCCESS) {
+        nk_node_free(child_node);
         nk_pbuf_free(&name_buf);
         return err;
       }
 
-      if (tok->type != TK_GROUP_CLOSE) {
-        nk_node_free(child_node);
-        nk_pbuf_free(&name_buf);
-        return NK_ERR_UNTERMINATED_GROUP;
-      }
-
-      nk_node_t* group_node = (nk_node_t*)malloc(sizeof(nk_node_t));
-      if (group_node == NULL) {
-        nk_node_free(child_node);
-        nk_pbuf_free(&name_buf);
-        return NK_ERR_MEMORY_ALLOCATION_FAILED;
-      }
-
-      group_node->base.type = NK_NODE_TYPE_GROUP;
       group_node->group.child = child_node;
       group_node->group.has_name = true;
       group_node->group.name_buf = name_buf;
       group_node->group.group_num = 0;
-      set_node_span_from_bytes(parser, group_node, atom_span_bytes, tok->span_bytes_end);
 
       *out_node_ptr = group_node;
-
       break;
     }
     case TK_LOOKAROUND_OPEN:
     {
       nk_assertion_type_t type = tok->data.assertion.type;
-      nk_error_t err = lex(parser, tok);
+      nk_node_t* child_node = NULL;
+      nk_error_t err = parse_group_alt_body(parser, tok, &child_node);
       if (err != NK_SUCCESS) {
         return err;
       }
 
-      nk_node_t* child_node;
-      err = parse_alt(parser, tok, &child_node);
+      nk_node_t* lookaround_node = NULL;
+      err =
+        alloc_node_from_bytes(parser, NK_NODE_TYPE_ASSERTION, atom_span_bytes, tok->span_bytes_end, &lookaround_node);
       if (err != NK_SUCCESS) {
+        nk_node_free(child_node);
         return err;
       }
 
-      if (tok->type != TK_GROUP_CLOSE) {
-        nk_node_free(child_node);
-        return NK_ERR_UNTERMINATED_GROUP;
-      }
-
-      nk_node_t* lookaround_node = (nk_node_t*)malloc(sizeof(nk_node_t));
-      if (lookaround_node == NULL) {
-        nk_node_free(child_node);
-        return NK_ERR_MEMORY_ALLOCATION_FAILED;
-      }
-
-      lookaround_node->base.type = NK_NODE_TYPE_ASSERTION;
       lookaround_node->assertion.type = type;
       lookaround_node->assertion.child = child_node;
-      set_node_span_from_bytes(parser, lookaround_node, atom_span_bytes, tok->span_bytes_end);
 
       *out_node_ptr = lookaround_node;
       break;
     }
     case TK_ATOMIC_OPEN:
     {
-      nk_error_t err = lex(parser, tok);
+      nk_node_t* child_node = NULL;
+      nk_error_t err = parse_group_alt_body(parser, tok, &child_node);
       if (err != NK_SUCCESS) {
         return err;
       }
 
-      nk_node_t* child_node;
-      err = parse_alt(parser, tok, &child_node);
+      nk_node_t* atomic_node = NULL;
+      err = alloc_node_from_bytes(parser, NK_NODE_TYPE_ATOMIC, atom_span_bytes, tok->span_bytes_end, &atomic_node);
       if (err != NK_SUCCESS) {
+        nk_node_free(child_node);
         return err;
       }
 
-      if (tok->type != TK_GROUP_CLOSE) {
-        nk_node_free(child_node);
-        return NK_ERR_UNTERMINATED_GROUP;
-      }
-
-      nk_node_t* atomic_node = (nk_node_t*)malloc(sizeof(nk_node_t));
-      if (atomic_node == NULL) {
-        nk_node_free(child_node);
-        return NK_ERR_MEMORY_ALLOCATION_FAILED;
-      }
-
-      atomic_node->base.type = NK_NODE_TYPE_ATOMIC;
       atomic_node->atomic.child = child_node;
-      set_node_span_from_bytes(parser, atomic_node, atom_span_bytes, tok->span_bytes_end);
 
       *out_node_ptr = atomic_node;
       break;
     }
     case TK_ABSENCE_OPEN:
     {
-      nk_error_t err = lex(parser, tok);
+      nk_node_t* child_node = NULL;
+      nk_error_t err = parse_group_alt_body(parser, tok, &child_node);
       if (err != NK_SUCCESS) {
         return err;
       }
 
-      nk_node_t* child_node;
-      err = parse_alt(parser, tok, &child_node);
+      nk_node_t* absence_node = NULL;
+      err = alloc_node_from_bytes(parser, NK_NODE_TYPE_ABSENCE, atom_span_bytes, tok->span_bytes_end, &absence_node);
       if (err != NK_SUCCESS) {
+        nk_node_free(child_node);
         return err;
       }
 
-      if (tok->type != TK_GROUP_CLOSE) {
-        nk_node_free(child_node);
-        return NK_ERR_UNTERMINATED_GROUP;
-      }
-
-      nk_node_t* absence_node = (nk_node_t*)malloc(sizeof(nk_node_t));
-      if (absence_node == NULL) {
-        nk_node_free(child_node);
-        return NK_ERR_MEMORY_ALLOCATION_FAILED;
-      }
-      absence_node->base.type = NK_NODE_TYPE_ABSENCE;
       absence_node->absence.child = child_node;
 
-      set_node_span_from_bytes(parser, absence_node, atom_span_bytes, tok->span_bytes_end);
       *out_node_ptr = absence_node;
       break;
     }
     case TK_OPTION_GROUP_OPEN:
     {
-      bool is_extended_mode = parser->is_extended_mode;
-      bool is_ignore_case = parser->is_ignore_case;
-      bool dot_allows_newline = parser->dot_allows_newline;
-      bool char_class_is_strict = parser->char_class_is_strict;
-      bool char_type_is_ascii_only = parser->char_type_is_ascii_only;
-      bool posix_char_class_is_ascii_only = parser->posix_char_class_is_ascii_only;
-      nk_fold_flag_t fold_flags = parser->fold_flags;
+      parser_state_t saved_state;
+      parser_state_save(parser, &saved_state);
+      parser_state_apply_option(parser, tok);
 
-      parser->is_extended_mode = tok->data.option.is_extended_mode;
-      parser->is_ignore_case = tok->data.option.is_ignore_case;
-      parser->dot_allows_newline = tok->data.option.dot_allows_newline;
-      parser->char_class_is_strict = tok->data.option.char_class_is_strict;
-      parser->char_type_is_ascii_only = tok->data.option.char_type_is_ascii_only;
-      parser->posix_char_class_is_ascii_only = tok->data.option.posix_char_class_is_ascii_only;
-      parser->fold_flags = tok->data.option.fold_flags;
-
-      nk_error_t err = lex(parser, tok);
+      nk_node_t* child_node = NULL;
+      nk_error_t err = parse_group_alt_body(parser, tok, &child_node);
       if (err != NK_SUCCESS) {
+        parser_state_restore(parser, &saved_state);
         return err;
       }
 
-      nk_node_t* child_node;
-      err = parse_alt(parser, tok, &child_node);
+      nk_node_t* group_node = NULL;
+      err = alloc_node_from_bytes(parser, NK_NODE_TYPE_GROUP, atom_span_bytes, tok->span_bytes_end, &group_node);
       if (err != NK_SUCCESS) {
+        parser_state_restore(parser, &saved_state);
+        nk_node_free(child_node);
         return err;
       }
 
-      if (tok->type != TK_GROUP_CLOSE) {
-        nk_node_free(child_node);
-        return NK_ERR_UNTERMINATED_GROUP;
-      }
+      parser_state_restore(parser, &saved_state);
 
-      nk_node_t* group_node = (nk_node_t*)malloc(sizeof(nk_node_t));
-      if (group_node == NULL) {
-        nk_node_free(child_node);
-        return NK_ERR_MEMORY_ALLOCATION_FAILED;
-      }
-
-      group_node->base.type = NK_NODE_TYPE_GROUP;
       group_node->group.child = child_node;
       group_node->group.has_name = false;
       group_node->group.group_num = 0;
-      set_node_span_from_bytes(parser, group_node, atom_span_bytes, tok->span_bytes_end);
-
-      parser->is_extended_mode = is_extended_mode;
-      parser->is_ignore_case = is_ignore_case;
-      parser->dot_allows_newline = dot_allows_newline;
-      parser->char_class_is_strict = char_class_is_strict;
-      parser->char_type_is_ascii_only = char_type_is_ascii_only;
-      parser->posix_char_class_is_ascii_only = posix_char_class_is_ascii_only;
-      parser->fold_flags = fold_flags;
 
       *out_node_ptr = group_node;
       break;
     }
     case TK_OPTION:
     {
-      bool is_extended_mode = parser->is_extended_mode;
-      bool is_ignore_case = parser->is_ignore_case;
-      bool dot_allows_newline = parser->dot_allows_newline;
-      bool char_class_is_strict = parser->char_class_is_strict;
-      bool char_type_is_ascii_only = parser->char_type_is_ascii_only;
-      bool posix_char_class_is_ascii_only = parser->posix_char_class_is_ascii_only;
-      nk_fold_flag_t fold_flags = parser->fold_flags;
-
-      parser->is_extended_mode = tok->data.option.is_extended_mode;
-      parser->is_ignore_case = tok->data.option.is_ignore_case;
-      parser->dot_allows_newline = tok->data.option.dot_allows_newline;
-      parser->char_class_is_strict = tok->data.option.char_class_is_strict;
-      parser->char_type_is_ascii_only = tok->data.option.char_type_is_ascii_only;
-      parser->posix_char_class_is_ascii_only = tok->data.option.posix_char_class_is_ascii_only;
-      parser->fold_flags = tok->data.option.fold_flags;
+      parser_state_t saved_state;
+      parser_state_save(parser, &saved_state);
+      parser_state_apply_option(parser, tok);
 
       nk_error_t err = lex(parser, tok);
       if (err != NK_SUCCESS) {
+        parser_state_restore(parser, &saved_state);
         return err;
       }
 
-      nk_node_t* child_node;
+      nk_node_t* child_node = NULL;
       err = parse_alt(parser, tok, &child_node);
       if (err != NK_SUCCESS) {
+        parser_state_restore(parser, &saved_state);
         return err;
       }
 
-      nk_node_t* group_node = (nk_node_t*)malloc(sizeof(nk_node_t));
-      if (group_node == NULL) {
+      nk_node_t* group_node = NULL;
+      err = alloc_node_from_bytes(
+        parser,
+        NK_NODE_TYPE_GROUP,
+        atom_span_bytes,
+        node_span_end_bytes(parser, child_node),
+        &group_node
+      );
+      if (err != NK_SUCCESS) {
+        parser_state_restore(parser, &saved_state);
         nk_node_free(child_node);
-        return NK_ERR_MEMORY_ALLOCATION_FAILED;
+        return err;
       }
 
-      group_node->base.type = NK_NODE_TYPE_GROUP;
+      parser_state_restore(parser, &saved_state);
+
       group_node->group.child = child_node;
       group_node->group.has_name = false;
       group_node->group.group_num = 0;
-      set_node_span_from_bytes(parser, group_node, atom_span_bytes, node_span_end_bytes(parser, child_node));
-
-      parser->is_extended_mode = is_extended_mode;
-      parser->is_ignore_case = is_ignore_case;
-      parser->dot_allows_newline = dot_allows_newline;
-      parser->char_class_is_strict = char_class_is_strict;
-      parser->char_type_is_ascii_only = char_type_is_ascii_only;
-      parser->posix_char_class_is_ascii_only = posix_char_class_is_ascii_only;
-      parser->fold_flags = fold_flags;
 
       *out_node_ptr = group_node;
 
@@ -3645,30 +3647,34 @@ static nk_error_t parse_atom(nk_parser_t* parser, token_t* tok, nk_node_t** out_
         return NK_ERR_INVALID_CONDITIONAL_GROUP;
       }
 
-      nk_node_t* conditional_node = (nk_node_t*)malloc(sizeof(nk_node_t));
-      if (conditional_node == NULL) {
+      nk_node_t* conditional_node = NULL;
+      err = alloc_node_from_bytes(
+        parser,
+        NK_NODE_TYPE_CONDITIONAL,
+        atom_span_bytes,
+        tok->span_bytes_end,
+        &conditional_node
+      );
+      if (err != NK_SUCCESS) {
         nk_node_free(yes_node);
         nk_node_free(no_node);
         if (has_name) {
           nk_pbuf_free(&name_buf);
         }
-        return NK_ERR_MEMORY_ALLOCATION_FAILED;
+        return err;
       }
 
-      conditional_node->base.type = NK_NODE_TYPE_CONDITIONAL;
       conditional_node->conditional.has_name = has_name;
-      conditional_node->conditional.group_num = group_num;
       if (has_name) {
         conditional_node->conditional.name_buf = name_buf;
       }
+      conditional_node->conditional.group_num = group_num;
       conditional_node->conditional.has_depth = has_depth;
       conditional_node->conditional.depth = depth;
       conditional_node->conditional.yes_child = yes_node;
       conditional_node->conditional.no_child = no_node;
 
-      set_node_span_from_bytes(parser, conditional_node, atom_span_bytes, tok->span_bytes_end);
       *out_node_ptr = conditional_node;
-
       break;
     }
     case TK_GROUP_CLOSE:
@@ -3696,24 +3702,24 @@ static nk_error_t parse_quantifier(nk_parser_t* parser, token_t* tok, nk_node_t*
   }
 
   while (tok->type == TK_QUANTIFIER) {
-    nk_node_t* quantifier_node = (nk_node_t*)malloc(sizeof(nk_node_t));
-    if (quantifier_node == NULL) {
+    nk_node_t* quantifier_node = NULL;
+    err = alloc_node_from_bytes(
+      parser,
+      NK_NODE_TYPE_QUANTIFIER,
+      node_span_begin_bytes(parser, *out_node_ptr),
+      tok->span_bytes_end,
+      &quantifier_node
+    );
+    if (err != NK_SUCCESS) {
       nk_node_free(*out_node_ptr);
       *out_node_ptr = NULL;
-      return NK_ERR_MEMORY_ALLOCATION_FAILED;
+      return err;
     }
 
-    quantifier_node->base.type = NK_NODE_TYPE_QUANTIFIER;
     quantifier_node->quantifier.child = *out_node_ptr;
     quantifier_node->quantifier.min = tok->data.quantifier.min;
     quantifier_node->quantifier.max = tok->data.quantifier.max;
     quantifier_node->quantifier.type = tok->data.quantifier.type;
-    set_node_span_from_bytes(
-      parser,
-      quantifier_node,
-      node_span_begin_bytes(parser, *out_node_ptr),
-      tok->span_bytes_end
-    );
 
     *out_node_ptr = quantifier_node;
 
@@ -3732,14 +3738,13 @@ static nk_error_t parse_quantifier(nk_parser_t* parser, token_t* tok, nk_node_t*
 
 static nk_error_t parse_concat(nk_parser_t* parser, token_t* tok, nk_node_t** out_node_ptr) {
   if (tok->type == TK_ALT || tok->type == TK_GROUP_CLOSE || tok->type == TK_END) {
-    nk_node_t* empty_node = (nk_node_t*)malloc(sizeof(nk_node_t));
-    if (empty_node == NULL) {
-      return NK_ERR_MEMORY_ALLOCATION_FAILED;
+    nk_node_t* empty_node = NULL;
+    nk_error_t err = alloc_node_from_bytes(parser, NK_NODE_TYPE_CONCAT, tok->span_bytes, tok->span_bytes, &empty_node);
+    if (err != NK_SUCCESS) {
+      return err;
     }
-    empty_node->base.type = NK_NODE_TYPE_CONCAT;
     empty_node->concat.children = NULL;
     empty_node->concat.children_len = 0;
-    set_node_span_from_bytes(parser, empty_node, tok->span_bytes, tok->span_bytes);
 
     *out_node_ptr = empty_node;
     return NK_SUCCESS;
@@ -3835,22 +3840,22 @@ static nk_error_t parse_concat(nk_parser_t* parser, token_t* tok, nk_node_t** ou
 
   concat_children = resized_concat_children;
 
-  nk_node_t* concat_node = (nk_node_t*)malloc(sizeof(nk_node_t));
-  if (concat_node == NULL) {
+  nk_node_t* concat_node = NULL;
+  err = alloc_node_from_bytes(
+    parser,
+    NK_NODE_TYPE_CONCAT,
+    node_span_begin_bytes(parser, concat_children[0]),
+    node_span_end_bytes(parser, concat_children[concat_children_len - 1]),
+    &concat_node
+  );
+  if (err != NK_SUCCESS) {
     nodes_free(concat_children, concat_children_len);
     *out_node_ptr = NULL;
-    return NK_ERR_MEMORY_ALLOCATION_FAILED;
+    return err;
   }
 
-  concat_node->base.type = NK_NODE_TYPE_CONCAT;
   concat_node->concat.children = concat_children;
   concat_node->concat.children_len = concat_children_len;
-  set_node_span_from_bytes(
-    parser,
-    concat_node,
-    node_span_begin_bytes(parser, concat_children[0]),
-    node_span_end_bytes(parser, concat_children[concat_children_len - 1])
-  );
 
   *out_node_ptr = concat_node;
   return NK_SUCCESS;
@@ -3914,22 +3919,22 @@ static nk_error_t parse_alt(nk_parser_t* parser, token_t* tok, nk_node_t** out_n
 
   alt_children = resized_alt_children;
 
-  nk_node_t* alt_node = (nk_node_t*)malloc(sizeof(nk_node_t));
-  if (alt_node == NULL) {
+  nk_node_t* alt_node = NULL;
+  err = alloc_node_from_bytes(
+    parser,
+    NK_NODE_TYPE_ALT,
+    node_span_begin_bytes(parser, alt_children[0]),
+    node_span_end_bytes(parser, alt_children[alt_children_len - 1]),
+    &alt_node
+  );
+  if (err != NK_SUCCESS) {
     nodes_free(alt_children, alt_children_len);
     *out_node_ptr = NULL;
-    return NK_ERR_MEMORY_ALLOCATION_FAILED;
+    return err;
   }
 
-  alt_node->base.type = NK_NODE_TYPE_ALT;
   alt_node->alt.children = alt_children;
   alt_node->alt.children_len = alt_children_len;
-  set_node_span_from_bytes(
-    parser,
-    alt_node,
-    node_span_begin_bytes(parser, alt_children[0]),
-    node_span_end_bytes(parser, alt_children[alt_children_len - 1])
-  );
 
   *out_node_ptr = alt_node;
   return NK_SUCCESS;
