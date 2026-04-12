@@ -547,7 +547,8 @@ lex_octal_number(nk_parser_t* parser, uint32_t* out_code, int max_digits, nk_err
   return NK_SUCCESS;
 }
 
-static nk_error_t lex_escape_single_byte(nk_parser_t* parser, uint8_t* out_byte) {
+static nk_error_t
+lex_escape_single_byte(nk_parser_t* parser, const uint8_t* escape_bytes, uint8_t* out_byte) {
   bool retry = true;
   bool control_prefix = false;
   bool meta_prefix = false;
@@ -556,6 +557,7 @@ static nk_error_t lex_escape_single_byte(nk_parser_t* parser, uint8_t* out_byte)
     retry = false;
 
     if (parser->pattern_bytes >= parser->pattern_bytes_end) {
+      set_error_span_to_current(parser, escape_bytes);
       return NK_ERR_INCOMPLETE_ESCAPE;
     }
 
@@ -615,6 +617,9 @@ static nk_error_t lex_escape_single_byte(nk_parser_t* parser, uint8_t* out_byte)
         uint32_t hex_code;
         nk_error_t err = lex_hexdecimal_number(parser, &hex_code, 1, 2, NK_ERR_INCOMPLETE_HEX_ESCAPE);
         if (err != NK_SUCCESS) {
+          if (err == NK_ERR_INCOMPLETE_HEX_ESCAPE) {
+            set_error_span_to_current(parser, escape_bytes);
+          }
           return err;
         }
         *out_byte = (uint8_t)hex_code;
@@ -643,10 +648,12 @@ static nk_error_t lex_escape_single_byte(nk_parser_t* parser, uint8_t* out_byte)
       {
         parser->pattern_bytes += width;  // consume `M`
         if (meta_prefix) {
+          set_error_span_to_current(parser, escape_bytes);
           return NK_ERR_DUPLICATE_META_ESCAPE;
         }
         meta_prefix = true;
         if (parser->pattern_bytes >= parser->pattern_bytes_end) {
+          set_error_span_to_current(parser, escape_bytes);
           return NK_ERR_INCOMPLETE_META_ESCAPE;
         }
 
@@ -658,6 +665,7 @@ static nk_error_t lex_escape_single_byte(nk_parser_t* parser, uint8_t* out_byte)
         }
 
         if (code != '-' || parser->pattern_bytes >= parser->pattern_bytes_end) {
+          set_error_span_to_current(parser, escape_bytes);
           return NK_ERR_INCOMPLETE_META_ESCAPE;
         }
 
@@ -671,6 +679,7 @@ static nk_error_t lex_escape_single_byte(nk_parser_t* parser, uint8_t* out_byte)
           continue;
         }
         if (!is_ascii_printable(code)) {
+          set_error_span_to_current(parser, escape_bytes);
           return NK_ERR_INVALID_META_ESCAPE_CODE;
         }
 
@@ -684,11 +693,13 @@ static nk_error_t lex_escape_single_byte(nk_parser_t* parser, uint8_t* out_byte)
         bool needs_hyphen = code == 'C';
         parser->pattern_bytes += width;  // consume `c` or `C`
         if (control_prefix) {
+          set_error_span_to_current(parser, escape_bytes);
           return NK_ERR_DUPLICATE_CONTROL_ESCAPE;
         }
         control_prefix = true;
 
         if (parser->pattern_bytes >= parser->pattern_bytes_end) {
+          set_error_span_to_current(parser, escape_bytes);
           return NK_ERR_INCOMPLETE_CONTROL_ESCAPE;
         }
 
@@ -701,6 +712,7 @@ static nk_error_t lex_escape_single_byte(nk_parser_t* parser, uint8_t* out_byte)
 
         if (needs_hyphen) {
           if (code != '-' || parser->pattern_bytes >= parser->pattern_bytes_end) {
+            set_error_span_to_current(parser, escape_bytes);
             return NK_ERR_INCOMPLETE_CONTROL_ESCAPE;
           }
 
@@ -715,6 +727,7 @@ static nk_error_t lex_escape_single_byte(nk_parser_t* parser, uint8_t* out_byte)
           continue;
         }
         if (!is_ascii_printable(code)) {
+          set_error_span_to_current(parser, escape_bytes);
           return NK_ERR_INVALID_CONTROL_ESCAPE_CODE;
         }
         if (code == '?') {
@@ -744,6 +757,7 @@ static nk_error_t lex_escape_single_byte(nk_parser_t* parser, uint8_t* out_byte)
 
       default:
         if (!is_ascii_printable(code)) {
+          set_error_span(parser, escape_bytes, parser->pattern_bytes + width);
           return NK_ERR_INVALID_ESCAPE;
         }
 
@@ -763,9 +777,9 @@ static nk_error_t lex_escape_single_byte(nk_parser_t* parser, uint8_t* out_byte)
   return NK_SUCCESS;
 }
 
-static nk_error_t lex_escape_bytes(nk_parser_t* parser, uint32_t* out_code) {
+static nk_error_t lex_escape_bytes(nk_parser_t* parser, const uint8_t* escape_bytes, uint32_t* out_code) {
   uint8_t first_byte;
-  nk_error_t err = lex_escape_single_byte(parser, &first_byte);
+  nk_error_t err = lex_escape_single_byte(parser, escape_bytes, &first_byte);
   if (err != NK_SUCCESS) {
     return err;
   }
@@ -775,6 +789,7 @@ static nk_error_t lex_escape_bytes(nk_parser_t* parser, uint32_t* out_code) {
 
   int8_t width = nk_enc_scan_mbc_width(parser->enc, bytes, bytes + 1);
   if (width == 0) {
+    set_error_span_to_current(parser, escape_bytes);
     return NK_ERR_INVALID_ESCAPED_BYTE_SEQUENCE;
   }
 
@@ -786,6 +801,7 @@ static nk_error_t lex_escape_bytes(nk_parser_t* parser, uint32_t* out_code) {
   int8_t remaining_width = -width;
   for (int i = 1; i <= remaining_width; i++) {
     if (parser->pattern_bytes >= parser->pattern_bytes_end) {
+      set_error_span_to_current(parser, escape_bytes);
       return NK_ERR_INCOMPLETE_ESCAPED_BYTE_SEQUENCE;
     }
 
@@ -797,11 +813,13 @@ static nk_error_t lex_escape_bytes(nk_parser_t* parser, uint32_t* out_code) {
     }
 
     if (backslash_code != '\\') {
+      set_error_span_to_current(parser, escape_bytes);
       return NK_ERR_INCOMPLETE_ESCAPED_BYTE_SEQUENCE;
     }
+    const uint8_t* continued_escape_bytes = parser->pattern_bytes;
     parser->pattern_bytes += backslash_width;  // consume `\`
 
-    err = lex_escape_single_byte(parser, &bytes[i]);
+    err = lex_escape_single_byte(parser, continued_escape_bytes, &bytes[i]);
     if (err != NK_SUCCESS) {
       return err;
     }
@@ -809,6 +827,7 @@ static nk_error_t lex_escape_bytes(nk_parser_t* parser, uint32_t* out_code) {
 
   width = nk_enc_scan_mbc_width(parser->enc, bytes, bytes + 1 + remaining_width);
   if (width != 1 + remaining_width) {
+    set_error_span_to_current(parser, escape_bytes);
     return NK_ERR_INVALID_ESCAPED_BYTE_SEQUENCE;
   }
 
@@ -900,7 +919,7 @@ static nk_error_t lex_name(
         continue;
       }
 
-      err = lex_escape_bytes(parser, &code);
+      err = lex_escape_bytes(parser, escape_bytes, &code);
       if (err != NK_SUCCESS) {
         nk_pbuf_free(out_name_buf);
         return err;
@@ -968,6 +987,7 @@ static nk_error_t lex_group_num_or_name(
     }
 
     if (!is_decimal_digit(code)) {
+      set_error_span(parser, num_begin, parser->pattern_bytes + width);
       return NK_ERR_INVALID_GROUP_NAME;
     }
 
@@ -1300,7 +1320,7 @@ static nk_error_t lex_common_escape(
       parser->pattern_bytes -= width;
 
       uint32_t escaped_code;
-      nk_error_t err = lex_escape_bytes(parser, &escaped_code);
+      nk_error_t err = lex_escape_bytes(parser, escape_bytes, &escaped_code);
       if (err != NK_SUCCESS) {
         return err;
       }
@@ -1601,6 +1621,7 @@ static nk_error_t lex_internal(nk_parser_t* parser, token_t* out_token) {
               case '\'':
               {
                 parser->pattern_bytes += width;  // consume `'` or `<`
+                const uint8_t* group_name_begin = parser->pattern_bytes;
 
                 uint32_t name_terminator = code == '\'' ? '\'' : '>';
                 uint32_t group_num;
@@ -1620,6 +1641,7 @@ static nk_error_t lex_internal(nk_parser_t* parser, token_t* out_token) {
                 }
 
                 if (!has_name) {
+                  set_error_span_to_current(parser, group_name_begin);
                   return NK_ERR_INVALID_GROUP_NAME;
                 }
 
@@ -2008,6 +2030,7 @@ static nk_error_t lex_internal(nk_parser_t* parser, token_t* out_token) {
           // Named back-reference (`\k<name>`, `\k'name'`):
           case 'k':
           {
+            const uint8_t* back_ref_begin = out_token->span_bytes;
             if (parser->pattern_bytes >= parser->pattern_bytes_end) {
               // TODO: add a warning for the incomplete named back-reference escape.
               out_token->type = TK_CODE;
@@ -2053,6 +2076,9 @@ static nk_error_t lex_internal(nk_parser_t* parser, token_t* out_token) {
               NK_ERR_INCOMPLETE_BACK_REF
             );
             if (err != NK_SUCCESS) {
+              if (err == NK_ERR_INCOMPLETE_BACK_REF) {
+                set_error_span_to_current(parser, back_ref_begin);
+              }
               return err;
             }
 
@@ -2060,6 +2086,7 @@ static nk_error_t lex_internal(nk_parser_t* parser, token_t* out_token) {
               if (has_name) {
                 nk_pbuf_free(&name_buf);
               }
+              set_error_span_to_current(parser, back_ref_begin);
               return NK_ERR_INCOMPLETE_BACK_REF;
             }
 
@@ -2090,6 +2117,7 @@ static nk_error_t lex_internal(nk_parser_t* parser, token_t* out_token) {
               if (has_name) {
                 nk_pbuf_free(&name_buf);
               }
+              set_error_span_to_current(parser, back_ref_begin);
               return NK_ERR_INCOMPLETE_BACK_REF;
             }
 
@@ -2108,6 +2136,7 @@ static nk_error_t lex_internal(nk_parser_t* parser, token_t* out_token) {
           // Sub-expression call (`\g<name>` or `\g'name'`):
           case 'g':
           {
+            const uint8_t* subexp_call_begin = out_token->span_bytes;
             if (parser->pattern_bytes >= parser->pattern_bytes_end) {
               // TODO: add a warning for the incomplete sub-expression call escape.
               out_token->type = TK_CODE;
@@ -2150,6 +2179,9 @@ static nk_error_t lex_internal(nk_parser_t* parser, token_t* out_token) {
               NK_ERR_INCOMPLETE_SUBEXP_CALL
             );
             if (err != NK_SUCCESS) {
+              if (err == NK_ERR_INCOMPLETE_SUBEXP_CALL) {
+                set_error_span_to_current(parser, subexp_call_begin);
+              }
               return err;
             }
 
@@ -2157,6 +2189,7 @@ static nk_error_t lex_internal(nk_parser_t* parser, token_t* out_token) {
               if (has_name) {
                 nk_pbuf_free(&name_buf);
               }
+              set_error_span_to_current(parser, subexp_call_begin);
               return NK_ERR_INCOMPLETE_SUBEXP_CALL;
             }
 
@@ -2179,6 +2212,7 @@ static nk_error_t lex_internal(nk_parser_t* parser, token_t* out_token) {
               if (has_name) {
                 nk_pbuf_free(&name_buf);
               }
+              set_error_span_to_current(parser, subexp_call_begin);
               return NK_ERR_INCOMPLETE_SUBEXP_CALL;
             }
 
@@ -2368,7 +2402,7 @@ static nk_error_t lex_posix_char_class_name(nk_parser_t* parser, bool* out_is_cl
         continue;
       }
 
-      err = lex_escape_bytes(parser, &code);
+      err = lex_escape_bytes(parser, escape_bytes, &code);
       if (err != NK_SUCCESS) {
         nk_pbuf_free(out_name_buf);
         return err;

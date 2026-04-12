@@ -545,26 +545,28 @@ module Parser
 
     def test_escape_errors
       # Missing hex digits
-      assert_parse_error('\x', 'incomplete \x escape sequence', offset: 2, length: 0)
+      assert_parse_error('\x', 'incomplete \x escape sequence', offset: 0, length: 2)
       # Invalid hex digit
-      assert_parse_error('\xG', 'incomplete \x escape sequence', offset: 2, length: 0)
+      assert_parse_error('\xG', 'incomplete \x escape sequence', offset: 0, length: 2)
       # Missing meta character
-      assert_parse_error('\M', 'incomplete \M- escape sequence', offset: 2, length: 0)
-      assert_parse_error('\M-', 'incomplete \M- escape sequence', offset: 3, length: 0)
-      assert_parse_error('\c', 'incomplete \c/\C- escape sequence', offset: 2, length: 0)
-      assert_parse_error('\C-', 'incomplete \c/\C- escape sequence', offset: 3, length: 0)
+      assert_parse_error('\M', 'incomplete \M- escape sequence', offset: 0, length: 2)
+      assert_parse_error('\M-', 'incomplete \M- escape sequence', offset: 0, length: 3)
+      assert_parse_error('\c', 'incomplete \c/\C- escape sequence', offset: 0, length: 2)
+      assert_parse_error('\C-', 'incomplete \c/\C- escape sequence', offset: 0, length: 3)
       # Duplicate prefixes
-      assert_parse_error('\M-\M-a', 'duplicate \M- escape sequence', offset: 5, length: 0)
-      assert_parse_error('\C-\C-a', 'duplicate \c/\C- escape sequence', offset: 5, length: 0)
+      assert_parse_error('\M-\M-a', 'duplicate \M- escape sequence', offset: 0, length: 5)
+      assert_parse_error('\C-\C-a', 'duplicate \c/\C- escape sequence', offset: 0, length: 5)
       # Invalid control/meta character
-      assert_parse_error('\C-あ', 'invalid code in \c/\C- escape sequence', offset: 6, length: 0)
-      assert_parse_error('\cあ', 'invalid code in \c/\C- escape sequence', offset: 5, length: 0)
-      assert_parse_error('\M-あ', 'invalid code in \M- escape sequence', offset: 6, length: 0)
+      assert_parse_error('\C-あ', 'invalid code in \c/\C- escape sequence', offset: 0, length: 6)
+      assert_parse_error('\cあ', 'invalid code in \c/\C- escape sequence', offset: 0, length: 5)
+      assert_parse_error('\M-あ', 'invalid code in \M- escape sequence', offset: 0, length: 6)
+      assert_parse_error('\xE3\C-あ', 'invalid code in \c/\C- escape sequence', offset: 4, length: 6)
       # Incomplete multibyte sequence (only first byte of 'あ')
-      assert_parse_error('\xe3', 'incomplete escaped byte sequence', offset: 4, length: 0)
-      assert_parse_error('\xe3\x81', 'incomplete escaped byte sequence', offset: 8, length: 0)
+      assert_parse_error('\xe3', 'incomplete escaped byte sequence', offset: 0, length: 4)
+      assert_parse_error('\xe3\x81', 'incomplete escaped byte sequence', offset: 0, length: 8)
+      assert_parse_error('\xe3a', 'incomplete escaped byte sequence', offset: 0, length: 4)
       # Invalid multibyte sequence (surrogate code point)
-      assert_parse_error('\xED\xA0\x80', 'invalid escaped byte sequence', offset: 12, length: 0)
+      assert_parse_error('\xED\xA0\x80', 'invalid escaped byte sequence', offset: 0, length: 12)
     end
 
     # ========================================================================
@@ -1195,7 +1197,9 @@ module Parser
     end
 
     def test_error_invalid_group_name
-      assert_parse_error('(?<-a>)', 'invalid group name', offset: 4, length: 0)
+      assert_parse_error('(?<-a>)', 'invalid group name', offset: 3, length: 2)
+      assert_parse_error('(?<1>a)', 'invalid group name', offset: 3, length: 1)
+      assert_parse_error("(?'1'a)", 'invalid group name', offset: 3, length: 1)
     end
 
     def test_error_empty_group_name
@@ -1539,8 +1543,9 @@ module Parser
     end
 
     def test_error_incomplete_back_ref
-      assert_parse_error('\k<', 'incomplete back reference', offset: 3, length: 0)
-      assert_parse_error('\k<name', 'incomplete back reference', offset: 7, length: 0)
+      assert_parse_error('\k<', 'incomplete back reference', offset: 0, length: 3)
+      assert_parse_error('\k<name', 'incomplete back reference', offset: 0, length: 7)
+      assert_parse_error(%q{\k'name}, 'incomplete back reference', offset: 0, length: 7)
     end
 
     def test_error_incomplete_capture_depth
@@ -1607,8 +1612,9 @@ module Parser
     end
 
     def test_error_incomplete_subexp_call
-      assert_parse_error('\g<', 'incomplete sub-expression call', offset: 3, length: 0)
-      assert_parse_error('\g<name', 'incomplete sub-expression call', offset: 7, length: 0)
+      assert_parse_error('\g<', 'incomplete sub-expression call', offset: 0, length: 3)
+      assert_parse_error('\g<name', 'incomplete sub-expression call', offset: 0, length: 7)
+      assert_parse_error(%q{\g'name}, 'incomplete sub-expression call', offset: 0, length: 7)
     end
   end
 end
