@@ -1370,6 +1370,13 @@ static nk_error_t lex_internal(nk_parser_t* parser, token_t* out_token) {
                   return NK_ERR_EMPTY_GROUP_NAME;
                 }
 
+                if (parser->pattern_bytes >= parser->pattern_bytes_end) {
+                  if (has_name) {
+                    nk_pbuf_free(&name_buf);
+                  }
+                  return NK_ERR_INCOMPLETE_GROUP_SPECIFIER;
+                }
+
                 err = peek(parser, &width, &code);
                 if (err != NK_SUCCESS) {
                   if (has_name) {
