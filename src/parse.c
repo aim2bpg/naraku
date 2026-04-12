@@ -118,6 +118,7 @@ static inline nk_error_t consume(nk_parser_t* parser, int8_t* out_width, uint32_
 static nk_error_t
 lex_decimal_number(nk_parser_t* parser, uint32_t* out_value, uint32_t max_value, nk_error_t overflow_error) {
   *out_value = 0;
+  const uint8_t* num_begin = parser->pattern_bytes;
 
   while (parser->pattern_bytes < parser->pattern_bytes_end) {
     int8_t width;
@@ -134,6 +135,10 @@ lex_decimal_number(nk_parser_t* parser, uint32_t* out_value, uint32_t max_value,
     uint32_t digit_value = code - '0';
 
     if (*out_value > (max_value - digit_value) / 10) {
+      if (overflow_error != NK_ERR_INTERNAL_ERROR) {
+        parser->error_bytes = num_begin;
+        parser->error_bytes_end = parser->pattern_bytes + width;
+      }
       return overflow_error;
     }
 
@@ -976,26 +981,266 @@ static nk_error_t lex_group_num_or_name_with_depth(
   return NK_SUCCESS;
 }
 
-static nk_error_t lex_internal(nk_parser_t* parser, token_t* out_token) {
-  out_token->span_bytes = parser->pattern_bytes;
-  out_token->span_bytes_end = NULL;
+static nk_error_t lex_pending_unicode_escape_in_brace(
+  nk_parser_t* parser,
+  token_t* out_token,
+  bool* out_is_handled
+) {
+  *out_is_handled = false;
 
-  // Handles unclosed `\u{...` Unicode escapes that are not fully lexed in the previous
-  // tokenization.
-  if (parser->in_unicode_escape_brace) {
-    uint32_t code;
-    bool is_unclosed_brace;
-    nk_error_t err = lex_unicode_escape_in_brace(parser, &code, &is_unclosed_brace);
+  if (!parser->in_unicode_escape_brace) {
+    return NK_SUCCESS;
+  }
+
+  uint32_t code;
+  bool is_unclosed_brace;
+  nk_error_t err = lex_unicode_escape_in_brace(parser, &code, &is_unclosed_brace);
+  if (err != NK_SUCCESS) {
+    return err;
+  }
+
+  if (!is_unclosed_brace) {
+    parser->in_unicode_escape_brace = false;
+  }
+
+  out_token->type = TK_CODE;
+  out_token->data.code = code;
+  *out_is_handled = true;
+  return NK_SUCCESS;
+}
+
+static inline bool lex_escaped_char_type(uint32_t code, token_t* out_token) {
+  out_token->type = TK_CHAR_TYPE;
+  switch (code) {
+    case 'd':
+      out_token->data.char_type.type = NK_CHAR_TYPE_DIGIT;
+      out_token->data.char_type.is_positive = true;
+      return true;
+    case 'D':
+      out_token->data.char_type.type = NK_CHAR_TYPE_DIGIT;
+      out_token->data.char_type.is_positive = false;
+      return true;
+    case 'w':
+      out_token->data.char_type.type = NK_CHAR_TYPE_WORD;
+      out_token->data.char_type.is_positive = true;
+      return true;
+    case 'W':
+      out_token->data.char_type.type = NK_CHAR_TYPE_WORD;
+      out_token->data.char_type.is_positive = false;
+      return true;
+    case 's':
+      out_token->data.char_type.type = NK_CHAR_TYPE_SPACE;
+      out_token->data.char_type.is_positive = true;
+      return true;
+    case 'S':
+      out_token->data.char_type.type = NK_CHAR_TYPE_SPACE;
+      out_token->data.char_type.is_positive = false;
+      return true;
+    case 'h':
+      out_token->data.char_type.type = NK_CHAR_TYPE_HEX_DIGIT;
+      out_token->data.char_type.is_positive = true;
+      return true;
+    case 'H':
+      out_token->data.char_type.type = NK_CHAR_TYPE_HEX_DIGIT;
+      out_token->data.char_type.is_positive = false;
+      return true;
+    default:
+      return false;
+  }
+}
+
+static nk_error_t lex_char_prop_escape(nk_parser_t* parser, uint32_t code, token_t* out_token) {
+  bool is_positive = code == 'p';
+
+  if (parser->pattern_bytes >= parser->pattern_bytes_end) {
+    // TODO: add a warning for the incomplete character property escape.
+    out_token->type = TK_CODE;
+    out_token->data.code = code;  // 'p' or 'P'
+    return NK_SUCCESS;
+  }
+
+  int8_t brace_width;
+  uint32_t brace_code;
+  nk_error_t err = peek(parser, &brace_width, &brace_code);
+  if (err != NK_SUCCESS) {
+    return err;
+  }
+
+  if (brace_code != '{') {
+    // TODO: add a warning for the incomplete character property escape.
+    out_token->type = TK_CODE;
+    out_token->data.code = code;  // 'p' or 'P'
+    return NK_SUCCESS;
+  }
+
+  parser->pattern_bytes += brace_width;  // consume `{`
+  const uint8_t* name_bytes_for_error_report = parser->pattern_bytes;
+
+  if (parser->pattern_bytes < parser->pattern_bytes_end) {
+    int8_t negation_width;
+    uint32_t negation_code;
+    nk_error_t err = peek(parser, &negation_width, &negation_code);
     if (err != NK_SUCCESS) {
       return err;
     }
 
-    if (!is_unclosed_brace) {
-      parser->in_unicode_escape_brace = false;
+    if (negation_code == '^') {
+      is_positive = !is_positive;
+      parser->pattern_bytes += negation_width;  // consume `^`
+      name_bytes_for_error_report = parser->pattern_bytes;
+    }
+  }
+
+  nk_pbuf_t name_buf;
+  err = lex_name(parser, '}', false, &name_buf, NK_ERR_UNCLOSED_CHAR_PROP_ESCAPE_BRACE);
+  if (err != NK_SUCCESS) {
+    return err;
+  }
+
+  if (parser->pattern_bytes >= parser->pattern_bytes_end) {
+    nk_pbuf_free(&name_buf);
+    return NK_ERR_UNCLOSED_CHAR_PROP_ESCAPE_BRACE;
+  }
+
+  if (name_buf.bytes >= name_buf.bytes_end) {
+    nk_pbuf_free(&name_buf);
+    parser->error_bytes = name_bytes_for_error_report;
+    parser->error_bytes_end = parser->pattern_bytes;
+    return NK_ERR_EMPTY_CHAR_PROP_NAME;
+  }
+
+  err = consume(parser, &brace_width, &brace_code);
+  if (err != NK_SUCCESS) {
+    nk_pbuf_free(&name_buf);
+    return err;
+  }
+
+  if (brace_code != '}') {
+    nk_pbuf_free(&name_buf);
+    return NK_ERR_UNCLOSED_CHAR_PROP_ESCAPE_BRACE;
+  }
+
+  out_token->type = TK_CHAR_PROP;
+  out_token->data.char_prop.is_positive = is_positive;
+  err = nk_name_to_cprop(parser->enc, name_buf.bytes, name_buf.bytes_end, &out_token->data.char_prop.cprop);
+  if (err != NK_SUCCESS) {
+    nk_pbuf_free(&name_buf);
+    parser->error_bytes = name_bytes_for_error_report;
+    parser->error_bytes_end = parser->pattern_bytes - brace_width;  // point to `}`
+    return err;
+  }
+
+  nk_pbuf_free(&name_buf);
+  return NK_SUCCESS;
+}
+
+static nk_error_t lex_common_escape(
+  nk_parser_t* parser,
+  int8_t width,
+  uint32_t code,
+  bool* out_retry,
+  bool* out_is_handled,
+  token_t* out_token
+) {
+  *out_retry = false;
+  *out_is_handled = false;
+
+  switch (code) {
+    case 'u':
+    {
+      uint32_t escaped_code;
+      bool is_unclosed_brace;
+      nk_error_t err = lex_unicode_escape(parser, &escaped_code, &is_unclosed_brace);
+      if (err != NK_SUCCESS) {
+        return err;
+      }
+
+      parser->in_unicode_escape_brace = is_unclosed_brace;
+      out_token->type = TK_CODE;
+      out_token->data.code = escaped_code;
+      *out_is_handled = true;
+      return NK_SUCCESS;
     }
 
-    out_token->type = TK_CODE;
-    out_token->data.code = code;
+    case '0':
+    case '1':
+    case '2':
+    case '3':
+    case '4':
+    case '5':
+    case '6':
+    case '7':
+    case 'x':
+    case 'c':
+    case 'C':
+    case 'M':
+    case '\\':
+    case 'n':
+    case 't':
+    case 'r':
+    case 'f':
+    case 'v':
+    case 'a':
+    case 'e':
+    {
+      parser->pattern_bytes -= width;
+
+      uint32_t escaped_code;
+      nk_error_t err = lex_escape_bytes(parser, &escaped_code);
+      if (err != NK_SUCCESS) {
+        return err;
+      }
+
+      out_token->type = TK_CODE;
+      out_token->data.code = escaped_code;
+      *out_is_handled = true;
+      return NK_SUCCESS;
+    }
+
+    case '\r':
+    {
+      if (parser->pattern_bytes < parser->pattern_bytes_end) {
+        int8_t next_width;
+        uint32_t next_code;
+        nk_error_t err = peek(parser, &next_width, &next_code);
+        if (err != NK_SUCCESS) {
+          return err;
+        }
+
+        if (next_code == '\n') {
+          parser->pattern_bytes += next_width;  // consume `\n` if it's CRLF
+          *out_retry = true;
+          *out_is_handled = true;
+          return NK_SUCCESS;
+        }
+      }
+
+      out_token->type = TK_CODE;
+      out_token->data.code = '\r';
+      *out_is_handled = true;
+      return NK_SUCCESS;
+    }
+
+    case '\n':
+      *out_retry = true;
+      *out_is_handled = true;
+      return NK_SUCCESS;
+
+    default:
+      return NK_SUCCESS;
+  }
+}
+
+static nk_error_t lex_internal(nk_parser_t* parser, token_t* out_token) {
+  out_token->span_bytes = parser->pattern_bytes;
+  out_token->span_bytes_end = NULL;
+
+  bool has_pending_unicode_escape = false;
+  nk_error_t err = lex_pending_unicode_escape_in_brace(parser, out_token, &has_pending_unicode_escape);
+  if (err != NK_SUCCESS) {
+    return err;
+  }
+  if (has_pending_unicode_escape) {
     return NK_SUCCESS;
   }
 
@@ -1560,45 +1805,17 @@ static nk_error_t lex_internal(nk_parser_t* parser, token_t* out_token) {
         switch (code) {
           // Character types (e.g., `\d`, `\w`, `\s`, `\h`):
           case 'd':
-            out_token->type = TK_CHAR_TYPE;
-            out_token->data.char_type.type = NK_CHAR_TYPE_DIGIT;
-            out_token->data.char_type.is_positive = true;
-            return NK_SUCCESS;
           case 'D':
-            out_token->type = TK_CHAR_TYPE;
-            out_token->data.char_type.type = NK_CHAR_TYPE_DIGIT;
-            out_token->data.char_type.is_positive = false;
-            return NK_SUCCESS;
           case 'w':
-            out_token->type = TK_CHAR_TYPE;
-            out_token->data.char_type.type = NK_CHAR_TYPE_WORD;
-            out_token->data.char_type.is_positive = true;
-            return NK_SUCCESS;
           case 'W':
-            out_token->type = TK_CHAR_TYPE;
-            out_token->data.char_type.type = NK_CHAR_TYPE_WORD;
-            out_token->data.char_type.is_positive = false;
-            return NK_SUCCESS;
           case 's':
-            out_token->type = TK_CHAR_TYPE;
-            out_token->data.char_type.type = NK_CHAR_TYPE_SPACE;
-            out_token->data.char_type.is_positive = true;
-            return NK_SUCCESS;
           case 'S':
-            out_token->type = TK_CHAR_TYPE;
-            out_token->data.char_type.type = NK_CHAR_TYPE_SPACE;
-            out_token->data.char_type.is_positive = false;
-            return NK_SUCCESS;
           case 'h':
-            out_token->type = TK_CHAR_TYPE;
-            out_token->data.char_type.type = NK_CHAR_TYPE_HEX_DIGIT;
-            out_token->data.char_type.is_positive = true;
-            return NK_SUCCESS;
           case 'H':
-            out_token->type = TK_CHAR_TYPE;
-            out_token->data.char_type.type = NK_CHAR_TYPE_HEX_DIGIT;
-            out_token->data.char_type.is_positive = false;
-            return NK_SUCCESS;
+            if (lex_escaped_char_type(code, out_token)) {
+              return NK_SUCCESS;
+            }
+            return NK_ERR_PARSER_BUG;
 
           // Grahpeme cluster/keep operator/newline:
           case 'X':
@@ -1641,73 +1858,10 @@ static nk_error_t lex_internal(nk_parser_t* parser, token_t* out_token) {
           case 'p':
           case 'P':
           {
-            bool is_positive = code == 'p';
-
-            if (parser->pattern_bytes >= parser->pattern_bytes_end) {
-              // TODO: add a warning for the incomplete character property escape.
-              out_token->type = TK_CODE;
-              out_token->data.code = code;  // 'p' or 'P'
-              return NK_SUCCESS;
-            }
-
-            int8_t brace_width;
-            uint32_t brace_code;
-            nk_error_t err = peek(parser, &brace_width, &brace_code);
+            nk_error_t err = lex_char_prop_escape(parser, code, out_token);
             if (err != NK_SUCCESS) {
               return err;
             }
-
-            if (brace_code != '{') {
-              // TODO: add a warning for the incomplete character property escape.
-              out_token->type = TK_CODE;
-              out_token->data.code = code;  // 'p' or 'P'
-              return NK_SUCCESS;
-            }
-
-            parser->pattern_bytes += brace_width;  // consume `{`
-            const uint8_t* name_bytes_for_error_report = parser->pattern_bytes;
-
-            nk_pbuf_t name_buf;
-            err = lex_name(parser, '}', false, &name_buf, NK_ERR_UNCLOSED_CHAR_PROP_ESCAPE_BRACE);
-            if (err != NK_SUCCESS) {
-              return err;
-            }
-
-            if (parser->pattern_bytes >= parser->pattern_bytes_end) {
-              nk_pbuf_free(&name_buf);
-              return NK_ERR_UNCLOSED_CHAR_PROP_ESCAPE_BRACE;
-            }
-
-            if (name_buf.bytes >= name_buf.bytes_end) {
-              nk_pbuf_free(&name_buf);
-              parser->error_bytes = name_bytes_for_error_report;
-              parser->error_bytes_end = parser->pattern_bytes;
-              return NK_ERR_EMPTY_CHAR_PROP_NAME;
-            }
-
-            err = consume(parser, &brace_width, &brace_code);
-            if (err != NK_SUCCESS) {
-              nk_pbuf_free(&name_buf);
-              return err;
-            }
-
-            if (brace_code != '}') {
-              nk_pbuf_free(&name_buf);
-              return NK_ERR_UNCLOSED_CHAR_PROP_ESCAPE_BRACE;
-            }
-
-            out_token->type = TK_CHAR_PROP;
-            out_token->data.char_prop.is_positive = is_positive;
-            err = nk_name_to_cprop(parser->enc, name_buf.bytes, name_buf.bytes_end, &out_token->data.char_prop.cprop);
-            if (err != NK_SUCCESS) {
-              nk_pbuf_free(&name_buf);
-              parser->error_bytes = name_bytes_for_error_report;
-              parser->error_bytes_end = parser->pattern_bytes - brace_width;  // point to `}`
-              return err;
-            }
-
-            nk_pbuf_free(&name_buf);
-
             return NK_SUCCESS;
           }
 
@@ -1890,25 +2044,6 @@ static nk_error_t lex_internal(nk_parser_t* parser, token_t* out_token) {
             return NK_SUCCESS;
           }
 
-          // Unicode code point:
-          case 'u':
-          {
-            uint32_t code;
-            bool is_unclosed_brace;
-            nk_error_t err = lex_unicode_escape(parser, &code, &is_unclosed_brace);
-            if (err != NK_SUCCESS) {
-              return err;
-            }
-
-            if (is_unclosed_brace) {
-              parser->in_unicode_escape_brace = true;
-            }
-
-            out_token->type = TK_CODE;
-            out_token->data.code = code;
-            return NK_SUCCESS;
-          }
-
           // Back reference (e.g., `\1`, `\2`, ..., `\9`) or octal escape:
           case '1':
           case '2':
@@ -1942,68 +2077,25 @@ static nk_error_t lex_internal(nk_parser_t* parser, token_t* out_token) {
             FALLTHROUGH;
           }
 
-          // Other single-character escape sequences
-          // (e.g., `\n`, `\t`, `\r`, `\f`, `\v`, `\a`, `\e`, etc.):
-          case '0':
-          case 'x':
-          case 'c':
-          case 'C':
-          case 'M':
-          case '\\':
-          case 'n':
-          case 't':
-          case 'r':
-          case 'f':
-          case 'v':
-          case 'a':
-          case 'e':
+          // Other case: treat the escaped character as a code itself.
+          default:
           {
-            parser->pattern_bytes -= width;
-
-            uint32_t escaped_code;
-            nk_error_t err = lex_escape_bytes(parser, &escaped_code);
+            bool is_handled = false;
+            nk_error_t err = lex_common_escape(parser, width, code, &retry, &is_handled, out_token);
             if (err != NK_SUCCESS) {
               return err;
             }
-
-            out_token->type = TK_CODE;
-            out_token->data.code = escaped_code;
-            return NK_SUCCESS;
-          }
-
-          case '\r':
-          {
-            bool is_crlf = false;
-            if (parser->pattern_bytes < parser->pattern_bytes_end) {
-              nk_error_t err = peek(parser, &width, &code);
-              if (err != NK_SUCCESS) {
-                return err;
+            if (is_handled) {
+              if (retry) {
+                continue;
               }
-
-              is_crlf = code == '\n';
-            }
-
-            if (!is_crlf) {
-              out_token->type = TK_CODE;
-              out_token->data.code = '\r';
               return NK_SUCCESS;
             }
 
-            parser->pattern_bytes += width;  // consume `\n` if it's CRLF
-            FALLTHROUGH;
-          }
-
-          case '\n':
-          {
-            retry = true;
-            continue;
-          }
-
-          // Other case: treat the escaped character as a code itself.
-          default:
             out_token->type = TK_CODE;
             out_token->data.code = code;
             return NK_SUCCESS;
+          }
         }
       }
     }
@@ -2037,7 +2129,7 @@ static inline nk_error_t lex(nk_parser_t* parser, token_t* out_token) {
   return NK_SUCCESS;
 }
 
-static nk_error_t lex_posix_char_class_name(nk_parser_t* parser, bool* out_is_closed, nk_pbuf_t* out_name_buf) {
+static nk_error_t lex_posix_char_class_name(nk_parser_t* parser, bool* out_is_closed, nk_pbuf_t* out_name_buf, const uint8_t** out_name_bytes_end_for_error_report) {
   *out_is_closed = false;
   out_name_buf->type = NK_PBUF_VIEW;
   out_name_buf->bytes = out_name_buf->bytes_end = parser->pattern_bytes;
@@ -2057,14 +2149,17 @@ static nk_error_t lex_posix_char_class_name(nk_parser_t* parser, bool* out_is_cl
     }
 
     if (code == ':') {
-      err = peek(parser, &width, &code);
+      int8_t bracket_width;
+      uint32_t bracket_code;
+      err = peek(parser, &bracket_width, &bracket_code);
       if (err != NK_SUCCESS) {
         nk_pbuf_free(out_name_buf);
         return err;
       }
 
-      if (code == ']') {
-        parser->pattern_bytes += width;  // consume `]`
+      if (bracket_code == ']') {
+        *out_name_bytes_end_for_error_report = parser->pattern_bytes - width;  // exclude `:`
+        parser->pattern_bytes += bracket_width;  // consume `]`
         *out_is_closed = true;
         return NK_SUCCESS;
       }
@@ -2216,22 +2311,12 @@ static nk_error_t lex_in_char_class_internal(nk_parser_t* parser, token_t* out_t
   out_token->span_bytes = parser->pattern_bytes;
   out_token->span_bytes_end = NULL;
 
-  // Handles unclosed `\u{...` Unicode escapes that are not fully lexed in the previous
-  // tokenization.
-  if (parser->in_unicode_escape_brace) {
-    uint32_t code;
-    bool is_unclosed_brace;
-    nk_error_t err = lex_unicode_escape_in_brace(parser, &code, &is_unclosed_brace);
-    if (err != NK_SUCCESS) {
-      return err;
-    }
-
-    if (!is_unclosed_brace) {
-      parser->in_unicode_escape_brace = false;
-    }
-
-    out_token->type = TK_CODE;
-    out_token->data.code = code;
+  bool has_pending_unicode_escape = false;
+  nk_error_t err = lex_pending_unicode_escape_in_brace(parser, out_token, &has_pending_unicode_escape);
+  if (err != NK_SUCCESS) {
+    return err;
+  }
+  if (has_pending_unicode_escape) {
     return NK_SUCCESS;
   }
 
@@ -2328,16 +2413,18 @@ static nk_error_t lex_in_char_class_internal(nk_parser_t* parser, token_t* out_t
       }
       case '[':
       {
-        int8_t next_width;
-        uint32_t next_code;
-        nk_error_t err = peek(parser, &next_width, &next_code);
+        int8_t colon_width;
+        uint32_t colon_code;
+        nk_error_t err = peek(parser, &colon_width, &colon_code);
         if (err != NK_SUCCESS) {
           return err;
         }
 
-        if (next_code == ':') {
+        if (colon_code == ':') {
           const uint8_t* pattern_bytes_backup = parser->pattern_bytes;
-          parser->pattern_bytes += next_width;  // consume `:`
+          parser->pattern_bytes += colon_width;  // consume `:`
+
+          const uint8_t* name_bytes_for_error_report = parser->pattern_bytes;
 
           bool is_positive = true;
           if (parser->pattern_bytes < parser->pattern_bytes_end) {
@@ -2350,13 +2437,15 @@ static nk_error_t lex_in_char_class_internal(nk_parser_t* parser, token_t* out_t
 
             if (negate_code == '^') {
               parser->pattern_bytes += negate_width;  // consume `^`
+              name_bytes_for_error_report = parser->pattern_bytes;
               is_positive = false;
             }
           }
 
           bool is_closed = false;
           nk_pbuf_t name_buf;
-          nk_error_t err = lex_posix_char_class_name(parser, &is_closed, &name_buf);
+          const uint8_t* name_bytes_end_for_error_report;
+          nk_error_t err = lex_posix_char_class_name(parser, &is_closed, &name_buf, &name_bytes_end_for_error_report);
           if (err != NK_SUCCESS) {
             return err;
           }
@@ -2366,8 +2455,8 @@ static nk_error_t lex_in_char_class_internal(nk_parser_t* parser, token_t* out_t
             nk_error_t err = name_to_posix_char_class(parser->enc, name_buf.bytes, name_buf.bytes_end, &char_class);
             if (err != NK_SUCCESS) {
               nk_pbuf_free(&name_buf);
-              parser->error_bytes = pattern_bytes_backup;
-              parser->error_bytes_end = parser->pattern_bytes;
+              parser->error_bytes = name_bytes_for_error_report;
+              parser->error_bytes_end = name_bytes_end_for_error_report;
               return err;
             }
 
@@ -2416,202 +2505,48 @@ static nk_error_t lex_in_char_class_internal(nk_parser_t* parser, token_t* out_t
         switch (code) {
           // Character types (e.g., `\d`, `\w`, `\s`, `\h`):
           case 'd':
-            out_token->type = TK_CHAR_TYPE;
-            out_token->data.char_type.type = NK_CHAR_TYPE_DIGIT;
-            out_token->data.char_type.is_positive = true;
-            return NK_SUCCESS;
           case 'D':
-            out_token->type = TK_CHAR_TYPE;
-            out_token->data.char_type.type = NK_CHAR_TYPE_DIGIT;
-            out_token->data.char_type.is_positive = false;
-            return NK_SUCCESS;
           case 'w':
-            out_token->type = TK_CHAR_TYPE;
-            out_token->data.char_type.type = NK_CHAR_TYPE_WORD;
-            out_token->data.char_type.is_positive = true;
-            return NK_SUCCESS;
           case 'W':
-            out_token->type = TK_CHAR_TYPE;
-            out_token->data.char_type.type = NK_CHAR_TYPE_WORD;
-            out_token->data.char_type.is_positive = false;
-            return NK_SUCCESS;
           case 's':
-            out_token->type = TK_CHAR_TYPE;
-            out_token->data.char_type.type = NK_CHAR_TYPE_SPACE;
-            out_token->data.char_type.is_positive = true;
-            return NK_SUCCESS;
           case 'S':
-            out_token->type = TK_CHAR_TYPE;
-            out_token->data.char_type.type = NK_CHAR_TYPE_SPACE;
-            out_token->data.char_type.is_positive = false;
-            return NK_SUCCESS;
           case 'h':
-            out_token->type = TK_CHAR_TYPE;
-            out_token->data.char_type.type = NK_CHAR_TYPE_HEX_DIGIT;
-            out_token->data.char_type.is_positive = true;
-            return NK_SUCCESS;
           case 'H':
-            out_token->type = TK_CHAR_TYPE;
-            out_token->data.char_type.type = NK_CHAR_TYPE_HEX_DIGIT;
-            out_token->data.char_type.is_positive = false;
-            return NK_SUCCESS;
+            if (lex_escaped_char_type(code, out_token)) {
+              return NK_SUCCESS;
+            }
+            return NK_ERR_PARSER_BUG;
 
           // Character (Unicode) properties (`\p{...}` and `\P{...}`):
           case 'p':
           case 'P':
           {
-            bool is_positive = code == 'p';
-
-            if (parser->pattern_bytes >= parser->pattern_bytes_end) {
-              // TODO: add a warning for the incomplete character property escape.
-              out_token->type = TK_CODE;
-              out_token->data.code = code;  // 'p' or 'P'
-              return NK_SUCCESS;
-            }
-
-            int8_t brace_width;
-            uint32_t brace_code;
-            nk_error_t err = peek(parser, &brace_width, &brace_code);
+            nk_error_t err = lex_char_prop_escape(parser, code, out_token);
             if (err != NK_SUCCESS) {
               return err;
             }
-
-            if (brace_code != '{') {
-              // TODO: add a warning for the incomplete character property escape.
-              out_token->type = TK_CODE;
-              out_token->data.code = code;  // 'p' or 'P'
-              return NK_SUCCESS;
-            }
-
-            parser->pattern_bytes += brace_width;  // consume `{`
-            const uint8_t* name_bytes_for_error_report = parser->pattern_bytes;
-
-            nk_pbuf_t name_buf;
-            err = lex_name(parser, '}', false, &name_buf, NK_ERR_UNCLOSED_CHAR_PROP_ESCAPE_BRACE);
-            if (err != NK_SUCCESS) {
-              return err;
-            }
-
-            if (parser->pattern_bytes >= parser->pattern_bytes_end) {
-              nk_pbuf_free(&name_buf);
-              return NK_ERR_UNCLOSED_CHAR_PROP_ESCAPE_BRACE;
-            }
-
-            if (name_buf.bytes >= name_buf.bytes_end) {
-              nk_pbuf_free(&name_buf);
-              parser->error_bytes = name_bytes_for_error_report;
-              parser->error_bytes_end = parser->pattern_bytes;
-              return NK_ERR_EMPTY_CHAR_PROP_NAME;
-            }
-
-            err = consume(parser, &brace_width, &brace_code);
-            if (err != NK_SUCCESS) {
-              nk_pbuf_free(&name_buf);
-              return err;
-            }
-
-            if (brace_code != '}') {
-              nk_pbuf_free(&name_buf);
-              return NK_ERR_UNCLOSED_CHAR_PROP_ESCAPE_BRACE;
-            }
-
-            out_token->type = TK_CHAR_PROP;
-            out_token->data.char_prop.is_positive = is_positive;
-            err = nk_name_to_cprop(parser->enc, name_buf.bytes, name_buf.bytes_end, &out_token->data.char_prop.cprop);
-            if (err != NK_SUCCESS) {
-              nk_pbuf_free(&name_buf);
-              parser->error_bytes = name_bytes_for_error_report;
-              parser->error_bytes_end = parser->pattern_bytes - brace_width;  // point to `}`
-              return err;
-            }
-
-            nk_pbuf_free(&name_buf);
-
             return NK_SUCCESS;
-          }
-
-          case 'u':
-          {
-            uint32_t code;
-            nk_error_t err = lex_unicode_escape(parser, &code, &parser->in_unicode_escape_brace);
-            if (err != NK_SUCCESS) {
-              return err;
-            }
-
-            out_token->type = TK_CODE;
-            out_token->data.code = code;
-            return NK_SUCCESS;
-          }
-
-          // Other single-character escape sequences
-          // (e.g., `\n`, `\t`, `\r`, `\f`, `\v`, `\a`, `\e`, etc.):
-          case '0':
-          case '1':
-          case '2':
-          case '3':
-          case '4':
-          case '5':
-          case '6':
-          case '7':
-          case 'x':
-          case 'c':
-          case 'C':
-          case 'M':
-          case '\\':
-          case 'n':
-          case 't':
-          case 'r':
-          case 'f':
-          case 'v':
-          case 'a':
-          case 'e':
-          {
-            parser->pattern_bytes -= width;
-
-            uint32_t escaped_code;
-            nk_error_t err = lex_escape_bytes(parser, &escaped_code);
-            if (err != NK_SUCCESS) {
-              return err;
-            }
-
-            out_token->type = TK_CODE;
-            out_token->data.code = escaped_code;
-            return NK_SUCCESS;
-          }
-
-          case '\r':
-          {
-            bool is_crlf = false;
-            if (parser->pattern_bytes < parser->pattern_bytes_end) {
-              nk_error_t err = peek(parser, &width, &code);
-              if (err != NK_SUCCESS) {
-                return err;
-              }
-
-              is_crlf = code == '\n';
-            }
-
-            if (!is_crlf) {
-              out_token->type = TK_CODE;
-              out_token->data.code = '\r';
-              return NK_SUCCESS;
-            }
-
-            parser->pattern_bytes += width;  // consume `\n` if it's CRLF
-            FALLTHROUGH;
-          }
-
-          case '\n':
-          {
-            retry = true;
-            continue;
           }
 
           // Other case: treat the escaped character as a code itself.
           default:
+          {
+            bool is_handled = false;
+            nk_error_t err = lex_common_escape(parser, width, code, &retry, &is_handled, out_token);
+            if (err != NK_SUCCESS) {
+              return err;
+            }
+            if (is_handled) {
+              if (retry) {
+                continue;
+              }
+              return NK_SUCCESS;
+            }
+
             out_token->type = TK_CODE;
             out_token->data.code = code;
             return NK_SUCCESS;
+          }
         }
       }
     }
@@ -2701,6 +2636,7 @@ char_class_unions_ensure_capacity(nk_char_class_union_t*** unions_ptr, size_t* u
 
 static nk_error_t parse_char_class_intersection(
   nk_parser_t* parser,
+  const uint8_t* char_class_open_span_bytes,
   bool* out_is_positive,
   size_t* out_unions_len,
   nk_char_class_union_t*** out_unions_ptr
@@ -2764,7 +2700,7 @@ static nk_error_t parse_char_class_item(nk_parser_t* parser, const token_t* tok,
       bool is_positive = true;
       size_t unions_len = 0;
       nk_char_class_union_t** unions = NULL;
-      nk_error_t err = parse_char_class_intersection(parser, &is_positive, &unions_len, &unions);
+      nk_error_t err = parse_char_class_intersection(parser, tok->span_bytes, &is_positive, &unions_len, &unions);
       if (err != NK_SUCCESS) {
         free(item);
         return err;
@@ -2839,11 +2775,10 @@ static nk_error_t parse_char_class_union(nk_parser_t* parser, token_t* tok, nk_c
       }
 
       if (begin_item->type != NK_CHAR_CLASS_ITEM_TYPE_CODE) {
+        parser->error_bytes = parser->pattern_bytes_begin + begin_item->span_offset;
+        parser->error_bytes_end = parser->error_bytes + begin_item->span_length;
         char_class_union_free(u);
         char_class_item_free(begin_item);
-        // TODO: improve the error position.
-        parser->error_bytes = begin_tok.span_bytes;
-        parser->error_bytes_end = begin_tok.span_bytes_end;
         return NK_ERR_INVALID_CHAR_CLASS_RANGE;
       }
 
@@ -2856,21 +2791,20 @@ static nk_error_t parse_char_class_union(nk_parser_t* parser, token_t* tok, nk_c
       }
 
       if (end_item->type != NK_CHAR_CLASS_ITEM_TYPE_CODE) {
+        parser->error_bytes = parser->pattern_bytes_begin + end_item->span_offset;
+        parser->error_bytes_end = parser->error_bytes + end_item->span_length;
         char_class_union_free(u);
         char_class_item_free(begin_item);
         char_class_item_free(end_item);
-        // TODO: improve the error position.
-        parser->error_bytes = tok->span_bytes;
-        parser->error_bytes_end = tok->span_bytes;
         return NK_ERR_INVALID_CHAR_CLASS_RANGE;
       }
 
       if (begin_item->data.code > end_item->data.code) {
+        parser->error_bytes = parser->pattern_bytes_begin + begin_item->span_offset;
+        parser->error_bytes_end = parser->pattern_bytes_begin + end_item->span_offset + end_item->span_length;
         char_class_union_free(u);
         char_class_item_free(begin_item);
         char_class_item_free(end_item);
-        parser->error_bytes = begin_tok.span_bytes;
-        parser->error_bytes_end = tok->span_bytes_end;
         return NK_ERR_CHAR_CLASS_RANGE_OUT_OF_ORDER;
       }
 
@@ -2965,6 +2899,7 @@ static nk_error_t parse_char_class_union(nk_parser_t* parser, token_t* tok, nk_c
 
 static nk_error_t parse_char_class_intersection(
   nk_parser_t* parser,
+  const uint8_t* char_class_open_span_bytes,
   bool* out_is_positive,
   size_t* out_unions_len,
   nk_char_class_union_t*** out_unions_ptr
@@ -2989,7 +2924,7 @@ static nk_error_t parse_char_class_intersection(
   }
 
   if (tok.type == TK_CHAR_CLASS_CLOSE) {
-    parser->error_bytes = tok.span_bytes;
+    parser->error_bytes = char_class_open_span_bytes;
     parser->error_bytes_end = tok.span_bytes_end;
     return NK_ERR_EMPTY_CHAR_CLASS;
   }
@@ -3232,7 +3167,7 @@ static nk_error_t parse_atom(nk_parser_t* parser, token_t* tok, nk_node_t** out_
       bool is_positive = true;
       size_t unions_len = 0;
       nk_char_class_union_t** unions = NULL;
-      nk_error_t err = parse_char_class_intersection(parser, &is_positive, &unions_len, &unions);
+      nk_error_t err = parse_char_class_intersection(parser, tok->span_bytes, &is_positive, &unions_len, &unions);
       if (err != NK_SUCCESS) {
         return err;
       }

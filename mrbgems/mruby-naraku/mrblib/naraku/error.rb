@@ -19,13 +19,18 @@ module Naraku
       pattern = parser.pattern
       enc = parser.enc
 
-      msg = "#{err_msg} (at offset #{@offset})"
+      len = @length || 0
+      span_end = @offset + len
+      msg = if len > 0
+              "#{err_msg} (at span #{@offset}...#{span_end})"
+            else
+              "#{err_msg} (at offset #{@offset})"
+            end
       shows_details =
-        @offset && @offset >= 0 && enc.min_mbc_width == 1 && pattern && pattern.chars.all? { |c| (0x20...0x7F).include?(c.ord) }
+        @offset && @offset >= 0 && enc.min_mbc_width == 1 && pattern && pattern.each_byte.all? { |b| (0x20...0x7F).include?(b) }
 
       if shows_details
         msg << "\n  /#{pattern}/\n"
-        len = @length || 0
         marker_len = (len > 0 ? len : 1) - 1
         msg << '   ' + (' ' * @offset) + '^' + ('~' * marker_len)
       end

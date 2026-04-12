@@ -10,6 +10,26 @@ module Parser
       result
     end
 
+    def assert_parse_error(pattern, message, offset:, length:, encoding: Naraku::Encoding::UTF_8, **options)
+      parser = Naraku::Parser.new(encoding, pattern, **options)
+      begin
+        parser.parse
+      rescue Naraku::ParseError => ex
+        expected_message =
+          if length > 0
+            "#{message} (at span #{offset}...#{offset + length})"
+          else
+            "#{message} (at offset #{offset})"
+          end
+        assert_equal expected_message, ex.message.lines.first.chomp
+        assert_equal offset, ex.offset
+        assert_equal length, ex.length
+        return
+      end
+
+      assert false, "Expected Naraku::ParseError to be raised for #{pattern.inspect}"
+    end
+
     def assert_span_consistency(pattern, root)
       pattern_len = pattern.bytesize
       assert_node_span(root, pattern_len, 0, pattern_len)
@@ -377,34 +397,34 @@ module Parser
       assert_equal "\u{10FFFF}", result[:buf]
 
       # U+110000 is out of range for UTF-8.
-      assert_raises(Naraku::ParseError, 'code point is out of range (at offset 0)') { parse('\u{110000}') }
+      assert_parse_error('\u{110000}', 'code point is out of range', offset: 0, length: 10)
     end
 
     def test_unicode_escape_surrogate
       # Surrogate code points are invalid in UTF-8.
-      assert_raises(Naraku::ParseError, 'invalid code point (at offset 0)') { parse('\u{D800}') }
-      assert_raises(Naraku::ParseError, 'invalid code point (at offset 0)') { parse('\u{DFFF}') }
+      assert_parse_error('\u{D800}', 'invalid code point', offset: 0, length: 8)
+      assert_parse_error('\u{DFFF}', 'invalid code point', offset: 0, length: 8)
     end
 
     def test_unicode_escape_encoding_constraint
       # U+0080 is out of range for US-ASCII.
-      assert_raises(Naraku::ParseError, 'Unicode escape sequence in non-Unicode encoding (at offset 2)') { parse('\u0080', encoding: Naraku::Encoding::US_ASCII) }
-      assert_raises(Naraku::ParseError, 'Unicode escape sequence in non-Unicode encoding (at offset 2)') { parse('\u{80}', encoding: Naraku::Encoding::US_ASCII) }
+      assert_parse_error('\u0080', 'Unicode escape sequence in non-Unicode encoding', offset: 2, length: 0, encoding: Naraku::Encoding::US_ASCII)
+      assert_parse_error('\u{80}', 'Unicode escape sequence in non-Unicode encoding', offset: 2, length: 0, encoding: Naraku::Encoding::US_ASCII)
     end
 
     def test_unicode_escape_errors
       # Trailing \u
-      assert_raises(Naraku::ParseError, 'unclosed Unicode escape sequence brace (at offset 2)') { parse('\u') }
+      assert_parse_error('\u', 'unclosed Unicode escape sequence brace', offset: 2, length: 0)
       # Too short fixed escape
-      assert_raises(Naraku::ParseError, 'incomplete Unicode escape sequence (at offset 5)') { parse('\u123') }
+      assert_parse_error('\u123', 'incomplete Unicode escape sequence', offset: 5, length: 0)
       # Invalid hex digit
-      assert_raises(Naraku::ParseError, 'incomplete Unicode escape sequence (at offset 5)') { parse('\u123G') }
+      assert_parse_error('\u123G', 'incomplete Unicode escape sequence', offset: 5, length: 0)
       # Unclosed brace
-      assert_raises(Naraku::ParseError, 'unclosed Unicode escape sequence brace (at offset 5)') { parse('\u{61') }
+      assert_parse_error('\u{61', 'unclosed Unicode escape sequence brace', offset: 5, length: 0)
       # Invalid hex in brace
-      assert_raises(Naraku::ParseError, 'invalid Unicode escape sequence (at offset 3)') { parse('\u{G}') }
+      assert_parse_error('\u{G}', 'invalid Unicode escape sequence', offset: 3, length: 0)
       # Empty brace
-      assert_raises(Naraku::ParseError, 'empty Unicode escape sequence brace (at offset 3)') { parse('\u{}') }
+      assert_parse_error('\u{}', 'empty Unicode escape sequence brace', offset: 3, length: 0)
     end
 
     # ========================================================================
@@ -414,7 +434,7 @@ module Parser
     # ========================================================================
 
     def test_trailing_backslash
-      assert_raises(Naraku::ParseError, 'incomplete escape sequence (at offset 1)') { parse('\\') }
+      assert_parse_error('\\', 'incomplete escape sequence', offset: 1, length: 0)
     end
 
     def test_backslash_and_newline
@@ -522,24 +542,26 @@ module Parser
 
     def test_escape_errors
       # Missing hex digits
-      assert_raises(Naraku::ParseError, 'incomplete \x escape sequence (at offset 2)') { parse('\x') }
+      assert_parse_error('\x', 'incomplete \x escape sequence', offset: 2, length: 0)
       # Invalid hex digit
-      assert_raises(Naraku::ParseError, 'incomplete \x escape sequence (at offset 2)') { parse('\xG') }
+      assert_parse_error('\xG', 'incomplete \x escape sequence', offset: 2, length: 0)
       # Missing meta character
-      assert_raises(Naraku::ParseError, 'incomplete \M- escape sequence (at offset 2)') { parse('\M') }
-      assert_raises(Naraku::ParseError, 'incomplete \M- escape sequence (at offset 3)') { parse('\M-') }
+      assert_parse_error('\M', 'incomplete \M- escape sequence', offset: 2, length: 0)
+      assert_parse_error('\M-', 'incomplete \M- escape sequence', offset: 3, length: 0)
+      assert_parse_error('\c', 'incomplete \c/\C- escape sequence', offset: 2, length: 0)
+      assert_parse_error('\C-', 'incomplete \c/\C- escape sequence', offset: 3, length: 0)
       # Duplicate prefixes
-      assert_raises(Naraku::ParseError, 'duplicate \M- escape sequence (at offset 5)') { parse('\M-\M-a') }
-      assert_raises(Naraku::ParseError, 'duplicate \c/\C- escape sequence (at offset 5)') { parse('\C-\C-a') }
+      assert_parse_error('\M-\M-a', 'duplicate \M- escape sequence', offset: 5, length: 0)
+      assert_parse_error('\C-\C-a', 'duplicate \c/\C- escape sequence', offset: 5, length: 0)
       # Invalid control/meta character
-      assert_raises(Naraku::ParseError, 'invalid code in \c/\C- escape sequence (at offset 6)') { parse('\C-あ') }
-      assert_raises(Naraku::ParseError, 'invalid code in \c/\C- escape sequence (at offset 5)') { parse('\cあ') }
-      assert_raises(Naraku::ParseError, 'invalid code in \M- escape sequence (at offset 6)') { parse('\M-あ') }
+      assert_parse_error('\C-あ', 'invalid code in \c/\C- escape sequence', offset: 6, length: 0)
+      assert_parse_error('\cあ', 'invalid code in \c/\C- escape sequence', offset: 5, length: 0)
+      assert_parse_error('\M-あ', 'invalid code in \M- escape sequence', offset: 6, length: 0)
       # Incomplete multibyte sequence (only first byte of 'あ')
-      assert_raises(Naraku::ParseError, 'incomplete escaped byte sequence (at offset 4)') { parse('\xe3') }
-      assert_raises(Naraku::ParseError, 'incomplete escaped byte sequence (at offset 8)') { parse('\xe3\x81') }
+      assert_parse_error('\xe3', 'incomplete escaped byte sequence', offset: 4, length: 0)
+      assert_parse_error('\xe3\x81', 'incomplete escaped byte sequence', offset: 8, length: 0)
       # Invalid multibyte sequence (surrogate code point)
-      assert_raises(Naraku::ParseError, 'invalid escaped byte sequence (at offset 12)') { parse('\xED\xA0\x80') }
+      assert_parse_error('\xED\xA0\x80', 'invalid escaped byte sequence', offset: 12, length: 0)
     end
 
     # ========================================================================
@@ -576,6 +598,17 @@ module Parser
       assert_equal false, result[:is_positive]
       assert_equal Naraku::Encoding.name_to_cprop('Digit'), result[:cprop]
 
+      # Negative property \p{^...}
+      result = parse('\p{^Lu}')
+      assert_equal :char_prop, result[:type]
+      assert_equal false, result[:is_positive]
+      assert_equal Naraku::Encoding.name_to_cprop('Lu'), result[:cprop]
+
+      result = parse('\P{^Digit}')
+      assert_equal :char_prop, result[:type]
+      assert_equal true, result[:is_positive]
+      assert_equal Naraku::Encoding.name_to_cprop('Digit'), result[:cprop]
+
       # Unicode escapes in property names
       result = parse('\p{\u004c\u0075}')
       assert_equal :char_prop, result[:type]
@@ -605,9 +638,12 @@ module Parser
 
     def test_char_prop_errors
       # Unclosed brace
-      assert_raises(Naraku::ParseError, 'unclosed character property escape sequence brace (at offset 5)') { parse('\p{Lu') }
+      assert_parse_error('\p{Lu', 'unclosed character property escape sequence brace', offset: 5, length: 0)
+      # Empty property name
+      assert_parse_error('\p{}', 'empty character property name', offset: 3, length: 0)
       # Invalid property name
-      assert_raises(Naraku::ParseError, 'invalid character property name (at offset 3)') { parse('\p{InvalidProperty}') }
+      assert_parse_error('\p{InvalidProperty}', 'invalid character property name', offset: 3, length: 15)
+      assert_parse_error('\p{^InvalidProperty}', 'invalid character property name', offset: 4, length: 15)
     end
 
     # ========================================================================
@@ -815,10 +851,18 @@ module Parser
     end
 
     def test_quantifier_nothing_to_repeat
-      assert_raises(Naraku::ParseError, 'nothing to repeat (at offset 0)') { parse('*') }
-      assert_raises(Naraku::ParseError, 'nothing to repeat (at offset 0)') { parse('+') }
-      assert_raises(Naraku::ParseError, 'nothing to repeat (at offset 0)') { parse('?') }
-      assert_raises(Naraku::ParseError, 'nothing to repeat (at offset 0)') { parse('{1}') }
+      assert_parse_error('*', 'nothing to repeat', offset: 0, length: 1)
+      assert_parse_error('+', 'nothing to repeat', offset: 0, length: 1)
+      assert_parse_error('?', 'nothing to repeat', offset: 0, length: 1)
+      assert_parse_error('{1}', 'nothing to repeat', offset: 0, length: 3)
+    end
+
+    def test_quantifier_error_too_large_number
+      assert_parse_error('a{1000001}', 'number in quantifier is too large', offset: 2, length: 7)
+    end
+
+    def test_quantifier_error_numbers_out_of_order
+      assert_parse_error('a{2,1}', 'numbers in quantifier are out of order', offset: 5, length: 0)
     end
 
     # ========================================================================
@@ -1130,7 +1174,7 @@ module Parser
     end
 
     def test_undefined_group_option
-      assert_raises(Naraku::ParseError, 'undefined group option (at offset 2)') { parse('(?z)') }
+      assert_parse_error('(?z)', 'undefined group option', offset: 2, length: 0)
     end
 
     def test_group_named
@@ -1148,12 +1192,12 @@ module Parser
     end
 
     def test_error_invalid_group_name
-      assert_raises(Naraku::ParseError, 'invalid group name (at offset 4)') { parse('(?<-a>)') }
+      assert_parse_error('(?<-a>)', 'invalid group name', offset: 4, length: 0)
     end
 
     def test_error_empty_group_name
-      assert_raises(Naraku::ParseError, 'empty group name (at offset 3)') { parse('(?<>)') }
-      assert_raises(Naraku::ParseError, 'empty group name (at offset 3)') { parse("(?'')") }
+      assert_parse_error('(?<>)', 'empty group name', offset: 3, length: 0)
+      assert_parse_error("(?'')", 'empty group name', offset: 3, length: 0)
     end
 
     def test_lookahead_positive
@@ -1253,33 +1297,33 @@ module Parser
     end
 
     def test_conditional_incomplete
-      assert_raises(Naraku::ParseError, 'incomplete group specifier (at offset 4)') { parse('(?(1') }
+      assert_parse_error('(?(1', 'incomplete group specifier', offset: 4, length: 0)
     end
 
     def test_conditional_invalid_group_number
-      assert_raises(Naraku::ParseError, 'invalid conditional group number (at offset 3)') { parse('(?(0)a|b)') }
+      assert_parse_error('(?(0)a|b)', 'invalid conditional group number', offset: 3, length: 1)
     end
 
     def test_conditional_errors
-      assert_raises(Naraku::ParseError, 'empty group name (at offset 4)') { parse('(?(<>)a|b)') }
-      assert_raises(Naraku::ParseError, 'incomplete group specifier (at offset 3)') { parse('(?(x)a|b)') }
-      assert_raises(Naraku::ParseError, 'incomplete group specifier (at offset 11)') { parse('(?(<name)a)') }
-      assert_raises(Naraku::ParseError, 'invalid conditional group (at offset 6)') { parse('(?(1)a') }
-      assert_raises(Naraku::ParseError, 'invalid conditional group (at offset 8)') { parse('(?(1)a|b') }
+      assert_parse_error('(?(<>)a|b)', 'empty group name', offset: 4, length: 0)
+      assert_parse_error('(?(x)a|b)', 'incomplete group specifier', offset: 3, length: 0)
+      assert_parse_error('(?(<name)a)', 'incomplete group specifier', offset: 11, length: 0)
+      assert_parse_error('(?(1)a', 'invalid conditional group', offset: 6, length: 0)
+      assert_parse_error('(?(1)a|b', 'invalid conditional group', offset: 8, length: 0)
     end
 
     def test_unclosed_group
-      assert_raises(Naraku::ParseError, 'unterminated group: missing closing parenthesis (at offset 1)') { parse('(') }
-      assert_raises(Naraku::ParseError, 'unterminated group: missing closing parenthesis (at offset 4)') { parse('(abc') }
+      assert_parse_error('(', 'unterminated group: missing closing parenthesis', offset: 1, length: 0)
+      assert_parse_error('(abc', 'unterminated group: missing closing parenthesis', offset: 4, length: 0)
     end
 
     def test_unmatched_close_paren
-      assert_raises(Naraku::ParseError, 'unmatched close parenthesis (at offset 0)') { parse(')') }
-      assert_raises(Naraku::ParseError, 'unmatched close parenthesis (at offset 3)') { parse('abc)') }
+      assert_parse_error(')', 'unmatched close parenthesis', offset: 0, length: 1)
+      assert_parse_error('abc)', 'unmatched close parenthesis', offset: 3, length: 1)
     end
 
     def test_incomplete_group_specifier
-      assert_raises(Naraku::ParseError, 'incomplete group specifier (at offset 2)') { parse('(?') }
+      assert_parse_error('(?', 'incomplete group specifier', offset: 2, length: 0)
     end
 
     # ========================================================================
@@ -1395,13 +1439,16 @@ module Parser
     end
 
     def test_char_class_errors
-      assert_raises(Naraku::ParseError, 'unterminated character class (at offset 1)') { parse('[') }
-      assert_raises(Naraku::ParseError, 'empty character class (at offset 1)') { parse('[]') }
-      assert_raises(Naraku::ParseError, 'character class range out of order (at offset 1)') { parse('[z-a]') }
-      assert_raises(Naraku::ParseError, 'invalid character class range (at offset 1)') { parse('[\\d-\\w]') }
-      assert_raises(Naraku::ParseError, 'empty POSIX character class name (at offset 2)') { parse('[[:^:]]') }
-      assert_raises(Naraku::ParseError, 'invalid POSIX character class name (at offset 2)') { parse('[[:foo:]]') }
-      assert_raises(Naraku::ParseError, 'invalid POSIX character class name (at offset 2)') { parse('[[:digitx:]]') }
+      assert_parse_error('[', 'unterminated character class', offset: 1, length: 0)
+      assert_parse_error('[]', 'empty character class', offset: 0, length: 2)
+      assert_parse_error('[z-a]', 'character class range out of order', offset: 1, length: 3)
+      assert_parse_error('[\\d-\\w]', 'invalid character class range', offset: 1, length: 2)
+      assert_parse_error('[a-\\d]', 'invalid character class range', offset: 3, length: 2)
+      assert_parse_error('[a-\\p{Lu}]', 'invalid character class range', offset: 3, length: 6)
+      assert_parse_error('[[:^:]]', 'empty POSIX character class name', offset: 4, length: 0)
+      assert_parse_error('[[:foo:]]', 'invalid POSIX character class name', offset: 3, length: 3)
+      assert_parse_error('[[:^foo:]]', 'invalid POSIX character class name', offset: 4, length: 3)
+      assert_parse_error('[[:digitx:]]', 'invalid POSIX character class name', offset: 3, length: 6)
     end
 
     def test_char_class_span
@@ -1484,18 +1531,31 @@ module Parser
 
     def test_error_group_number_out_of_range
       # In \k<-1>, the error is reported at > (offset 5)
-      assert_raises(Naraku::ParseError, 'group number is out of range (at offset 5)') { parse('\k<-1>') }
-      assert_raises(Naraku::ParseError, 'group number is out of range (at offset 5)') { parse('\g<-1>') }
+      assert_parse_error('\k<-1>', 'group number is out of range', offset: 5, length: 0)
+      assert_parse_error('\g<-1>', 'group number is out of range', offset: 5, length: 0)
     end
 
     def test_error_incomplete_back_ref
-      assert_raises(Naraku::ParseError, 'incomplete back reference (at offset 3)') { parse('\k<') }
-      assert_raises(Naraku::ParseError, 'incomplete back reference (at offset 7)') { parse('\k<name') }
+      assert_parse_error('\k<', 'incomplete back reference', offset: 3, length: 0)
+      assert_parse_error('\k<name', 'incomplete back reference', offset: 7, length: 0)
     end
 
     def test_error_incomplete_capture_depth
-      assert_raises(Naraku::ParseError, 'incomplete capture depth (at offset 8)') { parse('\k<name+') }
-      assert_raises(Naraku::ParseError, 'incomplete capture depth (at offset 8)') { parse('\k<name-') }
+      assert_parse_error('\k<name+', 'incomplete capture depth', offset: 8, length: 0)
+      assert_parse_error('\k<name-', 'incomplete capture depth', offset: 8, length: 0)
+    end
+
+    def test_error_capture_depth_too_large
+      assert_parse_error('\k<name+1001>', 'capture depth is too large', offset: 8, length: 4)
+    end
+
+    def test_error_group_number_too_large
+      assert_parse_error('\k<10000001>', 'group number is too large', offset: 3, length: 8)
+      assert_parse_error('\g<10000001>', 'group number is too large', offset: 3, length: 8)
+    end
+
+    def test_error_invalid_back_ref
+      assert_parse_error('\k<0>', 'invalid back reference', offset: 3, length: 1)
     end
 
     # ========================================================================
@@ -1544,8 +1604,8 @@ module Parser
     end
 
     def test_error_incomplete_subexp_call
-      assert_raises(Naraku::ParseError, 'incomplete sub-expression call (at offset 3)') { parse('\g<') }
-      assert_raises(Naraku::ParseError, 'incomplete sub-expression call (at offset 7)') { parse('\g<name') }
+      assert_parse_error('\g<', 'incomplete sub-expression call', offset: 3, length: 0)
+      assert_parse_error('\g<name', 'incomplete sub-expression call', offset: 7, length: 0)
     end
   end
 end
