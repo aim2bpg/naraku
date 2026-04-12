@@ -36,6 +36,16 @@ nk_error_t pbuf_resize(nk_pbuf_t* buf);
  */
 void nodes_free(nk_node_t** nodes, size_t len);
 
+/**
+ * Releases the allocated memory for a character class union.
+ */
+void char_class_union_free(nk_char_class_union_t* u);
+
+/**
+ * Releases the allocated memory for a character class item.
+ */
+void char_class_item_free(nk_char_class_item_t* item);
+
 // ==========================================================================
 //
 // src/parse.c
@@ -44,8 +54,8 @@ void nodes_free(nk_node_t** nodes, size_t len);
 
 typedef enum {
   TK_END,
-  TK_LITERAL,
-  TK_CODE,
+  TK_LITERAL,            // a multibyte character literal
+  TK_CODE,               // e.g., `\n`, `\t`, `\xHH`, `\uHHHH`, `\u{...}`
   TK_CHAR_CLASS_OPEN,    // `[`
   TK_CHAR_PROP,          // e.g., `\p{Lu}`, `\P{Lu}`
   TK_CHAR_TYPE,          // e.g., `\d`, `\w`, `\s`, `\h`
@@ -69,11 +79,13 @@ typedef enum {
   TK_ALT,                // `|`
 
   // Only available in character class context:
-  TK_CHAR_CLASS_CHAR,
-  TK_CHAR_CLASS_RANGE_DASH,  // `-`
-  TK_CHAR_CLASS_CLOSE,       // `]`
-  TK_CHAR_CLASS_AND,         // `&&`
-  TK_POSIX_CHAR_CLASS_OPEN,  // `[:`, `[:^`, `[^:`
+  TK_CHAR_CLASS_LITERAL_CODE,    // a multibyte character literal in a character class
+  TK_CHAR_CLASS_NEGATION,        // `^` at the beginning of a character class
+  TK_CHAR_CLASS_LITERAL_HYPHEN,  // `-` in a character class, which can be a literal
+  TK_CHAR_CLASS_RANGE_HYPHEN,    // `-` in a character class, which indicates a range
+  TK_CHAR_CLASS_CLOSE,           // `]`
+  TK_CHAR_CLASS_INTERSECTION,    // `&&`
+  TK_POSIX_CHAR_CLASS,           // e.g., `[:alnum:]`
 } token_type_t;
 
 typedef struct {
@@ -126,6 +138,14 @@ typedef struct {
       nk_pbuf_t name_buf;
       uint32_t group_num;
     } call;
+    struct {
+      bool is_first;
+      bool is_last;
+    } literal_hyphen;
+    struct {
+      bool is_positive;
+      nk_posix_char_class_t char_class;
+    } posix_char_class;
   } data;
 } token_t;
 

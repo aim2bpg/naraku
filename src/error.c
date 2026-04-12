@@ -22,6 +22,8 @@ const uint8_t* nk_error_message(nk_error_t err) {
       return (const uint8_t*)"invalid byte sequence";
     case NK_ERR_INCOMPLETE_BYTE_SEQUENCE:
       return (const uint8_t*)"incomplete byte sequence";
+    case NK_ERR_UNEXPECTED_END_OF_PATTERN:
+      return (const uint8_t*)"unexpected end of pattern";
     case NK_ERR_INCOMPLETE_ESCAPE:
       return (const uint8_t*)"incomplete escape sequence";
     case NK_ERR_INVALID_ESCAPE:
@@ -74,6 +76,10 @@ const uint8_t* nk_error_message(nk_error_t err) {
       return (const uint8_t*)"unterminated group: missing closing parenthesis";
     case NK_ERR_TOO_MANY_CAPTURE_GROUPS:
       return (const uint8_t*)"too many capture groups";
+    case NK_ERR_INVALID_CONDITIONAL_GROUP:
+      return (const uint8_t*)"invalid conditional group";
+    case NK_ERR_INVALID_CONDITIONAL_GROUP_NUMBER:
+      return (const uint8_t*)"invalid conditional group number";
     case NK_ERR_INVALID_GROUP_NAME:
       return (const uint8_t*)"invalid group name";
     case NK_ERR_EMPTY_GROUP_NAME:
@@ -92,6 +98,18 @@ const uint8_t* nk_error_message(nk_error_t err) {
       return (const uint8_t*)"incomplete back reference";
     case NK_ERR_INVALID_BACK_REF:
       return (const uint8_t*)"invalid back reference";
+    case NK_ERR_UNTERMINATED_CHAR_CLASS:
+      return (const uint8_t*)"unterminated character class";
+    case NK_ERR_INVALID_CHAR_CLASS_RANGE:
+      return (const uint8_t*)"invalid character class range";
+    case NK_ERR_CHAR_CLASS_RANGE_OUT_OF_ORDER:
+      return (const uint8_t*)"character class range out of order";
+    case NK_ERR_EMPTY_CHAR_CLASS:
+      return (const uint8_t*)"empty character class";
+    case NK_ERR_EMPTY_POSIX_CHAR_CLASS_NAME:
+      return (const uint8_t*)"empty POSIX character class name";
+    case NK_ERR_INVALID_POSIX_CHAR_CLASS_NAME:
+      return (const uint8_t*)"invalid POSIX character class name";
     // Encoding-related errors:
     case NK_ERR_INVALID_CODE_POINT:
       return (const uint8_t*)"invalid code point";

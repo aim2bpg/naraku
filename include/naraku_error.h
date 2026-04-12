@@ -54,6 +54,7 @@ typedef enum {
   // Errors on reading bytes from the pattern:
   NK_ERR_INVALID_BYTE_SEQUENCE = -300,
   NK_ERR_INCOMPLETE_BYTE_SEQUENCE = -301,
+  NK_ERR_UNEXPECTED_END_OF_PATTERN = -302,
 
   // Errors related to general escape:
   NK_ERR_INCOMPLETE_ESCAPE = -310,
@@ -92,6 +93,8 @@ typedef enum {
   NK_ERR_UNDEFINED_GROUP_OPTION = -362,
   NK_ERR_UNTERMINATED_GROUP = -363,
   NK_ERR_TOO_MANY_CAPTURE_GROUPS = -364,
+  NK_ERR_INVALID_CONDITIONAL_GROUP = -365,
+  NK_ERR_INVALID_CONDITIONAL_GROUP_NUMBER = -366,
 
   // Errors related to group names and group numbers
   // (for named groups, named back-references, and sub-expression calls):
@@ -108,6 +111,16 @@ typedef enum {
   // Errors related to back-references:
   NK_ERR_INCOMPLETE_BACK_REF = -390,
   NK_ERR_INVALID_BACK_REF = -391,
+
+  // Errors related to character classes:
+  NK_ERR_UNTERMINATED_CHAR_CLASS = -400,
+  NK_ERR_INVALID_CHAR_CLASS_RANGE = -401,
+  NK_ERR_CHAR_CLASS_RANGE_OUT_OF_ORDER = -402,
+  NK_ERR_EMPTY_CHAR_CLASS = -403,
+
+  // Errors related to POSIX character classes (e.g., `[[:digit:]]`):
+  NK_ERR_EMPTY_POSIX_CHAR_CLASS_NAME = -410,
+  NK_ERR_INVALID_POSIX_CHAR_CLASS_NAME = -411,
 
   // ============================================================================
   //

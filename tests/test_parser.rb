@@ -1046,6 +1046,10 @@ module Parser
       assert_equal false, literal[:is_ignore_case]
     end
 
+    def test_undefined_group_option
+      assert_raises(Naraku::ParseError, 'undefined group option (at offset 2)') { parse('(?z)') }
+    end
+
     def test_group_named
       result = parse('(?<name>a)')
       assert_equal :group, result[:type]
@@ -1058,6 +1062,15 @@ module Parser
       assert_equal true, result[:has_name]
       assert_equal 'name', result[:name]
       assert_equal 0, result[:group_num]
+    end
+
+    def test_error_invalid_group_name
+      assert_raises(Naraku::ParseError, 'invalid group name (at offset 4)') { parse('(?<-a>)') }
+    end
+
+    def test_error_empty_group_name
+      assert_raises(Naraku::ParseError, 'empty group name (at offset 3)') { parse('(?<>)') }
+      assert_raises(Naraku::ParseError, 'empty group name (at offset 3)') { parse("(?'')") }
     end
 
     def test_lookahead_positive
@@ -1107,7 +1120,69 @@ module Parser
     end
 
     def test_conditional
-      skip 'conditionals are not yet implemented'
+      result = parse('(?(1)a|b)')
+      assert_equal :conditional, result[:type]
+      assert_equal 1, result[:group_num]
+      assert_equal :literal, result[:yes_child][:type]
+      assert_equal 'a', result[:yes_child][:buf]
+      assert_equal :literal, result[:no_child][:type]
+      assert_equal 'b', result[:no_child][:buf]
+
+      # Conditional with only true branch
+      result = parse('(?(1)a)')
+      assert_equal :conditional, result[:type]
+      assert_equal 1, result[:group_num]
+      assert_equal :literal, result[:yes_child][:type]
+      assert_equal 'a', result[:yes_child][:buf]
+      assert_equal nil, result[:no_child]
+    end
+
+    def test_conditional_with_depth
+      result = parse('(?(1+1)a|b)')
+      assert_equal :conditional, result[:type]
+      assert_equal 1, result[:group_num]
+      assert_equal true, result[:has_depth]
+      assert_equal 1, result[:depth]
+      assert_equal :literal, result[:yes_child][:type]
+      assert_equal 'a', result[:yes_child][:buf]
+      assert_equal :literal, result[:no_child][:type]
+      assert_equal 'b', result[:no_child][:buf]
+    end
+
+    def test_conditional_named
+      result = parse('(?(<name>)a|b)')
+      assert_equal :conditional, result[:type]
+      assert_equal true, result[:has_name]
+      assert_equal 'name', result[:name]
+      assert_equal :literal, result[:yes_child][:type]
+      assert_equal 'a', result[:yes_child][:buf]
+      assert_equal :literal, result[:no_child][:type]
+      assert_equal 'b', result[:no_child][:buf]
+
+      result = parse(%q{(?('name')a|b)})
+      assert_equal :conditional, result[:type]
+      assert_equal true, result[:has_name]
+      assert_equal 'name', result[:name]
+      assert_equal :literal, result[:yes_child][:type]
+      assert_equal 'a', result[:yes_child][:buf]
+      assert_equal :literal, result[:no_child][:type]
+      assert_equal 'b', result[:no_child][:buf]
+    end
+
+    def test_conditional_incomplete
+      assert_raises(Naraku::ParseError, 'incomplete group specifier (at offset 4)') { parse('(?(1') }
+    end
+
+    def test_conditional_invalid_group_number
+      assert_raises(Naraku::ParseError, 'invalid conditional group number (at offset 3)') { parse('(?(0)a|b)') }
+    end
+
+    def test_conditional_errors
+      assert_raises(Naraku::ParseError, 'empty group name (at offset 4)') { parse('(?(<>)a|b)') }
+      assert_raises(Naraku::ParseError, 'incomplete group specifier (at offset 3)') { parse('(?(x)a|b)') }
+      assert_raises(Naraku::ParseError, 'incomplete group specifier (at offset 11)') { parse('(?(<name)a)') }
+      assert_raises(Naraku::ParseError, 'invalid conditional group (at offset 6)') { parse('(?(1)a') }
+      assert_raises(Naraku::ParseError, 'invalid conditional group (at offset 8)') { parse('(?(1)a|b') }
     end
 
     def test_unclosed_group
@@ -1124,19 +1199,6 @@ module Parser
       assert_raises(Naraku::ParseError, 'incomplete group specifier (at offset 2)') { parse('(?') }
     end
 
-    def test_undefined_group_option
-      assert_raises(Naraku::ParseError, 'undefined group option (at offset 2)') { parse('(?z)') }
-    end
-
-    def test_error_invalid_group_name
-      assert_raises(Naraku::ParseError, 'invalid group name (at offset 4)') { parse('(?<-a>)') }
-    end
-
-    def test_error_empty_group_name
-      assert_raises(Naraku::ParseError, 'empty group name (at offset 3)') { parse('(?<>)') }
-      assert_raises(Naraku::ParseError, 'empty group name (at offset 3)') { parse("(?'')") }
-    end
-
     # ========================================================================
     #
     # Character classes:
@@ -1144,28 +1206,121 @@ module Parser
     # ========================================================================
 
     def test_char_class
-      skip 'character classes are not yet implemented'
+      result = parse('[abc]')
+      assert_equal :char_class, result[:type]
+      assert_equal true, result[:is_positive]
+      assert_equal 1, result[:unions].length
+      assert_equal 3, result[:unions][0][:items].length
+      assert_equal :code, result[:unions][0][:items][0][:type]
+      assert_equal 97, result[:unions][0][:items][0][:code]
+      assert_equal :code, result[:unions][0][:items][1][:type]
+      assert_equal 98, result[:unions][0][:items][1][:code]
+      assert_equal :code, result[:unions][0][:items][2][:type]
+      assert_equal 99, result[:unions][0][:items][2][:code]
+
+      result = parse('[\\d\\w]')
+      assert_equal :char_class, result[:type]
+      assert_equal :char_type, result[:unions][0][:items][0][:type]
+      assert_equal true, result[:unions][0][:items][0][:is_positive]
+      assert_equal :digit, result[:unions][0][:items][0][:char_type]
+      assert_equal :char_type, result[:unions][0][:items][1][:type]
+      assert_equal true, result[:unions][0][:items][1][:is_positive]
+      assert_equal :word, result[:unions][0][:items][1][:char_type]
+
+      result = parse('[\\p{Lu}]')
+      assert_equal :char_class, result[:type]
+      assert_equal :char_prop, result[:unions][0][:items][0][:type]
+      assert_equal true, result[:unions][0][:items][0][:is_positive]
+      assert_equal Naraku::Encoding.name_to_cprop('Lu'), result[:unions][0][:items][0][:cprop]
     end
 
     def test_char_class_negated
-      skip 'character classes are not yet implemented'
+      result = parse('[^abc]')
+      assert_equal :char_class, result[:type]
+      assert_equal false, result[:is_positive]
+      assert_equal 3, result[:unions][0][:items].length
+      assert_equal :code, result[:unions][0][:items][0][:type]
+      assert_equal 97, result[:unions][0][:items][0][:code]
     end
 
     def test_char_class_range
-      skip 'character classes are not yet implemented'
+      result = parse('[a-z]')
+      assert_equal :char_class, result[:type]
+      assert_equal :range, result[:unions][0][:items][0][:type]
+      assert_equal 97, result[:unions][0][:items][0][:begin_code]
+      assert_equal 122, result[:unions][0][:items][0][:end_code]
+
+      result = parse('[a-z0-9]')
+      assert_equal :char_class, result[:type]
+      assert_equal :range, result[:unions][0][:items][0][:type]
+      assert_equal :range, result[:unions][0][:items][1][:type]
+
+      result = parse('[-a]')
+      assert_equal :char_class, result[:type]
+      assert_equal :code, result[:unions][0][:items][0][:type]
+      assert_equal 45, result[:unions][0][:items][0][:code]
+
+      result = parse('[a-]')
+      assert_equal :char_class, result[:type]
+      assert_equal :code, result[:unions][0][:items][1][:type]
+      assert_equal 45, result[:unions][0][:items][1][:code]
     end
 
     def test_char_class_nested
-      skip 'character classes are not yet implemented'
+      result = parse('[[ab]]')
+      assert_equal :char_class, result[:type]
+      assert_equal :nested_char_class, result[:unions][0][:items][0][:type]
+      assert_equal true, result[:unions][0][:items][0][:is_positive]
+      assert_equal :code, result[:unions][0][:items][0][:unions][0][:items][0][:type]
+      assert_equal 97, result[:unions][0][:items][0][:unions][0][:items][0][:code]
+
+      result = parse('[[^a]&&[ab]]')
+      assert_equal :char_class, result[:type]
+      assert_equal 2, result[:unions].length
+      assert_equal :nested_char_class, result[:unions][0][:items][0][:type]
+      assert_equal false, result[:unions][0][:items][0][:is_positive]
     end
 
     def test_char_class_intersection
-      skip 'character classes are not yet implemented'
+      result = parse('[a&&b]')
+      assert_equal :char_class, result[:type]
+      assert_equal 2, result[:unions].length
+      assert_equal :code, result[:unions][0][:items][0][:type]
+      assert_equal 97, result[:unions][0][:items][0][:code]
+      assert_equal :code, result[:unions][1][:items][0][:type]
+      assert_equal 98, result[:unions][1][:items][0][:code]
+
+      result = parse('[a&&b&&c]')
+      assert_equal :char_class, result[:type]
+      assert_equal 3, result[:unions].length
+      assert_equal :code, result[:unions][2][:items][0][:type]
+      assert_equal 99, result[:unions][2][:items][0][:code]
     end
 
     def test_char_class_posix
-      skip 'character classes are not yet implemented'
+      result = parse('[[:digit:]]')
+      assert_equal :char_class, result[:type]
+      assert_equal :posix_char_class, result[:unions][0][:items][0][:type]
+      assert_equal true, result[:unions][0][:items][0][:is_positive]
+      assert_equal :digit, result[:unions][0][:items][0][:posix_char_class]
+
+      result = parse('[[:^digit:]]')
+      assert_equal :char_class, result[:type]
+      assert_equal :posix_char_class, result[:unions][0][:items][0][:type]
+      assert_equal false, result[:unions][0][:items][0][:is_positive]
+      assert_equal :digit, result[:unions][0][:items][0][:posix_char_class]
     end
+
+    def test_char_class_errors
+      assert_raises(Naraku::ParseError, 'unterminated character class (at offset 1)') { parse('[') }
+      assert_raises(Naraku::ParseError, 'empty character class (at offset 1)') { parse('[]') }
+      assert_raises(Naraku::ParseError, 'character class range out of order (at offset 3)') { parse('[z-a]') }
+      assert_raises(Naraku::ParseError, 'invalid character class range (at offset 4)') { parse('[\\d-\\w]') }
+      assert_raises(Naraku::ParseError, 'empty POSIX character class name (at offset 2)') { parse('[[:^:]]') }
+      assert_raises(Naraku::ParseError, 'invalid POSIX character class name (at offset 2)') { parse('[[:foo:]]') }
+      assert_raises(Naraku::ParseError, 'invalid POSIX character class name (at offset 2)') { parse('[[:digitx:]]') }
+    end
+
     # ========================================================================
     #
     # Back references:

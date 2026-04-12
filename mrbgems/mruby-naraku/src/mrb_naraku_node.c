@@ -250,18 +250,18 @@ static mrb_value mrb_naraku_char_class_item_code(mrb_state* mrb, mrb_value self)
   return mrb_fixnum_value(wrapper->item->data.code);
 }
 
-static mrb_value mrb_naraku_char_class_item_from_code(mrb_state* mrb, mrb_value self) {
+static mrb_value mrb_naraku_char_class_item_begin_code(mrb_state* mrb, mrb_value self) {
   mrb_naraku_char_class_item_t* wrapper =
     (mrb_naraku_char_class_item_t*)mrb_data_get_ptr(mrb, self, &mrb_naraku_char_class_item_data_type);
-  CHAR_CLASS_ITEM_CHECK_TYPE(mrb, wrapper, NK_CHAR_CLASS_ITEM_TYPE_RANGE, from_code);
-  return mrb_fixnum_value(wrapper->item->data.range.from_code);
+  CHAR_CLASS_ITEM_CHECK_TYPE(mrb, wrapper, NK_CHAR_CLASS_ITEM_TYPE_RANGE, begin_code);
+  return mrb_fixnum_value(wrapper->item->data.range.begin_code);
 }
 
-static mrb_value mrb_naraku_char_class_item_to_code(mrb_state* mrb, mrb_value self) {
+static mrb_value mrb_naraku_char_class_item_end_code(mrb_state* mrb, mrb_value self) {
   mrb_naraku_char_class_item_t* wrapper =
     (mrb_naraku_char_class_item_t*)mrb_data_get_ptr(mrb, self, &mrb_naraku_char_class_item_data_type);
-  CHAR_CLASS_ITEM_CHECK_TYPE(mrb, wrapper, NK_CHAR_CLASS_ITEM_TYPE_RANGE, to_code);
-  return mrb_fixnum_value(wrapper->item->data.range.to_code);
+  CHAR_CLASS_ITEM_CHECK_TYPE(mrb, wrapper, NK_CHAR_CLASS_ITEM_TYPE_RANGE, end_code);
+  return mrb_fixnum_value(wrapper->item->data.range.end_code);
 }
 
 static mrb_value mrb_naraku_char_class_item_is_positive(mrb_state* mrb, mrb_value self) {
@@ -612,14 +612,28 @@ static mrb_value mrb_naraku_node_group_num(mrb_state* mrb, mrb_value self) {
 
 static mrb_value mrb_naraku_node_has_depth(mrb_state* mrb, mrb_value self) {
   nk_node_t* node = mrb_naraku_node_get_ptr(mrb, self);
-  node_check_type(mrb, node, NK_NODE_TYPE_BACK_REF, "has_depth");
-  return mrb_bool_value(node->back_ref.has_depth);
+  switch (node->base.type) {
+    case NK_NODE_TYPE_BACK_REF:
+      return mrb_bool_value(node->back_ref.has_depth);
+    case NK_NODE_TYPE_CONDITIONAL:
+      return mrb_bool_value(node->conditional.has_depth);
+    default:
+      mrb_raisef(mrb, E_RUNTIME_ERROR, "has_depth is not available for %s node", node_type_name(node->base.type));
+      return mrb_nil_value();
+  }
 }
 
 static mrb_value mrb_naraku_node_depth(mrb_state* mrb, mrb_value self) {
   nk_node_t* node = mrb_naraku_node_get_ptr(mrb, self);
-  node_check_type(mrb, node, NK_NODE_TYPE_BACK_REF, "depth");
-  return node->back_ref.has_depth ? mrb_fixnum_value(node->back_ref.depth) : mrb_nil_value();
+  switch (node->base.type) {
+    case NK_NODE_TYPE_BACK_REF:
+      return node->back_ref.has_depth ? mrb_fixnum_value(node->back_ref.depth) : mrb_nil_value();
+    case NK_NODE_TYPE_CONDITIONAL:
+      return node->conditional.has_depth ? mrb_fixnum_value(node->conditional.depth) : mrb_nil_value();
+    default:
+      mrb_raisef(mrb, E_RUNTIME_ERROR, "depth is not available for %s node", node_type_name(node->base.type));
+      return mrb_nil_value();
+  }
 }
 
 static const char* assertion_type_sym_name(nk_assertion_type_t type) {
@@ -806,8 +820,8 @@ void mrb_naraku_node_gem_init(mrb_state* mrb, struct RClass* naraku_module) {
 
   mrb_define_method(mrb, cc_item_class, "type", mrb_naraku_char_class_item_type, MRB_ARGS_NONE());
   mrb_define_method(mrb, cc_item_class, "code", mrb_naraku_char_class_item_code, MRB_ARGS_NONE());
-  mrb_define_method(mrb, cc_item_class, "from_code", mrb_naraku_char_class_item_from_code, MRB_ARGS_NONE());
-  mrb_define_method(mrb, cc_item_class, "to_code", mrb_naraku_char_class_item_to_code, MRB_ARGS_NONE());
+  mrb_define_method(mrb, cc_item_class, "begin_code", mrb_naraku_char_class_item_begin_code, MRB_ARGS_NONE());
+  mrb_define_method(mrb, cc_item_class, "end_code", mrb_naraku_char_class_item_end_code, MRB_ARGS_NONE());
   mrb_define_method(mrb, cc_item_class, "is_positive", mrb_naraku_char_class_item_is_positive, MRB_ARGS_NONE());
   mrb_define_method(mrb, cc_item_class, "is_ascii_only", mrb_naraku_char_class_item_is_ascii_only, MRB_ARGS_NONE());
   mrb_define_method(mrb, cc_item_class, "char_type", mrb_naraku_char_class_item_char_type, MRB_ARGS_NONE());

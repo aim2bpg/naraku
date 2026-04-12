@@ -170,8 +170,8 @@ typedef struct nk_char_class_item {
     uint32_t code;
     // e.g., `[a-z]`
     struct {
-      uint32_t from_code;
-      uint32_t to_code;
+      uint32_t begin_code;
+      uint32_t end_code;
     } range;
     // e.g., `\w`, `\d`
     struct {
@@ -390,7 +390,9 @@ struct nk_conditional_node {
   nk_node_base_t base;
   bool has_name;
   nk_pbuf_t name_buf;
-  int32_t group_num;
+  uint32_t group_num;
+  bool has_depth;
+  int32_t depth;
   nk_node_t* yes_child;
   nk_node_t* no_child;  // nullable
 };

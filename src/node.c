@@ -109,7 +109,7 @@ nk_error_t nk_pbuf_to_owned(nk_pbuf_t* pbuf) {
   return NK_SUCCESS;
 }
 
-static void char_class_union_free(nk_char_class_union_t* u);
+void char_class_union_free(nk_char_class_union_t* u);
 
 void nodes_free(nk_node_t** nodes, size_t len) {
   if (nodes == NULL) {
@@ -219,7 +219,7 @@ void nk_node_free(nk_node_t* node) {
   free(node);
 }
 
-static void char_class_item_free(nk_char_class_item_t* item) {
+void char_class_item_free(nk_char_class_item_t* item) {
   if (item == NULL) {
     return;
   }
@@ -245,7 +245,7 @@ static void char_class_item_free(nk_char_class_item_t* item) {
   free(item);
 }
 
-static void char_class_union_free(nk_char_class_union_t* u) {
+void char_class_union_free(nk_char_class_union_t* u) {
   if (u == NULL) {
     return;
   }

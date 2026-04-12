@@ -65,6 +65,8 @@ module Naraku
         h[:has_name] = has_name
         h[:name] = name
         h[:group_num] = group_num
+        h[:has_depth] = has_depth
+        h[:depth] = depth
         h[:yes_child] = yes_child&.to_h
         h[:no_child] = no_child&.to_h
       when :concat, :alt
@@ -86,8 +88,8 @@ module Naraku
         when :code
           h[:code] = code
         when :range
-          h[:from_code] = from_code
-          h[:to_code] = to_code
+          h[:begin_code] = begin_code
+          h[:end_code] = end_code
         when :char_type
           h[:is_positive] = is_positive
           h[:is_ascii_only] = is_ascii_only
