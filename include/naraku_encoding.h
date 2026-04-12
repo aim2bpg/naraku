@@ -578,6 +578,10 @@ nk_enc_encode_mbc(const nk_encoding_t* enc, uint32_t code, size_t* out_width, ui
   return enc->encode_mbc(enc, code, out_width, out_bytes);
 }
 
+static inline nk_error_t nk_enc_encode_mbc_width(const nk_encoding_t* enc, uint32_t code, size_t* out_width) {
+  return nk_enc_encode_mbc(enc, code, out_width, NULL);
+}
+
 static inline uint32_t nk_enc_decode_mbc(const nk_encoding_t* enc, const uint8_t* bytes, const uint8_t* bytes_end) {
   if (*bytes < enc->single_byte_threshold) {
     return *bytes;

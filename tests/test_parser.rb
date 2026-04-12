@@ -397,13 +397,16 @@ module Parser
       assert_equal "\u{10FFFF}", result[:buf]
 
       # U+110000 is out of range for UTF-8.
-      assert_parse_error('\u{110000}', 'code point is out of range', offset: 0, length: 10)
+      assert_parse_error('\u{110000}', 'code point is out of range', offset: 3, length: 6)
+      # Too many hex digits in a single code point must not be split into multiple code points.
+      assert_parse_error('\u{10FFFFF}', 'code point is out of range', offset: 3, length: 7)
+      assert_parse_error('\u{11FFFF}', 'code point is out of range', offset: 3, length: 6)
     end
 
     def test_unicode_escape_surrogate
       # Surrogate code points are invalid in UTF-8.
-      assert_parse_error('\u{D800}', 'invalid code point', offset: 0, length: 8)
-      assert_parse_error('\u{DFFF}', 'invalid code point', offset: 0, length: 8)
+      assert_parse_error('\u{D800}', 'invalid code point', offset: 3, length: 4)
+      assert_parse_error('\u{DFFF}', 'invalid code point', offset: 3, length: 4)
     end
 
     def test_unicode_escape_encoding_constraint
@@ -414,17 +417,17 @@ module Parser
 
     def test_unicode_escape_errors
       # Trailing \u
-      assert_parse_error('\u', 'unclosed Unicode escape sequence brace', offset: 2, length: 0)
+      assert_parse_error('\u', 'unclosed Unicode escape sequence brace', offset: 0, length: 2)
       # Too short fixed escape
-      assert_parse_error('\u123', 'incomplete Unicode escape sequence', offset: 5, length: 0)
+      assert_parse_error('\u123', 'incomplete Unicode escape sequence', offset: 0, length: 5)
       # Invalid hex digit
-      assert_parse_error('\u123G', 'incomplete Unicode escape sequence', offset: 5, length: 0)
+      assert_parse_error('\u123G', 'incomplete Unicode escape sequence', offset: 0, length: 5)
       # Unclosed brace
       assert_parse_error('\u{61', 'unclosed Unicode escape sequence brace', offset: 5, length: 0)
       # Invalid hex in brace
       assert_parse_error('\u{G}', 'invalid Unicode escape sequence', offset: 3, length: 0)
       # Empty brace
-      assert_parse_error('\u{}', 'empty Unicode escape sequence brace', offset: 3, length: 0)
+      assert_parse_error('\u{}', 'empty Unicode escape sequence brace', offset: 0, length: 4)
     end
 
     # ========================================================================
@@ -1297,7 +1300,7 @@ module Parser
     end
 
     def test_conditional_incomplete
-      assert_parse_error('(?(1', 'incomplete group specifier', offset: 4, length: 0)
+      assert_parse_error('(?(1', 'incomplete group specifier', offset: 0, length: 4)
     end
 
     def test_conditional_invalid_group_number
@@ -1306,8 +1309,8 @@ module Parser
 
     def test_conditional_errors
       assert_parse_error('(?(<>)a|b)', 'empty group name', offset: 4, length: 0)
-      assert_parse_error('(?(x)a|b)', 'incomplete group specifier', offset: 3, length: 0)
-      assert_parse_error('(?(<name)a)', 'incomplete group specifier', offset: 11, length: 0)
+      assert_parse_error('(?(x)a|b)', 'incomplete group specifier', offset: 0, length: 3)
+      assert_parse_error('(?(<name)a)', 'incomplete group specifier', offset: 0, length: 11)
       assert_parse_error('(?(1)a', 'invalid conditional group', offset: 6, length: 0)
       assert_parse_error('(?(1)a|b', 'invalid conditional group', offset: 8, length: 0)
     end
@@ -1323,7 +1326,7 @@ module Parser
     end
 
     def test_incomplete_group_specifier
-      assert_parse_error('(?', 'incomplete group specifier', offset: 2, length: 0)
+      assert_parse_error('(?', 'incomplete group specifier', offset: 0, length: 2)
     end
 
     # ========================================================================
@@ -1531,8 +1534,8 @@ module Parser
 
     def test_error_group_number_out_of_range
       # In \k<-1>, the error is reported at > (offset 5)
-      assert_parse_error('\k<-1>', 'group number is out of range', offset: 5, length: 0)
-      assert_parse_error('\g<-1>', 'group number is out of range', offset: 5, length: 0)
+      assert_parse_error('\k<-1>', 'group number is out of range', offset: 3, length: 2)
+      assert_parse_error('\g<-1>', 'group number is out of range', offset: 3, length: 2)
     end
 
     def test_error_incomplete_back_ref
@@ -1541,8 +1544,8 @@ module Parser
     end
 
     def test_error_incomplete_capture_depth
-      assert_parse_error('\k<name+', 'incomplete capture depth', offset: 8, length: 0)
-      assert_parse_error('\k<name-', 'incomplete capture depth', offset: 8, length: 0)
+      assert_parse_error('\k<name+', 'incomplete capture depth', offset: 7, length: 1)
+      assert_parse_error('\k<name-', 'incomplete capture depth', offset: 7, length: 1)
     end
 
     def test_error_capture_depth_too_large

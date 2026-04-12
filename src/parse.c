@@ -115,6 +115,27 @@ static inline nk_error_t consume(nk_parser_t* parser, int8_t* out_width, uint32_
   return NK_SUCCESS;
 }
 
+static inline void set_error_span(nk_parser_t* parser, const uint8_t* error_bytes, const uint8_t* error_bytes_end) {
+  parser->error_bytes = error_bytes;
+  parser->error_bytes_end = error_bytes_end;
+}
+
+static inline void set_error_span_to_current(nk_parser_t* parser, const uint8_t* error_bytes) {
+  set_error_span(parser, error_bytes, parser->pattern_bytes);
+}
+
+static inline void consume_contiguous_hex_digits(nk_parser_t* parser) {
+  while (parser->pattern_bytes < parser->pattern_bytes_end) {
+    int8_t width;
+    uint32_t code;
+    nk_error_t err = peek(parser, &width, &code);
+    if (err != NK_SUCCESS || !is_hexdecimal_digit(code)) {
+      return;
+    }
+    parser->pattern_bytes += width;
+  }
+}
+
 static nk_error_t
 lex_decimal_number(nk_parser_t* parser, uint32_t* out_value, uint32_t max_value, nk_error_t overflow_error) {
   *out_value = 0;
@@ -329,15 +350,25 @@ static inline void skip_whitespace_in_unicode_brace(nk_parser_t* parser) {
   }
 }
 
-static nk_error_t lex_unicode_escape(nk_parser_t* parser, uint32_t* out_code, bool* out_is_unclosed_brace) {
+static nk_error_t lex_unicode_escape(
+  nk_parser_t* parser,
+  const uint8_t* escape_bytes,
+  uint32_t* out_code,
+  bool* out_is_unclosed_brace,
+  const uint8_t** out_code_bytes,
+  const uint8_t** out_code_bytes_end
+) {
   *out_code = 0;
   *out_is_unclosed_brace = false;
+  *out_code_bytes = NULL;
+  *out_code_bytes_end = NULL;
 
   if ((parser->enc->flags & NK_ENC_FLAG_UNICODE) == 0) {
     return NK_ERR_UNICODE_ESCAPE_IN_NON_UNICODE_ENCODING;
   }
 
   if (parser->pattern_bytes >= parser->pattern_bytes_end) {
+    set_error_span_to_current(parser, escape_bytes);
     return NK_ERR_UNCLOSED_UNICODE_ESCAPE_BRACE;
   }
 
@@ -349,10 +380,17 @@ static nk_error_t lex_unicode_escape(nk_parser_t* parser, uint32_t* out_code, bo
   }
 
   if (is_hexdecimal_digit(code)) {
+    const uint8_t* codepoint_begin = parser->pattern_bytes;
     nk_error_t err = lex_hexdecimal_number(parser, out_code, 4, 4, NK_ERR_INCOMPLETE_UNICODE_ESCAPE);
     if (err != NK_SUCCESS) {
+      if (err == NK_ERR_INCOMPLETE_UNICODE_ESCAPE) {
+        set_error_span_to_current(parser, escape_bytes);
+      }
       return err;
     }
+
+    *out_code_bytes = codepoint_begin;
+    *out_code_bytes_end = parser->pattern_bytes;
 
     return NK_SUCCESS;
   } else if (code == '{') {
@@ -371,13 +409,28 @@ static nk_error_t lex_unicode_escape(nk_parser_t* parser, uint32_t* out_code, bo
       return err;
     }
     if (code == '}') {
+      set_error_span(parser, escape_bytes, parser->pattern_bytes + width);
       return NK_ERR_EMPTY_UNICODE_ESCAPE_BRACE;
     }
 
+    const uint8_t* codepoint_begin = parser->pattern_bytes;
     err = lex_hexdecimal_number(parser, out_code, 1, 6, NK_ERR_INVALID_UNICODE_ESCAPE);
     if (err != NK_SUCCESS) {
       return err;
     }
+
+    err = peek(parser, &width, &code);
+    if (err != NK_SUCCESS) {
+      return err;
+    }
+    if (is_hexdecimal_digit(code)) {
+      consume_contiguous_hex_digits(parser);
+      set_error_span_to_current(parser, codepoint_begin);
+      return NK_ERR_CODE_POINT_OUT_OF_RANGE;
+    }
+
+    *out_code_bytes = codepoint_begin;
+    *out_code_bytes_end = parser->pattern_bytes;
 
     skip_whitespace_in_unicode_brace(parser);
     if (parser->pattern_bytes >= parser->pattern_bytes_end) {
@@ -397,12 +450,21 @@ static nk_error_t lex_unicode_escape(nk_parser_t* parser, uint32_t* out_code, bo
     return NK_SUCCESS;
   }
 
+  set_error_span_to_current(parser, escape_bytes);
   return NK_ERR_INCOMPLETE_UNICODE_ESCAPE;
 }
 
-static nk_error_t lex_unicode_escape_in_brace(nk_parser_t* parser, uint32_t* out_code, bool* out_is_unclosed_brace) {
+static nk_error_t lex_unicode_escape_in_brace(
+  nk_parser_t* parser,
+  uint32_t* out_code,
+  bool* out_is_unclosed_brace,
+  const uint8_t** out_code_bytes,
+  const uint8_t** out_code_bytes_end
+) {
   *out_code = 0;
   *out_is_unclosed_brace = true;
+  *out_code_bytes = NULL;
+  *out_code_bytes_end = NULL;
 
   if (parser->pattern_bytes >= parser->pattern_bytes_end) {
     return NK_ERR_UNCLOSED_UNICODE_ESCAPE_BRACE;
@@ -415,13 +477,28 @@ static nk_error_t lex_unicode_escape_in_brace(nk_parser_t* parser, uint32_t* out
     return err;
   }
   if (code == '}') {
+    set_error_span(parser, parser->pattern_bytes, parser->pattern_bytes + width);
     return NK_ERR_EMPTY_UNICODE_ESCAPE_BRACE;
   }
 
+  const uint8_t* codepoint_begin = parser->pattern_bytes;
   err = lex_hexdecimal_number(parser, out_code, 1, 6, NK_ERR_INVALID_UNICODE_ESCAPE);
   if (err != NK_SUCCESS) {
     return err;
   }
+
+  err = peek(parser, &width, &code);
+  if (err != NK_SUCCESS) {
+    return err;
+  }
+  if (is_hexdecimal_digit(code)) {
+    consume_contiguous_hex_digits(parser);
+    set_error_span_to_current(parser, codepoint_begin);
+    return NK_ERR_CODE_POINT_OUT_OF_RANGE;
+  }
+  *out_code_bytes = codepoint_begin;
+  *out_code_bytes_end = parser->pattern_bytes;
+
   skip_whitespace_in_unicode_brace(parser);
 
   if (parser->pattern_bytes >= parser->pattern_bytes_end) {
@@ -771,6 +848,7 @@ static nk_error_t lex_name(
     }
 
     if (code == '\\') {
+      const uint8_t* escape_bytes = parser->pattern_bytes - width;
       int8_t width;
       uint32_t code;
       nk_error_t err = peek(parser, &width, &code);
@@ -784,7 +862,16 @@ static nk_error_t lex_name(
 
         uint32_t code;
         bool u_is_unclosed_brace;
-        nk_error_t err = lex_unicode_escape(parser, &code, &u_is_unclosed_brace);
+        const uint8_t* code_bytes;
+        const uint8_t* code_bytes_end;
+        nk_error_t err = lex_unicode_escape(
+          parser,
+          escape_bytes,
+          &code,
+          &u_is_unclosed_brace,
+          &code_bytes,
+          &code_bytes_end
+        );
         if (err != NK_SUCCESS) {
           nk_pbuf_free(out_name_buf);
           return err;
@@ -801,7 +888,9 @@ static nk_error_t lex_name(
             break;
           }
 
-          err = lex_unicode_escape_in_brace(parser, &code, &u_is_unclosed_brace);
+          const uint8_t* code_bytes;
+          const uint8_t* code_bytes_end;
+          err = lex_unicode_escape_in_brace(parser, &code, &u_is_unclosed_brace, &code_bytes, &code_bytes_end);
           if (err != NK_SUCCESS) {
             nk_pbuf_free(out_name_buf);
             return err;
@@ -865,10 +954,12 @@ static nk_error_t lex_group_num_or_name(
   }
 
   int32_t sign = 1;
+  const uint8_t* num_begin = parser->pattern_bytes;
   if (is_decimal_digit(code)) {
     *out_has_name = false;
   } else if (code == '-') {
     sign = -1;
+    num_begin = parser->pattern_bytes;
     parser->pattern_bytes += width;  // consume `-`
 
     err = peek(parser, &width, &code);
@@ -908,6 +999,7 @@ static nk_error_t lex_group_num_or_name(
     *out_num = (uint32_t)num_or_relative_num;
   } else {
     if ((int64_t)parser->num_capture_groups + 1 + num_or_relative_num <= 0) {
+      set_error_span_to_current(parser, num_begin);
       return NK_ERR_GROUP_NUMBER_OUT_OF_RANGE;
     }
 
@@ -947,6 +1039,7 @@ static nk_error_t lex_group_num_or_name_with_depth(
   }
 
   if (code == '+' || code == '-') {
+    const uint8_t* depth_begin = parser->pattern_bytes;
     parser->pattern_bytes += width;  // consume `+` or `-`
     int sign = code == '+' ? 1 : -1;
 
@@ -954,6 +1047,7 @@ static nk_error_t lex_group_num_or_name_with_depth(
       if (*out_has_name) {
         nk_pbuf_free(out_name_buf);
       }
+      set_error_span_to_current(parser, depth_begin);
       return NK_ERR_INCOMPLETE_CAPTURE_DEPTH;
     }
 
@@ -994,7 +1088,9 @@ static nk_error_t lex_pending_unicode_escape_in_brace(
 
   uint32_t code;
   bool is_unclosed_brace;
-  nk_error_t err = lex_unicode_escape_in_brace(parser, &code, &is_unclosed_brace);
+  const uint8_t* code_bytes;
+  const uint8_t* code_bytes_end;
+  nk_error_t err = lex_unicode_escape_in_brace(parser, &code, &is_unclosed_brace, &code_bytes, &code_bytes_end);
   if (err != NK_SUCCESS) {
     return err;
   }
@@ -1004,7 +1100,9 @@ static nk_error_t lex_pending_unicode_escape_in_brace(
   }
 
   out_token->type = TK_CODE;
-  out_token->data.code = code;
+  out_token->data.code.value = code;
+  out_token->data.code.code_bytes = code_bytes;
+  out_token->data.code.code_bytes_end = code_bytes_end;
   *out_is_handled = true;
   return NK_SUCCESS;
 }
@@ -1055,7 +1153,9 @@ static nk_error_t lex_char_prop_escape(nk_parser_t* parser, uint32_t code, token
   if (parser->pattern_bytes >= parser->pattern_bytes_end) {
     // TODO: add a warning for the incomplete character property escape.
     out_token->type = TK_CODE;
-    out_token->data.code = code;  // 'p' or 'P'
+    out_token->data.code.value = code;  // 'p' or 'P'
+    out_token->data.code.code_bytes = out_token->span_bytes;
+    out_token->data.code.code_bytes_end = parser->pattern_bytes;
     return NK_SUCCESS;
   }
 
@@ -1069,7 +1169,9 @@ static nk_error_t lex_char_prop_escape(nk_parser_t* parser, uint32_t code, token
   if (brace_code != '{') {
     // TODO: add a warning for the incomplete character property escape.
     out_token->type = TK_CODE;
-    out_token->data.code = code;  // 'p' or 'P'
+    out_token->data.code.value = code;  // 'p' or 'P'
+    out_token->data.code.code_bytes = out_token->span_bytes;
+    out_token->data.code.code_bytes_end = parser->pattern_bytes;
     return NK_SUCCESS;
   }
 
@@ -1136,6 +1238,7 @@ static nk_error_t lex_char_prop_escape(nk_parser_t* parser, uint32_t code, token
 
 static nk_error_t lex_common_escape(
   nk_parser_t* parser,
+  const uint8_t* escape_bytes,
   int8_t width,
   uint32_t code,
   bool* out_retry,
@@ -1150,14 +1253,25 @@ static nk_error_t lex_common_escape(
     {
       uint32_t escaped_code;
       bool is_unclosed_brace;
-      nk_error_t err = lex_unicode_escape(parser, &escaped_code, &is_unclosed_brace);
+      const uint8_t* code_bytes;
+      const uint8_t* code_bytes_end;
+      nk_error_t err = lex_unicode_escape(
+        parser,
+        escape_bytes,
+        &escaped_code,
+        &is_unclosed_brace,
+        &code_bytes,
+        &code_bytes_end
+      );
       if (err != NK_SUCCESS) {
         return err;
       }
 
       parser->in_unicode_escape_brace = is_unclosed_brace;
       out_token->type = TK_CODE;
-      out_token->data.code = escaped_code;
+      out_token->data.code.value = escaped_code;
+      out_token->data.code.code_bytes = code_bytes;
+      out_token->data.code.code_bytes_end = code_bytes_end;
       *out_is_handled = true;
       return NK_SUCCESS;
     }
@@ -1192,7 +1306,9 @@ static nk_error_t lex_common_escape(
       }
 
       out_token->type = TK_CODE;
-      out_token->data.code = escaped_code;
+      out_token->data.code.value = escaped_code;
+      out_token->data.code.code_bytes = out_token->span_bytes;
+      out_token->data.code.code_bytes_end = parser->pattern_bytes;
       *out_is_handled = true;
       return NK_SUCCESS;
     }
@@ -1216,7 +1332,9 @@ static nk_error_t lex_common_escape(
       }
 
       out_token->type = TK_CODE;
-      out_token->data.code = '\r';
+      out_token->data.code.value = '\r';
+      out_token->data.code.code_bytes = out_token->span_bytes;
+      out_token->data.code.code_bytes_end = parser->pattern_bytes;
       *out_is_handled = true;
       return NK_SUCCESS;
     }
@@ -1386,6 +1504,7 @@ static nk_error_t lex_internal(nk_parser_t* parser, token_t* out_token) {
 
       case '(':
       {
+        const uint8_t* group_open_begin = parser->pattern_bytes - width;
         if (parser->pattern_bytes < parser->pattern_bytes_end) {
           int8_t width;
           uint32_t code;
@@ -1395,9 +1514,11 @@ static nk_error_t lex_internal(nk_parser_t* parser, token_t* out_token) {
           }
 
           if (code == '?') {
+            const uint8_t* group_specifier_begin = group_open_begin;
             parser->pattern_bytes += width;  // consume `?`
 
             if (parser->pattern_bytes >= parser->pattern_bytes_end) {
+              set_error_span_to_current(parser, group_specifier_begin);
               return NK_ERR_INCOMPLETE_GROUP_SPECIFIER;
             }
 
@@ -1447,6 +1568,7 @@ static nk_error_t lex_internal(nk_parser_t* parser, token_t* out_token) {
               {
                 parser->pattern_bytes += width;
                 if (parser->pattern_bytes >= parser->pattern_bytes_end) {
+                  set_error_span_to_current(parser, group_specifier_begin);
                   return NK_ERR_INCOMPLETE_GROUP_SPECIFIER;
                 }
 
@@ -1454,6 +1576,9 @@ static nk_error_t lex_internal(nk_parser_t* parser, token_t* out_token) {
                 uint32_t lookbehind_code;
                 nk_error_t err = peek(parser, &lookbehind_width, &lookbehind_code);
                 if (err != NK_SUCCESS) {
+                  if (err == NK_ERR_INCOMPLETE_GROUP_SPECIFIER) {
+                    set_error_span_to_current(parser, group_specifier_begin);
+                  }
                   return err;
                 }
 
@@ -1506,6 +1631,7 @@ static nk_error_t lex_internal(nk_parser_t* parser, token_t* out_token) {
 
                 if (code != name_terminator) {
                   nk_pbuf_free(&name_buf);
+                  set_error_span_to_current(parser, group_specifier_begin);
                   return NK_ERR_INCOMPLETE_GROUP_SPECIFIER;
                 }
                 parser->pattern_bytes += width;  // consume `'` or `>`
@@ -1521,6 +1647,7 @@ static nk_error_t lex_internal(nk_parser_t* parser, token_t* out_token) {
                 parser->pattern_bytes += width;  // consume `(`
 
                 if (parser->pattern_bytes >= parser->pattern_bytes_end) {
+                  set_error_span_to_current(parser, group_specifier_begin);
                   return NK_ERR_INCOMPLETE_GROUP_SPECIFIER;
                 }
 
@@ -1552,6 +1679,9 @@ static nk_error_t lex_internal(nk_parser_t* parser, token_t* out_token) {
                     NK_ERR_INCOMPLETE_GROUP_SPECIFIER
                   );
                   if (err != NK_SUCCESS) {
+                    if (err == NK_ERR_INCOMPLETE_GROUP_SPECIFIER) {
+                      set_error_span_to_current(parser, group_specifier_begin);
+                    }
                     return err;
                   }
                   name_bytes_end_for_error_report = parser->pattern_bytes;
@@ -1571,6 +1701,9 @@ static nk_error_t lex_internal(nk_parser_t* parser, token_t* out_token) {
                     NK_ERR_INCOMPLETE_GROUP_SPECIFIER
                   );
                   if (err != NK_SUCCESS) {
+                    if (err == NK_ERR_INCOMPLETE_GROUP_SPECIFIER) {
+                      set_error_span_to_current(parser, group_specifier_begin);
+                    }
                     return err;
                   }
 
@@ -1578,6 +1711,7 @@ static nk_error_t lex_internal(nk_parser_t* parser, token_t* out_token) {
                     if (has_name) {
                       nk_pbuf_free(&name_buf);
                     }
+                    set_error_span_to_current(parser, group_specifier_begin);
                     return NK_ERR_INCOMPLETE_GROUP_SPECIFIER;
                   }
                   name_bytes_end_for_error_report = parser->pattern_bytes;
@@ -1594,11 +1728,13 @@ static nk_error_t lex_internal(nk_parser_t* parser, token_t* out_token) {
                     if (has_name) {
                       nk_pbuf_free(&name_buf);
                     }
+                    set_error_span_to_current(parser, group_specifier_begin);
                     return NK_ERR_INCOMPLETE_GROUP_SPECIFIER;
                   }
 
                   parser->pattern_bytes += width;  // consume `'` or `>`
                 } else {
+                  set_error_span_to_current(parser, group_specifier_begin);
                   return NK_ERR_INCOMPLETE_GROUP_SPECIFIER;
                 }
 
@@ -1619,6 +1755,7 @@ static nk_error_t lex_internal(nk_parser_t* parser, token_t* out_token) {
                   if (has_name) {
                     nk_pbuf_free(&name_buf);
                   }
+                  set_error_span_to_current(parser, group_specifier_begin);
                   return NK_ERR_INCOMPLETE_GROUP_SPECIFIER;
                 }
 
@@ -1634,6 +1771,7 @@ static nk_error_t lex_internal(nk_parser_t* parser, token_t* out_token) {
                   if (has_name) {
                     nk_pbuf_free(&name_buf);
                   }
+                  set_error_span_to_current(parser, group_specifier_begin);
                   return NK_ERR_INCOMPLETE_GROUP_SPECIFIER;
                 }
                 parser->pattern_bytes += width;  // consume `)`
@@ -1772,6 +1910,7 @@ static nk_error_t lex_internal(nk_parser_t* parser, token_t* out_token) {
                   }
                 }
 
+                set_error_span_to_current(parser, group_specifier_begin);
                 return NK_ERR_INCOMPLETE_GROUP_SPECIFIER;
               }
 
@@ -1793,6 +1932,7 @@ static nk_error_t lex_internal(nk_parser_t* parser, token_t* out_token) {
 
       case '\\':
       {
+        const uint8_t* escape_bytes = parser->pattern_bytes - width;
         if (parser->pattern_bytes >= parser->pattern_bytes_end) {
           return NK_ERR_INCOMPLETE_ESCAPE;
         }
@@ -1871,7 +2011,9 @@ static nk_error_t lex_internal(nk_parser_t* parser, token_t* out_token) {
             if (parser->pattern_bytes >= parser->pattern_bytes_end) {
               // TODO: add a warning for the incomplete named back-reference escape.
               out_token->type = TK_CODE;
-              out_token->data.code = 'k';
+              out_token->data.code.value = 'k';
+              out_token->data.code.code_bytes = out_token->span_bytes;
+              out_token->data.code.code_bytes_end = parser->pattern_bytes;
               return NK_SUCCESS;
             }
 
@@ -1885,7 +2027,9 @@ static nk_error_t lex_internal(nk_parser_t* parser, token_t* out_token) {
             if (next_code != '<' && next_code != '\'') {
               // TODO: add a warning for the incomplete named back-reference escape.
               out_token->type = TK_CODE;
-              out_token->data.code = 'k';
+              out_token->data.code.value = 'k';
+              out_token->data.code.code_bytes = out_token->span_bytes;
+              out_token->data.code.code_bytes_end = parser->pattern_bytes;
               return NK_SUCCESS;
             }
 
@@ -1967,7 +2111,9 @@ static nk_error_t lex_internal(nk_parser_t* parser, token_t* out_token) {
             if (parser->pattern_bytes >= parser->pattern_bytes_end) {
               // TODO: add a warning for the incomplete sub-expression call escape.
               out_token->type = TK_CODE;
-              out_token->data.code = 'g';
+              out_token->data.code.value = 'g';
+              out_token->data.code.code_bytes = out_token->span_bytes;
+              out_token->data.code.code_bytes_end = parser->pattern_bytes;
               return NK_SUCCESS;
             }
 
@@ -1981,7 +2127,9 @@ static nk_error_t lex_internal(nk_parser_t* parser, token_t* out_token) {
             if (next_code != '<' && next_code != '\'') {
               // TODO: add a warning for the incomplete sub-expression call escape.
               out_token->type = TK_CODE;
-              out_token->data.code = 'g';
+              out_token->data.code.value = 'g';
+              out_token->data.code.code_bytes = out_token->span_bytes;
+              out_token->data.code.code_bytes_end = parser->pattern_bytes;
               return NK_SUCCESS;
             }
 
@@ -2077,14 +2225,14 @@ static nk_error_t lex_internal(nk_parser_t* parser, token_t* out_token) {
             FALLTHROUGH;
           }
 
-          // Other case: treat the escaped character as a code itself.
-          default:
-          {
-            bool is_handled = false;
-            nk_error_t err = lex_common_escape(parser, width, code, &retry, &is_handled, out_token);
-            if (err != NK_SUCCESS) {
-              return err;
-            }
+            // Other case: treat the escaped character as a code itself.
+            default:
+            {
+              bool is_handled = false;
+              nk_error_t err = lex_common_escape(parser, escape_bytes, width, code, &retry, &is_handled, out_token);
+              if (err != NK_SUCCESS) {
+                return err;
+              }
             if (is_handled) {
               if (retry) {
                 continue;
@@ -2093,7 +2241,9 @@ static nk_error_t lex_internal(nk_parser_t* parser, token_t* out_token) {
             }
 
             out_token->type = TK_CODE;
-            out_token->data.code = code;
+            out_token->data.code.value = code;
+            out_token->data.code.code_bytes = out_token->span_bytes;
+            out_token->data.code.code_bytes_end = parser->pattern_bytes;
             return NK_SUCCESS;
           }
         }
@@ -2166,6 +2316,7 @@ static nk_error_t lex_posix_char_class_name(nk_parser_t* parser, bool* out_is_cl
     }
 
     if (code == '\\') {
+      const uint8_t* escape_bytes = parser->pattern_bytes - width;
       int8_t width;
       uint32_t code;
       nk_error_t err = peek(parser, &width, &code);
@@ -2179,7 +2330,16 @@ static nk_error_t lex_posix_char_class_name(nk_parser_t* parser, bool* out_is_cl
 
         uint32_t code;
         bool u_is_unclosed_brace;
-        nk_error_t err = lex_unicode_escape(parser, &code, &u_is_unclosed_brace);
+        const uint8_t* code_bytes;
+        const uint8_t* code_bytes_end;
+        nk_error_t err = lex_unicode_escape(
+          parser,
+          escape_bytes,
+          &code,
+          &u_is_unclosed_brace,
+          &code_bytes,
+          &code_bytes_end
+        );
         if (err != NK_SUCCESS) {
           nk_pbuf_free(out_name_buf);
           return err;
@@ -2196,7 +2356,9 @@ static nk_error_t lex_posix_char_class_name(nk_parser_t* parser, bool* out_is_cl
             break;
           }
 
-          err = lex_unicode_escape_in_brace(parser, &code, &u_is_unclosed_brace);
+          const uint8_t* code_bytes;
+          const uint8_t* code_bytes_end;
+          err = lex_unicode_escape_in_brace(parser, &code, &u_is_unclosed_brace, &code_bytes, &code_bytes_end);
           if (err != NK_SUCCESS) {
             nk_pbuf_free(out_name_buf);
             return err;
@@ -2491,6 +2653,7 @@ static nk_error_t lex_in_char_class_internal(nk_parser_t* parser, token_t* out_t
         break;
       case '\\':
       {
+        const uint8_t* escape_bytes = parser->pattern_bytes - width;
         if (parser->pattern_bytes >= parser->pattern_bytes_end) {
           return NK_ERR_INCOMPLETE_ESCAPE;
         }
@@ -2532,7 +2695,7 @@ static nk_error_t lex_in_char_class_internal(nk_parser_t* parser, token_t* out_t
           default:
           {
             bool is_handled = false;
-            nk_error_t err = lex_common_escape(parser, width, code, &retry, &is_handled, out_token);
+            nk_error_t err = lex_common_escape(parser, escape_bytes, width, code, &retry, &is_handled, out_token);
             if (err != NK_SUCCESS) {
               return err;
             }
@@ -2544,7 +2707,9 @@ static nk_error_t lex_in_char_class_internal(nk_parser_t* parser, token_t* out_t
             }
 
             out_token->type = TK_CODE;
-            out_token->data.code = code;
+            out_token->data.code.value = code;
+            out_token->data.code.code_bytes = out_token->span_bytes;
+            out_token->data.code.code_bytes_end = parser->pattern_bytes;
             return NK_SUCCESS;
           }
         }
@@ -2552,7 +2717,9 @@ static nk_error_t lex_in_char_class_internal(nk_parser_t* parser, token_t* out_t
     }
 
     out_token->type = TK_CHAR_CLASS_LITERAL_CODE;
-    out_token->data.code = code;
+    out_token->data.code.value = code;
+    out_token->data.code.code_bytes = out_token->span_bytes;
+    out_token->data.code.code_bytes_end = parser->pattern_bytes;
 
     return NK_SUCCESS;
   }
@@ -2654,10 +2821,20 @@ static nk_error_t parse_char_class_item(nk_parser_t* parser, const token_t* tok,
 
   switch (tok->type) {
     case TK_CODE:
+    {
+      size_t width;
+      nk_error_t err = nk_enc_encode_mbc_width(parser->enc, tok->data.code.value, &width);
+      if (err != NK_SUCCESS) {
+        char_class_item_free(item);
+        set_error_span(parser, tok->data.code.code_bytes, tok->data.code.code_bytes_end);
+        return err;
+      }
+      FALLTHROUGH;
+    }
     case TK_CHAR_CLASS_LITERAL_CODE:
     {
       item->type = NK_CHAR_CLASS_ITEM_TYPE_CODE;
-      item->data.code = tok->data.code;
+      item->data.code = tok->data.code.value;
       *out_item_ptr = item;
       return NK_SUCCESS;
     }
@@ -3139,11 +3316,12 @@ static nk_error_t parse_atom(nk_parser_t* parser, token_t* tok, nk_node_t** out_
         return err;
       }
 
-      uint32_t code = tok->data.code;
+      uint32_t code = tok->data.code.value;
       uint8_t buf[NK_ENC_MAX_MBC_WIDTH];
       size_t width;
       err = nk_enc_encode_mbc(parser->enc, code, &width, buf);
       if (err != NK_SUCCESS) {
+        set_error_span(parser, tok->data.code.code_bytes, tok->data.code.code_bytes_end);
         free(literal_node);
         return err;
       }

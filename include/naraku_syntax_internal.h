@@ -97,7 +97,11 @@ typedef struct {
       const uint8_t* bytes;
       const uint8_t* bytes_end;
     } literal;
-    uint32_t code;
+    struct {
+      uint32_t value;
+      const uint8_t* code_bytes;
+      const uint8_t* code_bytes_end;
+    } code;
     struct {
       bool is_positive;
       nk_char_type_t type;

@@ -115,7 +115,7 @@ static mrb_value mrb_naraku_encoding_encode_mbc_width(mrb_state* mrb, mrb_value 
   mrb_get_args(mrb, "i", &code);
 
   size_t width;
-  nk_error_t err = nk_enc_encode_mbc(enc, (uint32_t)code, &width, NULL);
+  nk_error_t err = nk_enc_encode_mbc_width(enc, (uint32_t)code, &width);
   if (err != NK_SUCCESS) {
     struct RClass* naraku_module = mrb_module_get(mrb, "Naraku");
     struct RClass* error_class = mrb_class_get_under(mrb, naraku_module, "Error");
