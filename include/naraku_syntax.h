@@ -105,7 +105,9 @@ typedef enum {
  * Base structure for all regex AST nodes.
  */
 struct nk_node_base {
-  nk_node_type_t type;
+  nk_node_type_t type;  // indicates the actual type of the node
+  size_t span_offset;   // byte offset from the beginning of the pattern
+  size_t span_length;   // byte length of this node in the pattern
 };
 
 /**
@@ -164,7 +166,9 @@ typedef enum {
  * Structure representing an item in a character class.
  */
 typedef struct nk_char_class_item {
-  nk_char_class_item_type_t type;
+  nk_char_class_item_type_t type;  // indicates the actual type of the item
+  size_t span_offset;              // byte offset from the beginning of the pattern
+  size_t span_length;              // byte length of this item in the pattern
   union {
     // e.g., `[a]`
     uint32_t code;
@@ -203,6 +207,8 @@ typedef struct nk_char_class_item {
  * Structure representing a union of character class items.
  */
 typedef struct nk_char_class_union {
+  size_t span_offset;  // byte offset from the beginning of the pattern
+  size_t span_length;  // byte length of this union in the pattern
   size_t items_len;
   nk_char_class_item_t** items;
 } nk_char_class_union_t;

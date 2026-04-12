@@ -203,6 +203,18 @@ static mrb_value mrb_naraku_char_class_union_items(mrb_state* mrb, mrb_value sel
   return ary;
 }
 
+static mrb_value mrb_naraku_char_class_union_span_offset(mrb_state* mrb, mrb_value self) {
+  mrb_naraku_char_class_union_t* wrapper =
+    (mrb_naraku_char_class_union_t*)mrb_data_get_ptr(mrb, self, &mrb_naraku_char_class_union_type);
+  return mrb_fixnum_value((mrb_int)wrapper->u->span_offset);
+}
+
+static mrb_value mrb_naraku_char_class_union_span_length(mrb_state* mrb, mrb_value self) {
+  mrb_naraku_char_class_union_t* wrapper =
+    (mrb_naraku_char_class_union_t*)mrb_data_get_ptr(mrb, self, &mrb_naraku_char_class_union_type);
+  return mrb_fixnum_value((mrb_int)wrapper->u->span_length);
+}
+
 // ============================================================================
 //
 // `Naraku::Node::CharClassItem` accessor methods:
@@ -231,6 +243,18 @@ static mrb_value mrb_naraku_char_class_item_type(mrb_state* mrb, mrb_value self)
   mrb_naraku_char_class_item_t* wrapper =
     (mrb_naraku_char_class_item_t*)mrb_data_get_ptr(mrb, self, &mrb_naraku_char_class_item_data_type);
   return mrb_symbol_value(mrb_intern_cstr(mrb, char_class_item_type_name(wrapper->item->type)));
+}
+
+static mrb_value mrb_naraku_char_class_item_span_offset(mrb_state* mrb, mrb_value self) {
+  mrb_naraku_char_class_item_t* wrapper =
+    (mrb_naraku_char_class_item_t*)mrb_data_get_ptr(mrb, self, &mrb_naraku_char_class_item_data_type);
+  return mrb_fixnum_value((mrb_int)wrapper->item->span_offset);
+}
+
+static mrb_value mrb_naraku_char_class_item_span_length(mrb_state* mrb, mrb_value self) {
+  mrb_naraku_char_class_item_t* wrapper =
+    (mrb_naraku_char_class_item_t*)mrb_data_get_ptr(mrb, self, &mrb_naraku_char_class_item_data_type);
+  return mrb_fixnum_value((mrb_int)wrapper->item->span_length);
 }
 
 #define CHAR_CLASS_ITEM_CHECK_TYPE(mrb, wrapper, expected, method_name) \
@@ -453,6 +477,16 @@ static inline void node_check_type(mrb_state* mrb, nk_node_t* node, nk_node_type
 static mrb_value mrb_naraku_node_type_method(mrb_state* mrb, mrb_value self) {
   nk_node_t* node = mrb_naraku_node_get_ptr(mrb, self);
   return mrb_symbol_value(mrb_intern_cstr(mrb, node_type_name(node->base.type)));
+}
+
+static mrb_value mrb_naraku_node_span_offset(mrb_state* mrb, mrb_value self) {
+  nk_node_t* node = mrb_naraku_node_get_ptr(mrb, self);
+  return mrb_fixnum_value((mrb_int)node->base.span_offset);
+}
+
+static mrb_value mrb_naraku_node_span_length(mrb_state* mrb, mrb_value self) {
+  nk_node_t* node = mrb_naraku_node_get_ptr(mrb, self);
+  return mrb_fixnum_value((mrb_int)node->base.span_length);
 }
 
 static mrb_value mrb_naraku_node_buf(mrb_state* mrb, mrb_value self) {
@@ -771,6 +805,8 @@ void mrb_naraku_node_gem_init(mrb_state* mrb, struct RClass* naraku_module) {
   mrb_undef_class_method_id(mrb, node_class, MRB_SYM(allocate));
 
   mrb_define_method(mrb, node_class, "type", mrb_naraku_node_type_method, MRB_ARGS_NONE());
+  mrb_define_method(mrb, node_class, "span_offset", mrb_naraku_node_span_offset, MRB_ARGS_NONE());
+  mrb_define_method(mrb, node_class, "span_length", mrb_naraku_node_span_length, MRB_ARGS_NONE());
   mrb_define_method(mrb, node_class, "buf", mrb_naraku_node_buf, MRB_ARGS_NONE());
   mrb_define_method(mrb, node_class, "is_ignore_case", mrb_naraku_node_is_ignore_case, MRB_ARGS_NONE());
   mrb_define_method(mrb, node_class, "fold_flags", mrb_naraku_node_fold_flags, MRB_ARGS_NONE());
@@ -810,6 +846,8 @@ void mrb_naraku_node_gem_init(mrb_state* mrb, struct RClass* naraku_module) {
   mrb_undef_class_method_id(mrb, cc_union_class, MRB_SYM(allocate));
 
   mrb_define_method(mrb, cc_union_class, "items", mrb_naraku_char_class_union_items, MRB_ARGS_NONE());
+  mrb_define_method(mrb, cc_union_class, "span_offset", mrb_naraku_char_class_union_span_offset, MRB_ARGS_NONE());
+  mrb_define_method(mrb, cc_union_class, "span_length", mrb_naraku_char_class_union_span_length, MRB_ARGS_NONE());
 
   // `Naraku::Node::CharClassItem`:
   struct RClass* cc_item_class = mrb_define_class_under(mrb, node_class, "CharClassItem", mrb->object_class);
@@ -819,6 +857,8 @@ void mrb_naraku_node_gem_init(mrb_state* mrb, struct RClass* naraku_module) {
   mrb_undef_class_method_id(mrb, cc_item_class, MRB_SYM(allocate));
 
   mrb_define_method(mrb, cc_item_class, "type", mrb_naraku_char_class_item_type, MRB_ARGS_NONE());
+  mrb_define_method(mrb, cc_item_class, "span_offset", mrb_naraku_char_class_item_span_offset, MRB_ARGS_NONE());
+  mrb_define_method(mrb, cc_item_class, "span_length", mrb_naraku_char_class_item_span_length, MRB_ARGS_NONE());
   mrb_define_method(mrb, cc_item_class, "code", mrb_naraku_char_class_item_code, MRB_ARGS_NONE());
   mrb_define_method(mrb, cc_item_class, "begin_code", mrb_naraku_char_class_item_begin_code, MRB_ARGS_NONE());
   mrb_define_method(mrb, cc_item_class, "end_code", mrb_naraku_char_class_item_end_code, MRB_ARGS_NONE());

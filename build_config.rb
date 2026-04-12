@@ -6,6 +6,8 @@ MRuby::Build.new do |conf|
   conf.toolchain
   conf.gembox 'default'
   conf.gem :core => 'mruby-exit'
+  conf.gem github: 'buty4649/mruby-yyjson', branch: 'main'
+
   conf.gem File.expand_path('../mrbgems/mruby-naraku', __FILE__)
 
   conf.enable_bintest

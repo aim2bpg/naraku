@@ -2638,6 +2638,7 @@ static inline nk_error_t lex_in_char_class(nk_parser_t* parser, token_t* out_tok
     return err;
   }
 
+  out_token->span_bytes_end = parser->pattern_bytes;
   return NK_SUCCESS;
 }
 
@@ -2646,6 +2647,36 @@ static inline nk_error_t lex_in_char_class(nk_parser_t* parser, token_t* out_tok
 // Parser implementation:
 //
 // ==========================================================================
+
+static inline size_t span_offset_from_bytes(nk_parser_t* parser, const uint8_t* span_bytes) {
+  return (size_t)(span_bytes - parser->pattern_bytes_begin);
+}
+
+static inline size_t span_length_from_bytes(const uint8_t* span_bytes, const uint8_t* span_bytes_end) {
+  return (size_t)(span_bytes_end - span_bytes);
+}
+
+static inline void set_node_span_from_bytes(
+  nk_parser_t* parser,
+  nk_node_t* node,
+  const uint8_t* span_bytes,
+  const uint8_t* span_bytes_end
+) {
+  node->base.span_offset = span_offset_from_bytes(parser, span_bytes);
+  node->base.span_length = span_length_from_bytes(span_bytes, span_bytes_end);
+}
+
+static inline void set_node_span_from_token(nk_parser_t* parser, nk_node_t* node, const token_t* tok) {
+  set_node_span_from_bytes(parser, node, tok->span_bytes, tok->span_bytes_end);
+}
+
+static inline const uint8_t* node_span_end_bytes(nk_parser_t* parser, const nk_node_t* node) {
+  return parser->pattern_bytes_begin + node->base.span_offset + node->base.span_length;
+}
+
+static inline const uint8_t* node_span_begin_bytes(nk_parser_t* parser, const nk_node_t* node) {
+  return parser->pattern_bytes_begin + node->base.span_offset;
+}
 
 static nk_error_t parse_char_class_intersection(
   nk_parser_t* parser,
@@ -2661,6 +2692,8 @@ static nk_error_t parse_char_class_item(nk_parser_t* parser, const token_t* tok,
   if (item == NULL) {
     return NK_ERR_MEMORY_ALLOCATION_FAILED;
   }
+  item->span_offset = span_offset_from_bytes(parser, tok->span_bytes);
+  item->span_length = span_length_from_bytes(tok->span_bytes, tok->span_bytes_end);
 
   switch (tok->type) {
     case TK_CODE:
@@ -2706,6 +2739,7 @@ static nk_error_t parse_char_class_item(nk_parser_t* parser, const token_t* tok,
     }
     case TK_CHAR_CLASS_OPEN:
     {
+      const uint8_t* span_bytes = tok->span_bytes;
       bool is_positive = true;
       size_t unions_len = 0;
       nk_char_class_union_t** unions = NULL;
@@ -2719,6 +2753,8 @@ static nk_error_t parse_char_class_item(nk_parser_t* parser, const token_t* tok,
       item->data.nested_char_class.is_positive = is_positive;
       item->data.nested_char_class.unions_len = unions_len;
       item->data.nested_char_class.unions = unions;
+      item->span_offset = span_offset_from_bytes(parser, span_bytes);
+      item->span_length = span_length_from_bytes(span_bytes, parser->pattern_bytes);
       *out_item_ptr = item;
 
       return NK_SUCCESS;
@@ -2731,15 +2767,19 @@ static nk_error_t parse_char_class_item(nk_parser_t* parser, const token_t* tok,
 
 static nk_error_t parse_char_class_union(nk_parser_t* parser, token_t* tok, nk_char_class_union_t** out_union_ptr) {
   *out_union_ptr = NULL;
+  const uint8_t* span_bytes = tok->span_bytes;
 
   nk_char_class_union_t* u = (nk_char_class_union_t*)malloc(sizeof(nk_char_class_union_t));
   if (u == NULL) {
     return NK_ERR_MEMORY_ALLOCATION_FAILED;
   }
+  u->span_offset = span_offset_from_bytes(parser, span_bytes);
+  u->span_length = 0;
   u->items_len = 0;
   u->items = NULL;
 
   if (tok->type == TK_CHAR_CLASS_CLOSE || tok->type == TK_CHAR_CLASS_INTERSECTION || tok->type == TK_END) {
+    u->span_length = 0;
     *out_union_ptr = u;
     return NK_SUCCESS;
   }
@@ -2820,6 +2860,8 @@ static nk_error_t parse_char_class_union(nk_parser_t* parser, token_t* tok, nk_c
       begin_item->type = NK_CHAR_CLASS_ITEM_TYPE_RANGE;
       begin_item->data.range.begin_code = begin_code;
       begin_item->data.range.end_code = end_code;
+      begin_item->span_offset = span_offset_from_bytes(parser, begin_tok.span_bytes);
+      begin_item->span_length = span_length_from_bytes(begin_tok.span_bytes, tok->span_bytes_end);
 
       if (u->items_len >= items_cap) {
         size_t new_items_cap = items_cap * 2;
@@ -2915,6 +2957,7 @@ static nk_error_t parse_char_class_union(nk_parser_t* parser, token_t* tok, nk_c
     u->items = resized_items;
   }
 
+  u->span_length = span_length_from_bytes(span_bytes, tok->span_bytes);
   *out_union_ptr = u;
 
   return NK_SUCCESS;
@@ -3045,6 +3088,8 @@ static nk_error_t parse_alt(nk_parser_t* parser, token_t* tok, nk_node_t** out_n
 static nk_error_t parse_concat(nk_parser_t* parser, token_t* tok, nk_node_t** out_node_ptr);
 
 static nk_error_t parse_atom(nk_parser_t* parser, token_t* tok, nk_node_t** out_node_ptr) {
+  const uint8_t* atom_span_bytes = tok->span_bytes;
+
   switch (tok->type) {
     case TK_LITERAL:
     {
@@ -3057,6 +3102,7 @@ static nk_error_t parse_atom(nk_parser_t* parser, token_t* tok, nk_node_t** out_
         (nk_pbuf_t){.type = NK_PBUF_VIEW, .bytes = tok->data.literal.bytes, .bytes_end = tok->data.literal.bytes_end};
       literal_node->literal.is_ignore_case = parser->is_ignore_case;
       literal_node->literal.fold_flags = parser->fold_flags;
+      set_node_span_from_token(parser, literal_node, tok);
       *out_node_ptr = literal_node;
       break;
     }
@@ -3087,6 +3133,7 @@ static nk_error_t parse_atom(nk_parser_t* parser, token_t* tok, nk_node_t** out_
       literal_node->literal.buf = (nk_pbuf_t){.type = NK_PBUF_OWNED, .bytes = bytes, .bytes_end = bytes + width};
       literal_node->literal.is_ignore_case = parser->is_ignore_case;
       literal_node->literal.fold_flags = parser->fold_flags;
+      set_node_span_from_token(parser, literal_node, tok);
       *out_node_ptr = literal_node;
       break;
     }
@@ -3111,9 +3158,13 @@ static nk_error_t parse_atom(nk_parser_t* parser, token_t* tok, nk_node_t** out_
       }
 
       char_class_node->base.type = NK_NODE_TYPE_CHAR_CLASS;
+      char_class_node->char_class.is_strict = parser->char_class_is_strict;
+      char_class_node->char_class.is_ignore_case = parser->is_ignore_case;
+      char_class_node->char_class.fold_flags = parser->fold_flags;
       char_class_node->char_class.is_positive = is_positive;
       char_class_node->char_class.unions_len = unions_len;
       char_class_node->char_class.unions = unions;
+      set_node_span_from_bytes(parser, char_class_node, atom_span_bytes, parser->pattern_bytes);
       *out_node_ptr = char_class_node;
 
       break;
@@ -3126,6 +3177,7 @@ static nk_error_t parse_atom(nk_parser_t* parser, token_t* tok, nk_node_t** out_
       }
       dot_node->base.type = NK_NODE_TYPE_DOT;
       dot_node->dot.allows_newline = parser->dot_allows_newline;
+      set_node_span_from_token(parser, dot_node, tok);
       *out_node_ptr = dot_node;
       break;
     }
@@ -3138,6 +3190,7 @@ static nk_error_t parse_atom(nk_parser_t* parser, token_t* tok, nk_node_t** out_
       assertion_node->base.type = NK_NODE_TYPE_ASSERTION;
       assertion_node->assertion.type = tok->data.assertion.type;
       assertion_node->assertion.child = NULL;
+      set_node_span_from_token(parser, assertion_node, tok);
       *out_node_ptr = assertion_node;
       break;
     }
@@ -3155,6 +3208,7 @@ static nk_error_t parse_atom(nk_parser_t* parser, token_t* tok, nk_node_t** out_
       char_type_node->char_type.is_ascii_only = parser->char_type_is_ascii_only;
       char_type_node->char_type.is_ignore_case = parser->is_ignore_case;
       char_type_node->char_type.fold_flags = parser->fold_flags;
+      set_node_span_from_token(parser, char_type_node, tok);
       *out_node_ptr = char_type_node;
       break;
     }
@@ -3169,6 +3223,7 @@ static nk_error_t parse_atom(nk_parser_t* parser, token_t* tok, nk_node_t** out_
       char_prop_node->char_prop.is_positive = tok->data.char_prop.is_positive;
       char_prop_node->char_prop.is_ignore_case = parser->is_ignore_case;
       char_prop_node->char_prop.fold_flags = parser->fold_flags;
+      set_node_span_from_token(parser, char_prop_node, tok);
       *out_node_ptr = char_prop_node;
       break;
     }
@@ -3179,6 +3234,7 @@ static nk_error_t parse_atom(nk_parser_t* parser, token_t* tok, nk_node_t** out_
         return NK_ERR_MEMORY_ALLOCATION_FAILED;
       }
       gc_node->base.type = NK_NODE_TYPE_GRAPHEME_CLUSTER;
+      set_node_span_from_token(parser, gc_node, tok);
       *out_node_ptr = gc_node;
       break;
     }
@@ -3189,6 +3245,7 @@ static nk_error_t parse_atom(nk_parser_t* parser, token_t* tok, nk_node_t** out_
         return NK_ERR_MEMORY_ALLOCATION_FAILED;
       }
       keep_node->base.type = NK_NODE_TYPE_KEEP;
+      set_node_span_from_token(parser, keep_node, tok);
       *out_node_ptr = keep_node;
       break;
     }
@@ -3199,6 +3256,7 @@ static nk_error_t parse_atom(nk_parser_t* parser, token_t* tok, nk_node_t** out_
         return NK_ERR_MEMORY_ALLOCATION_FAILED;
       }
       newline_node->base.type = NK_NODE_TYPE_NEWLINE;
+      set_node_span_from_token(parser, newline_node, tok);
       *out_node_ptr = newline_node;
       break;
     }
@@ -3209,6 +3267,8 @@ static nk_error_t parse_atom(nk_parser_t* parser, token_t* tok, nk_node_t** out_
         return NK_ERR_MEMORY_ALLOCATION_FAILED;
       }
       back_ref_node->base.type = NK_NODE_TYPE_BACK_REF;
+      back_ref_node->back_ref.is_ignore_case = parser->is_ignore_case;
+      back_ref_node->back_ref.fold_flags = parser->fold_flags;
       back_ref_node->back_ref.has_name = tok->data.back_ref.has_name;
       back_ref_node->back_ref.group_num = tok->data.back_ref.group_num;
       back_ref_node->back_ref.has_depth = tok->data.back_ref.has_depth;
@@ -3216,6 +3276,7 @@ static nk_error_t parse_atom(nk_parser_t* parser, token_t* tok, nk_node_t** out_
       if (tok->data.back_ref.has_name) {
         back_ref_node->back_ref.name_buf = tok->data.back_ref.name_buf;
       }
+      set_node_span_from_token(parser, back_ref_node, tok);
       *out_node_ptr = back_ref_node;
       break;
     }
@@ -3231,6 +3292,7 @@ static nk_error_t parse_atom(nk_parser_t* parser, token_t* tok, nk_node_t** out_
       if (tok->data.call.has_name) {
         call_node->call.name_buf = tok->data.call.name_buf;
       }
+      set_node_span_from_token(parser, call_node, tok);
       *out_node_ptr = call_node;
       break;
     }
@@ -3269,6 +3331,7 @@ static nk_error_t parse_atom(nk_parser_t* parser, token_t* tok, nk_node_t** out_
       group_node->group.child = child_node;
       group_node->group.has_name = false;
       group_node->group.group_num = group_num;
+      set_node_span_from_bytes(parser, group_node, atom_span_bytes, tok->span_bytes_end);
 
       *out_node_ptr = group_node;
 
@@ -3315,6 +3378,7 @@ static nk_error_t parse_atom(nk_parser_t* parser, token_t* tok, nk_node_t** out_
       group_node->group.has_name = true;
       group_node->group.name_buf = name_buf;
       group_node->group.group_num = 0;
+      set_node_span_from_bytes(parser, group_node, atom_span_bytes, tok->span_bytes_end);
 
       *out_node_ptr = group_node;
 
@@ -3348,6 +3412,8 @@ static nk_error_t parse_atom(nk_parser_t* parser, token_t* tok, nk_node_t** out_
       lookaround_node->base.type = NK_NODE_TYPE_ASSERTION;
       lookaround_node->assertion.type = type;
       lookaround_node->assertion.child = child_node;
+      set_node_span_from_bytes(parser, lookaround_node, atom_span_bytes, tok->span_bytes_end);
+
       *out_node_ptr = lookaround_node;
       break;
     }
@@ -3377,6 +3443,8 @@ static nk_error_t parse_atom(nk_parser_t* parser, token_t* tok, nk_node_t** out_
 
       atomic_node->base.type = NK_NODE_TYPE_ATOMIC;
       atomic_node->atomic.child = child_node;
+      set_node_span_from_bytes(parser, atomic_node, atom_span_bytes, tok->span_bytes_end);
+
       *out_node_ptr = atomic_node;
       break;
     }
@@ -3405,6 +3473,8 @@ static nk_error_t parse_atom(nk_parser_t* parser, token_t* tok, nk_node_t** out_
       }
       absence_node->base.type = NK_NODE_TYPE_ABSENCE;
       absence_node->absence.child = child_node;
+
+      set_node_span_from_bytes(parser, absence_node, atom_span_bytes, tok->span_bytes_end);
       *out_node_ptr = absence_node;
       break;
     }
@@ -3452,6 +3522,7 @@ static nk_error_t parse_atom(nk_parser_t* parser, token_t* tok, nk_node_t** out_
       group_node->group.child = child_node;
       group_node->group.has_name = false;
       group_node->group.group_num = 0;
+      set_node_span_from_bytes(parser, group_node, atom_span_bytes, tok->span_bytes_end);
 
       parser->is_extended_mode = is_extended_mode;
       parser->is_ignore_case = is_ignore_case;
@@ -3503,6 +3574,7 @@ static nk_error_t parse_atom(nk_parser_t* parser, token_t* tok, nk_node_t** out_
       group_node->group.child = child_node;
       group_node->group.has_name = false;
       group_node->group.group_num = 0;
+      set_node_span_from_bytes(parser, group_node, atom_span_bytes, node_span_end_bytes(parser, child_node));
 
       parser->is_extended_mode = is_extended_mode;
       parser->is_ignore_case = is_ignore_case;
@@ -3593,6 +3665,8 @@ static nk_error_t parse_atom(nk_parser_t* parser, token_t* tok, nk_node_t** out_
       conditional_node->conditional.depth = depth;
       conditional_node->conditional.yes_child = yes_node;
       conditional_node->conditional.no_child = no_node;
+
+      set_node_span_from_bytes(parser, conditional_node, atom_span_bytes, tok->span_bytes_end);
       *out_node_ptr = conditional_node;
 
       break;
@@ -3634,6 +3708,12 @@ static nk_error_t parse_quantifier(nk_parser_t* parser, token_t* tok, nk_node_t*
     quantifier_node->quantifier.min = tok->data.quantifier.min;
     quantifier_node->quantifier.max = tok->data.quantifier.max;
     quantifier_node->quantifier.type = tok->data.quantifier.type;
+    set_node_span_from_bytes(
+      parser,
+      quantifier_node,
+      node_span_begin_bytes(parser, *out_node_ptr),
+      tok->span_bytes_end
+    );
 
     *out_node_ptr = quantifier_node;
 
@@ -3659,6 +3739,7 @@ static nk_error_t parse_concat(nk_parser_t* parser, token_t* tok, nk_node_t** ou
     empty_node->base.type = NK_NODE_TYPE_CONCAT;
     empty_node->concat.children = NULL;
     empty_node->concat.children_len = 0;
+    set_node_span_from_bytes(parser, empty_node, tok->span_bytes, tok->span_bytes);
 
     *out_node_ptr = empty_node;
     return NK_SUCCESS;
@@ -3718,6 +3799,13 @@ static nk_error_t parse_concat(nk_parser_t* parser, token_t* tok, nk_node_t** ou
           return err;
         }
 
+        set_node_span_from_bytes(
+          parser,
+          last_literal_node,
+          node_span_begin_bytes(parser, last_literal_node),
+          node_span_end_bytes(parser, new_literal_node)
+        );
+
         nk_node_free(new_literal_node);
         concat_children[--concat_children_len] = NULL;
       }
@@ -3757,6 +3845,12 @@ static nk_error_t parse_concat(nk_parser_t* parser, token_t* tok, nk_node_t** ou
   concat_node->base.type = NK_NODE_TYPE_CONCAT;
   concat_node->concat.children = concat_children;
   concat_node->concat.children_len = concat_children_len;
+  set_node_span_from_bytes(
+    parser,
+    concat_node,
+    node_span_begin_bytes(parser, concat_children[0]),
+    node_span_end_bytes(parser, concat_children[concat_children_len - 1])
+  );
 
   *out_node_ptr = concat_node;
   return NK_SUCCESS;
@@ -3830,6 +3924,12 @@ static nk_error_t parse_alt(nk_parser_t* parser, token_t* tok, nk_node_t** out_n
   alt_node->base.type = NK_NODE_TYPE_ALT;
   alt_node->alt.children = alt_children;
   alt_node->alt.children_len = alt_children_len;
+  set_node_span_from_bytes(
+    parser,
+    alt_node,
+    node_span_begin_bytes(parser, alt_children[0]),
+    node_span_end_bytes(parser, alt_children[alt_children_len - 1])
+  );
 
   *out_node_ptr = alt_node;
   return NK_SUCCESS;

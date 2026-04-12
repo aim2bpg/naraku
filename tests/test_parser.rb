@@ -5,7 +5,69 @@ module Parser
     def parse(pattern, encoding: Naraku::Encoding::UTF_8, **options)
       parser = Naraku::Parser.new(encoding, pattern, **options)
       node = parser.parse
-      node.to_h
+      result = node.to_h
+      assert_span_consistency(pattern, result)
+      result
+    end
+
+    def assert_span_consistency(pattern, root)
+      pattern_len = pattern.bytesize
+      assert_node_span(root, pattern_len, 0, pattern_len)
+    end
+
+    def assert_span_fields(obj, kind, pattern_len, parent_offset, parent_end)
+      assert obj.key?(:span_offset), "#{kind} is missing span_offset"
+      assert obj.key?(:span_length), "#{kind} is missing span_length"
+      offset = obj[:span_offset]
+      length = obj[:span_length]
+      assert offset.is_a?(Integer), "#{kind} span_offset must be an Integer"
+      assert length.is_a?(Integer), "#{kind} span_length must be an Integer"
+      assert offset >= 0, "#{kind} span_offset must be non-negative"
+      assert length >= 0, "#{kind} span_length must be non-negative"
+
+      span_end = offset + length
+      assert span_end <= pattern_len, "#{kind} span must be within pattern length"
+      assert offset >= parent_offset, "#{kind} span_offset must be inside parent span"
+      assert span_end <= parent_end, "#{kind} span_end must be inside parent span"
+
+      [offset, span_end]
+    end
+
+    def assert_node_span(node, pattern_len, parent_offset, parent_end)
+      kind = "node(#{node[:type]})"
+      offset, span_end = assert_span_fields(node, kind, pattern_len, parent_offset, parent_end)
+
+      case node[:type]
+      when :char_class
+        node[:unions].each do |char_class_union|
+          assert_char_class_union_span(char_class_union, pattern_len, offset, span_end)
+        end
+      when :assertion, :quantifier, :group, :atomic, :absence
+        assert_node_span(node[:child], pattern_len, offset, span_end) if node[:child]
+      when :conditional
+        assert_node_span(node[:yes_child], pattern_len, offset, span_end)
+        assert_node_span(node[:no_child], pattern_len, offset, span_end) if node[:no_child]
+      when :concat, :alt
+        node[:children].each do |child|
+          assert_node_span(child, pattern_len, offset, span_end)
+        end
+      end
+    end
+
+    def assert_char_class_union_span(char_class_union, pattern_len, parent_offset, parent_end)
+      offset, span_end = assert_span_fields(char_class_union, 'char_class_union', pattern_len, parent_offset, parent_end)
+      char_class_union[:items].each do |item|
+        assert_char_class_item_span(item, pattern_len, offset, span_end)
+      end
+    end
+
+    def assert_char_class_item_span(item, pattern_len, parent_offset, parent_end)
+      offset, span_end = assert_span_fields(item, "char_class_item(#{item[:type]})", pattern_len, parent_offset, parent_end)
+      return unless item[:type] == :nested_char_class
+
+      item[:unions].each do |char_class_union|
+        assert_char_class_union_span(char_class_union, pattern_len, offset, span_end)
+      end
     end
 
     # ========================================================================
@@ -102,6 +164,12 @@ module Parser
       result = parse('aあb')
       assert_equal :literal, result[:type]
       assert_equal 'aあb', result[:buf]
+    end
+
+    def test_node_span_for_literal
+      result = parse('abc')
+      assert_equal 0, result[:span_offset]
+      assert_equal 3, result[:span_length]
     end
 
     # ========================================================================
@@ -862,6 +930,21 @@ module Parser
       assert_equal 'cd', result[:children][1][:buf]
     end
 
+    def test_node_span_for_alt
+      result = parse('a|bc')
+      assert_equal :alt, result[:type]
+      assert_equal 0, result[:span_offset]
+      assert_equal 4, result[:span_length]
+
+      left = result[:children][0]
+      assert_equal 0, left[:span_offset]
+      assert_equal 1, left[:span_length]
+
+      right = result[:children][1]
+      assert_equal 2, right[:span_offset]
+      assert_equal 2, right[:span_length]
+    end
+
     # ========================================================================
     #
     # Extended mode:
@@ -1319,6 +1402,22 @@ module Parser
       assert_raises(Naraku::ParseError, 'empty POSIX character class name (at offset 2)') { parse('[[:^:]]') }
       assert_raises(Naraku::ParseError, 'invalid POSIX character class name (at offset 2)') { parse('[[:foo:]]') }
       assert_raises(Naraku::ParseError, 'invalid POSIX character class name (at offset 2)') { parse('[[:digitx:]]') }
+    end
+
+    def test_char_class_span
+      result = parse('[a-z]')
+      assert_equal :char_class, result[:type]
+      assert_equal 0, result[:span_offset]
+      assert_equal 5, result[:span_length]
+
+      union = result[:unions][0]
+      assert_equal 1, union[:span_offset]
+      assert_equal 3, union[:span_length]
+
+      item = union[:items][0]
+      assert_equal :range, item[:type]
+      assert_equal 1, item[:span_offset]
+      assert_equal 3, item[:span_length]
     end
 
     # ========================================================================
