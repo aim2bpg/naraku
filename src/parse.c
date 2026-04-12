@@ -2642,7 +2642,6 @@ static inline nk_error_t lex_in_char_class(nk_parser_t* parser, token_t* out_tok
 
 static nk_error_t parse_char_class_intersection(
   nk_parser_t* parser,
-  token_t* tok,
   bool* out_is_positive,
   size_t* out_unions_len,
   nk_char_class_union_t*** out_unions_ptr
@@ -2700,24 +2699,13 @@ static nk_error_t parse_char_class_item(nk_parser_t* parser, const token_t* tok,
     }
     case TK_CHAR_CLASS_OPEN:
     {
-      token_t nested_tok;
       bool is_positive = true;
       size_t unions_len = 0;
       nk_char_class_union_t** unions = NULL;
-      nk_error_t err = parse_char_class_intersection(parser, &nested_tok, &is_positive, &unions_len, &unions);
+      nk_error_t err = parse_char_class_intersection(parser, &is_positive, &unions_len, &unions);
       if (err != NK_SUCCESS) {
         free(item);
         return err;
-      }
-
-      if (nested_tok.type != TK_CHAR_CLASS_CLOSE) {
-        for (size_t i = 0; i < unions_len; i++) {
-          char_class_union_free(unions[i]);
-          unions[i] = NULL;
-        }
-        free(unions);
-        free(item);
-        return NK_ERR_UNTERMINATED_CHAR_CLASS;
       }
 
       item->type = NK_CHAR_CLASS_ITEM_TYPE_NESTED_CHAR_CLASS;
@@ -2785,6 +2773,9 @@ static nk_error_t parse_char_class_union(nk_parser_t* parser, token_t* tok, nk_c
       if (begin_item->type != NK_CHAR_CLASS_ITEM_TYPE_CODE) {
         char_class_union_free(u);
         char_class_item_free(begin_item);
+        // TODO: improve the error position.
+        parser->error_bytes = begin_tok.span_bytes;
+        parser->error_bytes_end = begin_tok.span_bytes_end;
         return NK_ERR_INVALID_CHAR_CLASS_RANGE;
       }
 
@@ -2800,6 +2791,9 @@ static nk_error_t parse_char_class_union(nk_parser_t* parser, token_t* tok, nk_c
         char_class_union_free(u);
         char_class_item_free(begin_item);
         char_class_item_free(end_item);
+        // TODO: improve the error position.
+        parser->error_bytes = tok->span_bytes;
+        parser->error_bytes_end = tok->span_bytes;
         return NK_ERR_INVALID_CHAR_CLASS_RANGE;
       }
 
@@ -2807,6 +2801,8 @@ static nk_error_t parse_char_class_union(nk_parser_t* parser, token_t* tok, nk_c
         char_class_union_free(u);
         char_class_item_free(begin_item);
         char_class_item_free(end_item);
+        parser->error_bytes = begin_tok.span_bytes;
+        parser->error_bytes_end = tok->span_bytes_end;
         return NK_ERR_CHAR_CLASS_RANGE_OUT_OF_ORDER;
       }
 
@@ -2919,7 +2915,6 @@ static nk_error_t parse_char_class_union(nk_parser_t* parser, token_t* tok, nk_c
 
 static nk_error_t parse_char_class_intersection(
   nk_parser_t* parser,
-  token_t* tok,
   bool* out_is_positive,
   size_t* out_unions_len,
   nk_char_class_union_t*** out_unions_ptr
@@ -2928,26 +2923,29 @@ static nk_error_t parse_char_class_intersection(
   *out_unions_len = 0;
   *out_unions_ptr = NULL;
 
-  nk_error_t err = lex_in_char_class(parser, tok, CC_STATE_BEGIN);
+  token_t tok;
+  nk_error_t err = lex_in_char_class(parser, &tok, CC_STATE_BEGIN);
   if (err != NK_SUCCESS) {
     return err;
   }
 
-  if (tok->type == TK_CHAR_CLASS_NEGATION) {
+  if (tok.type == TK_CHAR_CLASS_NEGATION) {
     *out_is_positive = false;
 
-    err = lex_in_char_class(parser, tok, CC_STATE_BEGIN_AFTER_NEGATION);
+    err = lex_in_char_class(parser, &tok, CC_STATE_BEGIN_AFTER_NEGATION);
     if (err != NK_SUCCESS) {
       return err;
     }
   }
 
-  if (tok->type == TK_CHAR_CLASS_CLOSE) {
+  if (tok.type == TK_CHAR_CLASS_CLOSE) {
+    parser->error_bytes = tok.span_bytes;
+    parser->error_bytes_end = tok.span_bytes_end;
     return NK_ERR_EMPTY_CHAR_CLASS;
   }
 
   nk_char_class_union_t* u = NULL;
-  err = parse_char_class_union(parser, tok, &u);
+  err = parse_char_class_union(parser, &tok, &u);
   if (err != NK_SUCCESS) {
     return err;
   }
@@ -2962,8 +2960,8 @@ static nk_error_t parse_char_class_intersection(
 
   unions[0] = u;
 
-  while (tok->type == TK_CHAR_CLASS_INTERSECTION) {
-    nk_error_t err = lex_in_char_class(parser, tok, CC_STATE_WAIT_RANGE_BEGIN);
+  while (tok.type == TK_CHAR_CLASS_INTERSECTION) {
+    nk_error_t err = lex_in_char_class(parser, &tok, CC_STATE_WAIT_RANGE_BEGIN);
     if (err != NK_SUCCESS) {
       for (size_t i = 0; i < unions_len; i++) {
         char_class_union_free(unions[i]);
@@ -2974,7 +2972,7 @@ static nk_error_t parse_char_class_intersection(
     }
 
     nk_char_class_union_t* u = NULL;
-    err = parse_char_class_union(parser, tok, &u);
+    err = parse_char_class_union(parser, &tok, &u);
     if (err != NK_SUCCESS) {
       for (size_t i = 0; i < unions_len; i++) {
         char_class_union_free(unions[i]);
@@ -3017,6 +3015,17 @@ static nk_error_t parse_char_class_intersection(
       return NK_ERR_MEMORY_ALLOCATION_FAILED;
     }
     unions = resized_unions;
+  }
+
+  if (tok.type != TK_CHAR_CLASS_CLOSE) {
+    for (size_t i = 0; i < unions_len; i++) {
+      char_class_union_free(unions[i]);
+      unions[i] = NULL;
+    }
+    free(unions);
+    parser->error_bytes = tok.span_bytes;
+    parser->error_bytes_end = tok.span_bytes_end;
+    return NK_ERR_UNTERMINATED_CHAR_CLASS;
   }
 
   *out_unions_len = unions_len;
@@ -3079,18 +3088,9 @@ static nk_error_t parse_atom(nk_parser_t* parser, token_t* tok, nk_node_t** out_
       bool is_positive = true;
       size_t unions_len = 0;
       nk_char_class_union_t** unions = NULL;
-      nk_error_t err = parse_char_class_intersection(parser, tok, &is_positive, &unions_len, &unions);
+      nk_error_t err = parse_char_class_intersection(parser, &is_positive, &unions_len, &unions);
       if (err != NK_SUCCESS) {
         return err;
-      }
-
-      if (tok->type != TK_CHAR_CLASS_CLOSE) {
-        for (size_t i = 0; i < unions_len; i++) {
-          char_class_union_free(unions[i]);
-          unions[i] = NULL;
-        }
-        free(unions);
-        return NK_ERR_UNTERMINATED_CHAR_CLASS;
       }
 
       nk_node_t* char_class_node = (nk_node_t*)malloc(sizeof(nk_node_t));

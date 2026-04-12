@@ -1314,8 +1314,8 @@ module Parser
     def test_char_class_errors
       assert_raises(Naraku::ParseError, 'unterminated character class (at offset 1)') { parse('[') }
       assert_raises(Naraku::ParseError, 'empty character class (at offset 1)') { parse('[]') }
-      assert_raises(Naraku::ParseError, 'character class range out of order (at offset 3)') { parse('[z-a]') }
-      assert_raises(Naraku::ParseError, 'invalid character class range (at offset 4)') { parse('[\\d-\\w]') }
+      assert_raises(Naraku::ParseError, 'character class range out of order (at offset 1)') { parse('[z-a]') }
+      assert_raises(Naraku::ParseError, 'invalid character class range (at offset 1)') { parse('[\\d-\\w]') }
       assert_raises(Naraku::ParseError, 'empty POSIX character class name (at offset 2)') { parse('[[:^:]]') }
       assert_raises(Naraku::ParseError, 'invalid POSIX character class name (at offset 2)') { parse('[[:foo:]]') }
       assert_raises(Naraku::ParseError, 'invalid POSIX character class name (at offset 2)') { parse('[[:digitx:]]') }
