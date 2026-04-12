@@ -172,6 +172,7 @@ lex_decimal_number(nk_parser_t* parser, uint32_t* out_value, uint32_t max_value,
 
 static nk_error_t lex_bounded_quantifier(
   nk_parser_t* parser,
+  const uint8_t* quantifier_begin,
   uint32_t* out_min,
   uint32_t* out_max,
   bool* out_is_incomplete,
@@ -256,6 +257,7 @@ static nk_error_t lex_bounded_quantifier(
   }
 
   if (*out_min > *out_max) {
+    set_error_span_to_current(parser, quantifier_begin);
     return NK_ERR_NUMBERS_OUT_OF_ORDER_IN_QUANTIFIER;
   }
 
@@ -364,6 +366,7 @@ static nk_error_t lex_unicode_escape(
   *out_code_bytes_end = NULL;
 
   if ((parser->enc->flags & NK_ENC_FLAG_UNICODE) == 0) {
+    set_error_span_to_current(parser, escape_bytes);
     return NK_ERR_UNICODE_ESCAPE_IN_NON_UNICODE_ENCODING;
   }
 
@@ -1205,18 +1208,21 @@ static nk_error_t lex_char_prop_escape(nk_parser_t* parser, uint32_t code, token
   nk_pbuf_t name_buf;
   err = lex_name(parser, '}', false, &name_buf, NK_ERR_UNCLOSED_CHAR_PROP_ESCAPE_BRACE);
   if (err != NK_SUCCESS) {
+    if (err == NK_ERR_UNCLOSED_CHAR_PROP_ESCAPE_BRACE) {
+      set_error_span_to_current(parser, out_token->span_bytes);
+    }
     return err;
   }
 
   if (parser->pattern_bytes >= parser->pattern_bytes_end) {
     nk_pbuf_free(&name_buf);
+    set_error_span_to_current(parser, out_token->span_bytes);
     return NK_ERR_UNCLOSED_CHAR_PROP_ESCAPE_BRACE;
   }
 
   if (name_buf.bytes >= name_buf.bytes_end) {
     nk_pbuf_free(&name_buf);
-    parser->error_bytes = name_bytes_for_error_report;
-    parser->error_bytes_end = parser->pattern_bytes;
+    set_error_span_to_current(parser, out_token->span_bytes);
     return NK_ERR_EMPTY_CHAR_PROP_NAME;
   }
 
@@ -1228,6 +1234,7 @@ static nk_error_t lex_char_prop_escape(nk_parser_t* parser, uint32_t code, token
 
   if (brace_code != '}') {
     nk_pbuf_free(&name_buf);
+    set_error_span_to_current(parser, out_token->span_bytes);
     return NK_ERR_UNCLOSED_CHAR_PROP_ESCAPE_BRACE;
   }
 
@@ -1484,6 +1491,7 @@ static nk_error_t lex_internal(nk_parser_t* parser, token_t* out_token) {
         bool allows_reluctant;
         nk_error_t err = lex_bounded_quantifier(
           parser,
+          out_token->span_bytes,
           &out_token->data.quantifier.min,
           &out_token->data.quantifier.max,
           &is_incomplete,
@@ -3773,6 +3781,7 @@ static nk_error_t parse_atom(nk_parser_t* parser, token_t* tok, nk_node_t** out_
         if (has_name) {
           nk_pbuf_free(&name_buf);
         }
+        set_error_span(parser, tok->span_bytes, tok->span_bytes);
         return NK_ERR_INVALID_CONDITIONAL_GROUP;
       }
 

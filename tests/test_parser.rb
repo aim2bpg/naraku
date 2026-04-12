@@ -411,8 +411,8 @@ module Parser
 
     def test_unicode_escape_encoding_constraint
       # U+0080 is out of range for US-ASCII.
-      assert_parse_error('\u0080', 'Unicode escape sequence in non-Unicode encoding', offset: 2, length: 0, encoding: Naraku::Encoding::US_ASCII)
-      assert_parse_error('\u{80}', 'Unicode escape sequence in non-Unicode encoding', offset: 2, length: 0, encoding: Naraku::Encoding::US_ASCII)
+      assert_parse_error('\u0080', 'Unicode escape sequence in non-Unicode encoding', offset: 0, length: 2, encoding: Naraku::Encoding::US_ASCII)
+      assert_parse_error('\u{80}', 'Unicode escape sequence in non-Unicode encoding', offset: 0, length: 2, encoding: Naraku::Encoding::US_ASCII)
     end
 
     def test_unicode_escape_errors
@@ -643,9 +643,9 @@ module Parser
 
     def test_char_prop_errors
       # Unclosed brace
-      assert_parse_error('\p{Lu', 'unclosed character property escape sequence brace', offset: 5, length: 0)
+      assert_parse_error('\p{Lu', 'unclosed character property escape sequence brace', offset: 0, length: 5)
       # Empty property name
-      assert_parse_error('\p{}', 'empty character property name', offset: 3, length: 0)
+      assert_parse_error('\p{}', 'empty character property name', offset: 0, length: 3)
       # Invalid property name
       assert_parse_error('\p{InvalidProperty}', 'invalid character property name', offset: 3, length: 15)
       assert_parse_error('\p{^InvalidProperty}', 'invalid character property name', offset: 4, length: 15)
@@ -867,7 +867,7 @@ module Parser
     end
 
     def test_quantifier_error_numbers_out_of_order
-      assert_parse_error('a{2,1}', 'numbers in quantifier are out of order', offset: 5, length: 0)
+      assert_parse_error('a{2,1}', 'numbers in quantifier are out of order', offset: 1, length: 4)
     end
 
     # ========================================================================
