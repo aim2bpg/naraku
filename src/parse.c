@@ -547,8 +547,7 @@ lex_octal_number(nk_parser_t* parser, uint32_t* out_code, int max_digits, nk_err
   return NK_SUCCESS;
 }
 
-static nk_error_t
-lex_escape_single_byte(nk_parser_t* parser, const uint8_t* escape_bytes, uint8_t* out_byte) {
+static nk_error_t lex_escape_single_byte(nk_parser_t* parser, const uint8_t* escape_bytes, uint8_t* out_byte) {
   bool retry = true;
   bool control_prefix = false;
   bool meta_prefix = false;
@@ -883,14 +882,8 @@ static nk_error_t lex_name(
         bool u_is_unclosed_brace;
         const uint8_t* code_bytes;
         const uint8_t* code_bytes_end;
-        nk_error_t err = lex_unicode_escape(
-          parser,
-          escape_bytes,
-          &code,
-          &u_is_unclosed_brace,
-          &code_bytes,
-          &code_bytes_end
-        );
+        nk_error_t err =
+          lex_unicode_escape(parser, escape_bytes, &code, &u_is_unclosed_brace, &code_bytes, &code_bytes_end);
         if (err != NK_SUCCESS) {
           nk_pbuf_free(out_name_buf);
           return err;
@@ -1095,11 +1088,7 @@ static nk_error_t lex_group_num_or_name_with_depth(
   return NK_SUCCESS;
 }
 
-static nk_error_t lex_pending_unicode_escape_in_brace(
-  nk_parser_t* parser,
-  token_t* out_token,
-  bool* out_is_handled
-) {
+static nk_error_t lex_pending_unicode_escape_in_brace(nk_parser_t* parser, token_t* out_token, bool* out_is_handled) {
   *out_is_handled = false;
 
   if (!parser->in_unicode_escape_brace) {
@@ -1275,14 +1264,8 @@ static nk_error_t lex_common_escape(
       bool is_unclosed_brace;
       const uint8_t* code_bytes;
       const uint8_t* code_bytes_end;
-      nk_error_t err = lex_unicode_escape(
-        parser,
-        escape_bytes,
-        &escaped_code,
-        &is_unclosed_brace,
-        &code_bytes,
-        &code_bytes_end
-      );
+      nk_error_t err =
+        lex_unicode_escape(parser, escape_bytes, &escaped_code, &is_unclosed_brace, &code_bytes, &code_bytes_end);
       if (err != NK_SUCCESS) {
         return err;
       }
@@ -2259,14 +2242,14 @@ static nk_error_t lex_internal(nk_parser_t* parser, token_t* out_token) {
             FALLTHROUGH;
           }
 
-            // Other case: treat the escaped character as a code itself.
-            default:
-            {
-              bool is_handled = false;
-              nk_error_t err = lex_common_escape(parser, escape_bytes, width, code, &retry, &is_handled, out_token);
-              if (err != NK_SUCCESS) {
-                return err;
-              }
+          // Other case: treat the escaped character as a code itself.
+          default:
+          {
+            bool is_handled = false;
+            nk_error_t err = lex_common_escape(parser, escape_bytes, width, code, &retry, &is_handled, out_token);
+            if (err != NK_SUCCESS) {
+              return err;
+            }
             if (is_handled) {
               if (retry) {
                 continue;
@@ -2313,7 +2296,12 @@ static inline nk_error_t lex(nk_parser_t* parser, token_t* out_token) {
   return NK_SUCCESS;
 }
 
-static nk_error_t lex_posix_char_class_name(nk_parser_t* parser, bool* out_is_closed, nk_pbuf_t* out_name_buf, const uint8_t** out_name_bytes_end_for_error_report) {
+static nk_error_t lex_posix_char_class_name(
+  nk_parser_t* parser,
+  bool* out_is_closed,
+  nk_pbuf_t* out_name_buf,
+  const uint8_t** out_name_bytes_end_for_error_report
+) {
   *out_is_closed = false;
   out_name_buf->type = NK_PBUF_VIEW;
   out_name_buf->bytes = out_name_buf->bytes_end = parser->pattern_bytes;
@@ -2343,7 +2331,7 @@ static nk_error_t lex_posix_char_class_name(nk_parser_t* parser, bool* out_is_cl
 
       if (bracket_code == ']') {
         *out_name_bytes_end_for_error_report = parser->pattern_bytes - width;  // exclude `:`
-        parser->pattern_bytes += bracket_width;  // consume `]`
+        parser->pattern_bytes += bracket_width;                                // consume `]`
         *out_is_closed = true;
         return NK_SUCCESS;
       }
@@ -2366,14 +2354,8 @@ static nk_error_t lex_posix_char_class_name(nk_parser_t* parser, bool* out_is_cl
         bool u_is_unclosed_brace;
         const uint8_t* code_bytes;
         const uint8_t* code_bytes_end;
-        nk_error_t err = lex_unicode_escape(
-          parser,
-          escape_bytes,
-          &code,
-          &u_is_unclosed_brace,
-          &code_bytes,
-          &code_bytes_end
-        );
+        nk_error_t err =
+          lex_unicode_escape(parser, escape_bytes, &code, &u_is_unclosed_brace, &code_bytes, &code_bytes_end);
         if (err != NK_SUCCESS) {
           nk_pbuf_free(out_name_buf);
           return err;
