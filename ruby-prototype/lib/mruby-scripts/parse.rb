@@ -15,7 +15,9 @@ def run(request)
     end
   end
 
-  options[:fold] = options[:fold].map(&:to_sym) if options[:fold]&.is_a?(Array)
+  if options[:fold_flags]&.is_a?(Array)
+    options[:fold_flags] = options[:fold_flags].map(&:to_sym)
+  end
 
   enc = Naraku::Encoding::UTF_8
   parser = Naraku::Parser.new(enc, pattern, **options)
