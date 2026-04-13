@@ -82,6 +82,8 @@ const uint8_t* nk_error_message(nk_error_t err) {
       return (const uint8_t*)"invalid conditional group number";
     case NK_ERR_PARSE_DEPTH_LIMIT_EXCEEDED:
       return (const uint8_t*)"parse depth limit exceeded";
+    case NK_ERR_NON_BOOLEAN_GROUP_OPTION:
+      return (const uint8_t*)"group option is not boolean";
     case NK_ERR_INVALID_GROUP_NAME:
       return (const uint8_t*)"invalid group name";
     case NK_ERR_EMPTY_GROUP_NAME:
@@ -144,6 +146,8 @@ const uint8_t* nk_warning_message(nk_warning_t warning) {
       return (const uint8_t*)"literal `-` at beginning of character class";
     case NK_WARN_LITERAL_HYPHEN_AT_END_OF_CHAR_CLASS:
       return (const uint8_t*)"literal `-` at end of character class";
+    case NK_WARN_REDUNDANT_GROUP_OPTION_MINUS:
+      return (const uint8_t*)"redundant '-' in group options";
   }
 
   return (const uint8_t*)"BUG: unknown warning";

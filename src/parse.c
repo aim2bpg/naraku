@@ -1841,6 +1841,7 @@ static nk_error_t lex_impl(nk_parser_t* parser, token_t* out_token) {
               case 'F':
               case 'A':
               case 'T':
+              case 'I':
               case '-':
               case ':':
               {
@@ -1881,7 +1882,8 @@ static nk_error_t lex_impl(nk_parser_t* parser, token_t* out_token) {
                       break;
                     case 'd':
                       if (!is_positive) {
-                        return NK_ERR_UNDEFINED_GROUP_OPTION;
+                        set_error_span(parser, parser->pattern_bytes, parser->pattern_bytes + width);
+                        return NK_ERR_NON_BOOLEAN_GROUP_OPTION;
                       }
                       parser->pattern_bytes += width;
                       out_token->data.option.char_type_is_ascii_only = true;
@@ -1889,7 +1891,8 @@ static nk_error_t lex_impl(nk_parser_t* parser, token_t* out_token) {
                       break;
                     case 'a':
                       if (!is_positive) {
-                        return NK_ERR_UNDEFINED_GROUP_OPTION;
+                        set_error_span(parser, parser->pattern_bytes, parser->pattern_bytes + width);
+                        return NK_ERR_NON_BOOLEAN_GROUP_OPTION;
                       }
                       parser->pattern_bytes += width;
                       out_token->data.option.char_type_is_ascii_only = true;
@@ -1897,7 +1900,8 @@ static nk_error_t lex_impl(nk_parser_t* parser, token_t* out_token) {
                       break;
                     case 'u':
                       if (!is_positive) {
-                        return NK_ERR_UNDEFINED_GROUP_OPTION;
+                        set_error_span(parser, parser->pattern_bytes, parser->pattern_bytes + width);
+                        return NK_ERR_NON_BOOLEAN_GROUP_OPTION;
                       }
                       parser->pattern_bytes += width;
                       out_token->data.option.char_type_is_ascii_only = false;
@@ -1905,36 +1909,56 @@ static nk_error_t lex_impl(nk_parser_t* parser, token_t* out_token) {
                       break;
                     case 'S':
                       if (!is_positive) {
-                        return NK_ERR_UNDEFINED_GROUP_OPTION;
+                        set_error_span(parser, parser->pattern_bytes, parser->pattern_bytes + width);
+                        return NK_ERR_NON_BOOLEAN_GROUP_OPTION;
                       }
                       parser->pattern_bytes += width;
                       out_token->data.option.fold_flags &= (nk_fold_flag_t)~NK_FOLD_FULL;
                       break;
                     case 'F':
                       if (!is_positive) {
-                        return NK_ERR_UNDEFINED_GROUP_OPTION;
+                        set_error_span(parser, parser->pattern_bytes, parser->pattern_bytes + width);
+                        return NK_ERR_NON_BOOLEAN_GROUP_OPTION;
                       }
                       parser->pattern_bytes += width;
                       out_token->data.option.fold_flags |= NK_FOLD_FULL;
                       break;
                     case 'A':
-                      if (!is_positive) {
-                        return NK_ERR_UNDEFINED_GROUP_OPTION;
-                      }
                       parser->pattern_bytes += width;
-                      out_token->data.option.fold_flags |= NK_FOLD_ASCII_ONLY;
+                      if (is_positive) {
+                        out_token->data.option.fold_flags |= NK_FOLD_ASCII_ONLY;
+                      } else {
+                        out_token->data.option.fold_flags &= (nk_fold_flag_t)~NK_FOLD_ASCII_ONLY;
+                      }
                       break;
                     case 'T':
-                      if (!is_positive) {
-                        return NK_ERR_UNDEFINED_GROUP_OPTION;
-                      }
                       parser->pattern_bytes += width;
-                      out_token->data.option.fold_flags |= NK_FOLD_TURKISH_AZERI;
+                      if (is_positive) {
+                        out_token->data.option.fold_flags |= NK_FOLD_TURKISH_AZERI;
+                      } else {
+                        out_token->data.option.fold_flags &= (nk_fold_flag_t)~NK_FOLD_TURKISH_AZERI;
+                      }
+                      break;
+                    case 'I':
+                      parser->pattern_bytes += width;
+                      if (is_positive) {
+                        out_token->data.option.is_ignore_case = true;
+                        out_token->data.option.fold_flags &= (nk_fold_flag_t)~NK_FOLD_FULL;
+                        out_token->data.option.fold_flags |= NK_FOLD_ASCII_ONLY;
+                      } else {
+                        out_token->data.option.is_ignore_case = false;
+                      }
                       break;
                     case '-':
                       if (!is_positive) {
-                        // Onigmo allows redundant `-`, but we disallow it for simplicity.
-                        return NK_ERR_UNDEFINED_GROUP_OPTION;
+                        report_warning(
+                          parser,
+                          NK_WARN_REDUNDANT_GROUP_OPTION_MINUS,
+                          parser->pattern_bytes,
+                          parser->pattern_bytes + width
+                        );
+                        parser->pattern_bytes += width;
+                        break;
                       }
                       parser->pattern_bytes += width;
                       is_positive = false;
@@ -1948,6 +1972,7 @@ static nk_error_t lex_impl(nk_parser_t* parser, token_t* out_token) {
                       out_token->type = TK_OPTION;
                       return NK_SUCCESS;
                     default:
+                      set_error_span(parser, parser->pattern_bytes, parser->pattern_bytes + width);
                       return NK_ERR_UNDEFINED_GROUP_OPTION;
                   }
                 }
@@ -1957,6 +1982,7 @@ static nk_error_t lex_impl(nk_parser_t* parser, token_t* out_token) {
               }
 
               default:
+                set_error_span(parser, parser->pattern_bytes, parser->pattern_bytes + width);
                 return NK_ERR_UNDEFINED_GROUP_OPTION;
             }
           }

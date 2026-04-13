@@ -96,6 +96,7 @@ typedef enum nk_error {
   NK_ERR_INVALID_CONDITIONAL_GROUP = -365,
   NK_ERR_INVALID_CONDITIONAL_GROUP_NUMBER = -366,
   NK_ERR_PARSE_DEPTH_LIMIT_EXCEEDED = -367,
+  NK_ERR_NON_BOOLEAN_GROUP_OPTION = -368,
 
   // Errors related to group names and group numbers
   // (for named groups, named back-references, and sub-expression calls):
@@ -150,6 +151,7 @@ typedef enum nk_warning {
   NK_WARN_LITERAL_RIGHT_BRACKET_IN_CHAR_CLASS,
   NK_WARN_LITERAL_HYPHEN_AT_BEGINNING_OF_CHAR_CLASS,
   NK_WARN_LITERAL_HYPHEN_AT_END_OF_CHAR_CLASS,
+  NK_WARN_REDUNDANT_GROUP_OPTION_MINUS,
 } nk_warning_t;
 
 // ==========================================================================

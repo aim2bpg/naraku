@@ -1246,8 +1246,45 @@ module Parser
       assert_equal false, literal[:is_ignore_case]
     end
 
+    def test_group_inline_option_I_is_sugar_for_iSA
+      result_i = parse('(?I:a)')
+      result_isa = parse('(?iSA:a)')
+      assert_equal result_isa[:child][:is_ignore_case], result_i[:child][:is_ignore_case]
+      assert_equal result_isa[:child][:fold_flags], result_i[:child][:fold_flags]
+    end
+
+    def test_group_inline_option_minus_I_is_same_as_minus_i
+      result_minus_i = parse('(?i-i:a)')
+      result_minus_I = parse('(?i-I:a)')
+      assert_equal result_minus_i[:child][:is_ignore_case], result_minus_I[:child][:is_ignore_case]
+      assert_equal false, result_minus_I[:child][:is_ignore_case]
+    end
+
+    def test_group_inline_option_minus_A_and_minus_T_are_allowed
+      result_i = parse('(?i:a)')
+      result_iat_minus_at = parse('(?iAT-AT:a)')
+      assert_equal result_i[:child][:is_ignore_case], result_iat_minus_at[:child][:is_ignore_case]
+      assert_equal result_i[:child][:fold_flags], result_iat_minus_at[:child][:fold_flags]
+    end
+
     def test_undefined_group_option
-      assert_parse_error('(?z)', 'undefined group option', offset: 2, length: 0)
+      assert_parse_error('(?z)', 'undefined group option', offset: 2, length: 1)
+    end
+
+    def test_non_boolean_group_option_in_negative_mode
+      assert_parse_error('(?-S:a)', 'group option is not boolean', offset: 3, length: 1)
+      assert_parse_error('(?-F:a)', 'group option is not boolean', offset: 3, length: 1)
+      assert_parse_error('(?-a:a)', 'group option is not boolean', offset: 3, length: 1)
+      assert_parse_error('(?-d:a)', 'group option is not boolean', offset: 3, length: 1)
+      assert_parse_error('(?-u:a)', 'group option is not boolean', offset: 3, length: 1)
+    end
+
+    def test_warning_for_redundant_minus_in_group_options
+      warnings = collect_parse_warnings('(?--i)')
+      assert_equal 1, warnings.length
+      assert_equal "redundant '-' in group options", warnings[0][:message]
+      assert_equal 3, warnings[0][:offset]
+      assert_equal 1, warnings[0][:length]
     end
 
     def test_group_named
