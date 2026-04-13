@@ -501,6 +501,13 @@ typedef struct nk_parser nk_parser_t;
  */
 typedef void (*nk_warning_func_t)(const char* message);
 
+#define NK_DEFAULT_RANGE_QUANTIFIER_MAX_REPETITION 1000000u
+#define NK_DEFAULT_BARE_BACK_REF_MAX_NUM 10000u
+#define NK_DEFAULT_MAX_GROUP_NUM 10000000u
+#define NK_DEFAULT_BACK_REF_MAX_NUM 10000000u
+#define NK_DEFAULT_MAX_CAPTURE_DEPTH 1000u
+#define NK_DEFAULT_MAX_PARSE_DEPTH 1000u
+
 struct nk_parser {
   const nk_encoding_t* enc;
   const uint8_t* pattern_bytes_begin;
@@ -520,9 +527,18 @@ struct nk_parser {
   // Internal states:
   bool in_unicode_escape_brace;
   uint32_t num_capture_groups;
+  uint32_t parse_depth;
 
   // Statistics:
   bool has_named_groups;
+
+  // Limits:
+  uint32_t range_quantifier_max_repetition;
+  uint32_t bare_back_ref_max_num;
+  uint32_t max_group_num;
+  uint32_t back_ref_max_num;
+  uint32_t max_capture_depth;
+  uint32_t max_parse_depth;
 
   // Error reporting:
   const uint8_t* error_bytes;
@@ -540,9 +556,34 @@ typedef struct {
   bool char_type_is_ascii_only;         // corresponds to `a`, `d`, `u`
   bool posix_char_class_is_ascii_only;  // corresponds to `a`, `d`, `u`
   nk_fold_flag_t fold_flags;            // corresponds to `S`, `F`, `T`, `A`
+  uint32_t range_quantifier_max_repetition;
+  uint32_t bare_back_ref_max_num;
+  uint32_t max_group_num;
+  uint32_t back_ref_max_num;
+  uint32_t max_capture_depth;
+  uint32_t max_parse_depth;
 
   nk_warning_func_t warning_func;
 } nk_parser_options_t;
+
+static inline nk_parser_options_t nk_parser_options_default(void) {
+  return (nk_parser_options_t){
+    .is_extended_mode = false,
+    .is_ignore_case = false,
+    .dot_allows_newline = false,
+    .char_class_is_strict = false,
+    .char_type_is_ascii_only = true,
+    .posix_char_class_is_ascii_only = false,
+    .fold_flags = NK_FOLD_DEFAULT,
+    .range_quantifier_max_repetition = NK_DEFAULT_RANGE_QUANTIFIER_MAX_REPETITION,
+    .bare_back_ref_max_num = NK_DEFAULT_BARE_BACK_REF_MAX_NUM,
+    .max_group_num = NK_DEFAULT_MAX_GROUP_NUM,
+    .back_ref_max_num = NK_DEFAULT_BACK_REF_MAX_NUM,
+    .max_capture_depth = NK_DEFAULT_MAX_CAPTURE_DEPTH,
+    .max_parse_depth = NK_DEFAULT_MAX_PARSE_DEPTH,
+    .warning_func = (nk_warning_func_t)0,
+  };
+}
 
 /**
  * Initializes a regex parser with the given pattern and options.

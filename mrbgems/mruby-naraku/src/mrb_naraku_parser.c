@@ -38,12 +38,18 @@ static mrb_value mrb_naraku_parser_new(mrb_state* mrb, mrb_value self) {
   mrb_bool char_type_is_ascii_only;
   mrb_bool posix_char_class_is_ascii_only;
   mrb_int fold_flags;
+  mrb_int range_quantifier_max_repetition;
+  mrb_int bare_back_ref_max_num;
+  mrb_int max_group_num;
+  mrb_int back_ref_max_num;
+  mrb_int max_capture_depth;
+  mrb_int max_parse_depth;
 
   // TODO: add `warning_func` argument for receiving warnings during parsing
 
   mrb_get_args(
     mrb,
-    "dsbbbbbbi",
+    "dsbbbbbbiiiiiii",
     &encoding_ptr,
     &mrb_naraku_encoding_type,
     &pattern,
@@ -54,7 +60,13 @@ static mrb_value mrb_naraku_parser_new(mrb_state* mrb, mrb_value self) {
     &char_class_is_strict,
     &char_type_is_ascii_only,
     &posix_char_class_is_ascii_only,
-    &fold_flags
+    &fold_flags,
+    &range_quantifier_max_repetition,
+    &bare_back_ref_max_num,
+    &max_group_num,
+    &back_ref_max_num,
+    &max_capture_depth,
+    &max_parse_depth
   );
 
   const nk_encoding_t* enc = (const nk_encoding_t*)encoding_ptr;
@@ -63,6 +75,7 @@ static mrb_value mrb_naraku_parser_new(mrb_state* mrb, mrb_value self) {
   uint8_t* pattern_copy = (uint8_t*)mrb_malloc(mrb, (size_t)pattern_len);
   memcpy(pattern_copy, pattern, (size_t)pattern_len);
 
+  nk_parser_options_t default_options = nk_parser_options_default();
   nk_parser_options_t options = {
     .is_extended_mode = is_extended_mode ? true : false,
     .is_ignore_case = is_ignore_case ? true : false,
@@ -71,6 +84,13 @@ static mrb_value mrb_naraku_parser_new(mrb_state* mrb, mrb_value self) {
     .char_type_is_ascii_only = char_type_is_ascii_only ? true : false,
     .posix_char_class_is_ascii_only = posix_char_class_is_ascii_only ? true : false,
     .fold_flags = (nk_fold_flag_t)fold_flags,
+    .range_quantifier_max_repetition = (uint32_t)range_quantifier_max_repetition,
+    .bare_back_ref_max_num = (uint32_t)bare_back_ref_max_num,
+    .max_group_num = (uint32_t)max_group_num,
+    .back_ref_max_num = (uint32_t)back_ref_max_num,
+    .max_capture_depth = (uint32_t)max_capture_depth,
+    .max_parse_depth = (uint32_t)max_parse_depth,
+    .warning_func = default_options.warning_func,
   };
 
   nk_error_t err = nk_parser_init(enc, pattern_copy, pattern_copy + pattern_len, options, parser);
@@ -129,6 +149,23 @@ void mrb_naraku_parser_gem_init(mrb_state* mrb, struct RClass* naraku_module) {
   mrb_undef_class_method_id(mrb, parser_class, MRB_SYM(new));
   mrb_undef_class_method_id(mrb, parser_class, MRB_SYM(allocate));
 
-  mrb_define_class_method(mrb, parser_class, "_new", mrb_naraku_parser_new, MRB_ARGS_REQ(9));
+  mrb_define_const(
+    mrb,
+    parser_class,
+    "DEFAULT_RANGE_QUANTIFIER_MAX_REPETITION",
+    mrb_fixnum_value(NK_DEFAULT_RANGE_QUANTIFIER_MAX_REPETITION)
+  );
+  mrb_define_const(
+    mrb,
+    parser_class,
+    "DEFAULT_BARE_BACK_REF_MAX_NUM",
+    mrb_fixnum_value(NK_DEFAULT_BARE_BACK_REF_MAX_NUM)
+  );
+  mrb_define_const(mrb, parser_class, "DEFAULT_MAX_GROUP_NUM", mrb_fixnum_value(NK_DEFAULT_MAX_GROUP_NUM));
+  mrb_define_const(mrb, parser_class, "DEFAULT_BACK_REF_MAX_NUM", mrb_fixnum_value(NK_DEFAULT_BACK_REF_MAX_NUM));
+  mrb_define_const(mrb, parser_class, "DEFAULT_MAX_CAPTURE_DEPTH", mrb_fixnum_value(NK_DEFAULT_MAX_CAPTURE_DEPTH));
+  mrb_define_const(mrb, parser_class, "DEFAULT_MAX_PARSE_DEPTH", mrb_fixnum_value(NK_DEFAULT_MAX_PARSE_DEPTH));
+
+  mrb_define_class_method(mrb, parser_class, "_new", mrb_naraku_parser_new, MRB_ARGS_REQ(15));
   mrb_define_method(mrb, parser_class, "parse", mrb_naraku_parser_parse, MRB_ARGS_NONE());
 }

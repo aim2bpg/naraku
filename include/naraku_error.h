@@ -95,6 +95,7 @@ typedef enum {
   NK_ERR_TOO_MANY_CAPTURE_GROUPS = -364,
   NK_ERR_INVALID_CONDITIONAL_GROUP = -365,
   NK_ERR_INVALID_CONDITIONAL_GROUP_NUMBER = -366,
+  NK_ERR_PARSE_DEPTH_LIMIT_EXCEEDED = -367,
 
   // Errors related to group names and group numbers
   // (for named groups, named back-references, and sub-expression calls):

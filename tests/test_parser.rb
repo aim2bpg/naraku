@@ -102,6 +102,15 @@ module Parser
       assert_equal [], result[:children]
     end
 
+    def test_parser_default_limit_constants
+      assert_equal 1_000_000, Naraku::Parser::DEFAULT_RANGE_QUANTIFIER_MAX_REPETITION
+      assert_equal 10_000, Naraku::Parser::DEFAULT_BARE_BACK_REF_MAX_NUM
+      assert_equal 10_000_000, Naraku::Parser::DEFAULT_MAX_GROUP_NUM
+      assert_equal 10_000_000, Naraku::Parser::DEFAULT_BACK_REF_MAX_NUM
+      assert_equal 1_000, Naraku::Parser::DEFAULT_MAX_CAPTURE_DEPTH
+      assert_equal 1_000, Naraku::Parser::DEFAULT_MAX_PARSE_DEPTH
+    end
+
     # ========================================================================
     #
     # Literals:
@@ -866,6 +875,16 @@ module Parser
       assert_parse_error('a{1000001}', 'number in quantifier is too large', offset: 2, length: 7)
     end
 
+    def test_quantifier_error_too_large_number_with_custom_limit
+      assert_parse_error(
+        'a{11}',
+        'number in quantifier is too large',
+        offset: 2,
+        length: 2,
+        range_quantifier_max_repetition: 10
+      )
+    end
+
     def test_quantifier_error_numbers_out_of_order
       assert_parse_error('a{2,1}', 'numbers in quantifier are out of order', offset: 1, length: 4)
     end
@@ -1536,6 +1555,12 @@ module Parser
       assert_equal 'ka', result[:buf]
     end
 
+    def test_bare_back_ref_with_custom_limit
+      result = parse('\9', bare_back_ref_max_num: 8)
+      assert_equal :literal, result[:type]
+      assert_equal '9', result[:buf]
+    end
+
     def test_error_group_number_out_of_range
       # In \k<-1>, the error is reported at > (offset 5)
       assert_parse_error('\k<-1>', 'group number is out of range', offset: 3, length: 2)
@@ -1555,15 +1580,25 @@ module Parser
 
     def test_error_capture_depth_too_large
       assert_parse_error('\k<name+1001>', 'capture depth is too large', offset: 8, length: 4)
+      assert_parse_error('\k<name+3>', 'capture depth is too large', offset: 8, length: 1, max_capture_depth: 2)
     end
 
     def test_error_group_number_too_large
       assert_parse_error('\k<10000001>', 'group number is too large', offset: 3, length: 8)
       assert_parse_error('\g<10000001>', 'group number is too large', offset: 3, length: 8)
+      assert_parse_error('\k<11>', 'group number is too large', offset: 3, length: 2, back_ref_max_num: 10)
     end
 
     def test_error_invalid_back_ref
       assert_parse_error('\k<0>', 'invalid back reference', offset: 3, length: 1)
+    end
+
+    def test_error_too_many_capture_groups_with_custom_limit
+      assert_parse_error('(a)(b)', 'too many capture groups', offset: 3, length: 1, max_group_num: 1)
+    end
+
+    def test_error_parse_depth_limit_exceeded
+      assert_parse_error('a', 'parse depth limit exceeded', offset: 1, length: 0, max_parse_depth: 1)
     end
 
     # ========================================================================

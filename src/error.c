@@ -80,6 +80,8 @@ const uint8_t* nk_error_message(nk_error_t err) {
       return (const uint8_t*)"invalid conditional group";
     case NK_ERR_INVALID_CONDITIONAL_GROUP_NUMBER:
       return (const uint8_t*)"invalid conditional group number";
+    case NK_ERR_PARSE_DEPTH_LIMIT_EXCEEDED:
+      return (const uint8_t*)"parse depth limit exceeded";
     case NK_ERR_INVALID_GROUP_NAME:
       return (const uint8_t*)"invalid group name";
     case NK_ERR_EMPTY_GROUP_NAME:

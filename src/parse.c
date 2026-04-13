@@ -35,9 +35,16 @@ nk_error_t nk_parser_init(
   out_parser->char_type_is_ascii_only = options.char_type_is_ascii_only;
   out_parser->posix_char_class_is_ascii_only = options.posix_char_class_is_ascii_only;
   out_parser->fold_flags = options.fold_flags;
+  out_parser->range_quantifier_max_repetition = options.range_quantifier_max_repetition;
+  out_parser->bare_back_ref_max_num = options.bare_back_ref_max_num;
+  out_parser->max_group_num = options.max_group_num;
+  out_parser->back_ref_max_num = options.back_ref_max_num;
+  out_parser->max_capture_depth = options.max_capture_depth;
+  out_parser->max_parse_depth = options.max_parse_depth;
 
   out_parser->in_unicode_escape_brace = false;
   out_parser->num_capture_groups = 0;
+  out_parser->parse_depth = 0;
   out_parser->has_named_groups = false;
 
   out_parser->error_bytes = NULL;
@@ -70,12 +77,6 @@ static inline bool is_octal_digit(uint32_t code) {
 static inline bool is_ascii_printable(uint32_t code) {
   return ('\t' <= code && code <= '\r') || (' ' <= code && code <= '~');
 }
-
-#define RANGE_QUANTIFIER_MAX_REPETITION 1000000
-#define BARE_BACK_REF_MAX_NUM 10000
-#define MAX_GROUP_NUM 10000000
-#define BACK_REF_MAX_NUM 10000000
-#define MAX_CAPTURE_DEPTH 1000
 
 /**
  * Peeks at the next Unicode code point in the pattern buffer.
@@ -155,7 +156,7 @@ lex_decimal_number(nk_parser_t* parser, uint32_t* out_value, uint32_t max_value,
 
     uint32_t digit_value = code - '0';
 
-    if (*out_value > (max_value - digit_value) / 10) {
+    if (*out_value > max_value / 10 || (*out_value == max_value / 10 && digit_value > max_value % 10)) {
       if (overflow_error != NK_ERR_INTERNAL_ERROR) {
         parser->error_bytes = num_begin;
         parser->error_bytes_end = parser->pattern_bytes + width;
@@ -194,8 +195,12 @@ static nk_error_t lex_bounded_quantifier(
 
   bool has_explicit_min = false;
   if ('0' <= code && code <= '9') {
-    nk_error_t err =
-      lex_decimal_number(parser, out_min, RANGE_QUANTIFIER_MAX_REPETITION, NK_ERR_TOO_LARGE_NUMBER_IN_QUANTIFIER);
+    nk_error_t err = lex_decimal_number(
+      parser,
+      out_min,
+      parser->range_quantifier_max_repetition,
+      NK_ERR_TOO_LARGE_NUMBER_IN_QUANTIFIER
+    );
     if (err != NK_SUCCESS) {
       return err;
     }
@@ -228,8 +233,12 @@ static nk_error_t lex_bounded_quantifier(
     }
 
     if ('0' <= code && code <= '9') {
-      nk_error_t err =
-        lex_decimal_number(parser, out_max, RANGE_QUANTIFIER_MAX_REPETITION, NK_ERR_TOO_LARGE_NUMBER_IN_QUANTIFIER);
+      nk_error_t err = lex_decimal_number(
+        parser,
+        out_max,
+        parser->range_quantifier_max_repetition,
+        NK_ERR_TOO_LARGE_NUMBER_IN_QUANTIFIER
+      );
       if (err != NK_SUCCESS) {
         return err;
       }
@@ -1005,7 +1014,7 @@ static nk_error_t lex_group_num_or_name(
   }
 
   uint32_t num;
-  err = lex_decimal_number(parser, &num, BACK_REF_MAX_NUM, NK_ERR_TOO_LARGE_GROUP_NUMBER);
+  err = lex_decimal_number(parser, &num, parser->back_ref_max_num, NK_ERR_TOO_LARGE_GROUP_NUMBER);
   if (err != NK_SUCCESS) {
     return err;
   }
@@ -1076,7 +1085,7 @@ static nk_error_t lex_group_num_or_name_with_depth(
     }
 
     uint32_t depth;
-    err = lex_decimal_number(parser, &depth, MAX_CAPTURE_DEPTH, NK_ERR_TOO_LARGE_CAPTURE_DEPTH);
+    err = lex_decimal_number(parser, &depth, parser->max_capture_depth, NK_ERR_TOO_LARGE_CAPTURE_DEPTH);
     if (err != NK_SUCCESS) {
       if (*out_has_name) {
         nk_pbuf_free(out_name_buf);
@@ -1359,7 +1368,7 @@ static nk_error_t lex_common_escape(
   }
 }
 
-static nk_error_t lex_internal(nk_parser_t* parser, token_t* out_token) {
+static nk_error_t lex_impl(nk_parser_t* parser, token_t* out_token) {
   out_token->span_bytes = parser->pattern_bytes;
   out_token->span_bytes_end = NULL;
 
@@ -2232,7 +2241,7 @@ static nk_error_t lex_internal(nk_parser_t* parser, token_t* out_token) {
             parser->pattern_bytes -= width;  // put back the digit for lexing the back-reference number
 
             uint32_t num;
-            nk_error_t err = lex_decimal_number(parser, &num, BARE_BACK_REF_MAX_NUM, NK_ERR_INTERNAL_ERROR);
+            nk_error_t err = lex_decimal_number(parser, &num, parser->bare_back_ref_max_num, NK_ERR_INTERNAL_ERROR);
             if (err != NK_SUCCESS && err != NK_ERR_INTERNAL_ERROR) {
               return err;
             }
@@ -2288,7 +2297,7 @@ static nk_error_t lex_internal(nk_parser_t* parser, token_t* out_token) {
 }
 
 static inline nk_error_t lex(nk_parser_t* parser, token_t* out_token) {
-  nk_error_t err = lex_internal(parser, out_token);
+  nk_error_t err = lex_impl(parser, out_token);
   if (err != NK_SUCCESS) {
     // If an error location is not set yet, we set it to the current position for better error
     // reporting.
@@ -2493,7 +2502,7 @@ typedef enum lex_cc_state {
   CC_STATE_WAIT_RANGE_END,
 } lex_cc_state_t;
 
-static nk_error_t lex_in_char_class_internal(nk_parser_t* parser, token_t* out_token, lex_cc_state_t state) {
+static nk_error_t lex_in_char_class_impl(nk_parser_t* parser, token_t* out_token, lex_cc_state_t state) {
   out_token->span_bytes = parser->pattern_bytes;
   out_token->span_bytes_end = NULL;
 
@@ -2752,7 +2761,7 @@ static nk_error_t lex_in_char_class_internal(nk_parser_t* parser, token_t* out_t
 }
 
 static inline nk_error_t lex_in_char_class(nk_parser_t* parser, token_t* out_token, lex_cc_state_t state) {
-  nk_error_t err = lex_in_char_class_internal(parser, out_token, state);
+  nk_error_t err = lex_in_char_class_impl(parser, out_token, state);
   if (err != NK_SUCCESS) {
     // If an error location is not set yet, we set it to the current position for better error
     // reporting.
@@ -2825,6 +2834,22 @@ char_class_unions_ensure_capacity(nk_char_class_union_t*** unions_ptr, size_t* u
   return NK_SUCCESS;
 }
 
+static inline nk_error_t enter_parse_depth(nk_parser_t* parser) {
+  parser->parse_depth++;
+  if (parser->parse_depth > parser->max_parse_depth) {
+    set_error_span(parser, parser->pattern_bytes, parser->pattern_bytes);
+    parser->parse_depth--;
+    return NK_ERR_PARSE_DEPTH_LIMIT_EXCEEDED;
+  }
+  return NK_SUCCESS;
+}
+
+static inline void leave_parse_depth(nk_parser_t* parser) {
+  parser->parse_depth--;
+}
+
+static nk_error_t parse_char_class_item(nk_parser_t* parser, const token_t* tok, nk_char_class_item_t** out_item_ptr);
+static nk_error_t parse_char_class_union(nk_parser_t* parser, token_t* tok, nk_char_class_union_t** out_union_ptr);
 static nk_error_t parse_char_class_intersection(
   nk_parser_t* parser,
   const uint8_t* char_class_open_span_bytes,
@@ -2832,8 +2857,19 @@ static nk_error_t parse_char_class_intersection(
   size_t* out_unions_len,
   nk_char_class_union_t*** out_unions_ptr
 );
+static nk_error_t
+parse_char_class_item_impl(nk_parser_t* parser, const token_t* tok, nk_char_class_item_t** out_item_ptr);
+static nk_error_t parse_char_class_union_impl(nk_parser_t* parser, token_t* tok, nk_char_class_union_t** out_union_ptr);
+static nk_error_t parse_char_class_intersection_impl(
+  nk_parser_t* parser,
+  const uint8_t* char_class_open_span_bytes,
+  bool* out_is_positive,
+  size_t* out_unions_len,
+  nk_char_class_union_t*** out_unions_ptr
+);
 
-static nk_error_t parse_char_class_item(nk_parser_t* parser, const token_t* tok, nk_char_class_item_t** out_item_ptr) {
+static nk_error_t
+parse_char_class_item_impl(nk_parser_t* parser, const token_t* tok, nk_char_class_item_t** out_item_ptr) {
   *out_item_ptr = NULL;
 
   nk_char_class_item_t* item = (nk_char_class_item_t*)malloc(sizeof(nk_char_class_item_t));
@@ -2923,7 +2959,8 @@ static nk_error_t parse_char_class_item(nk_parser_t* parser, const token_t* tok,
   }
 }
 
-static nk_error_t parse_char_class_union(nk_parser_t* parser, token_t* tok, nk_char_class_union_t** out_union_ptr) {
+static nk_error_t
+parse_char_class_union_impl(nk_parser_t* parser, token_t* tok, nk_char_class_union_t** out_union_ptr) {
   *out_union_ptr = NULL;
   const uint8_t* span_bytes = tok->span_bytes;
 
@@ -3098,7 +3135,7 @@ static nk_error_t parse_char_class_union(nk_parser_t* parser, token_t* tok, nk_c
   return NK_SUCCESS;
 }
 
-static nk_error_t parse_char_class_intersection(
+static nk_error_t parse_char_class_intersection_impl(
   nk_parser_t* parser,
   const uint8_t* char_class_open_span_bytes,
   bool* out_is_positive,
@@ -3193,6 +3230,51 @@ static nk_error_t parse_char_class_intersection(
   return NK_SUCCESS;
 }
 
+static nk_error_t parse_char_class_item(nk_parser_t* parser, const token_t* tok, nk_char_class_item_t** out_item_ptr) {
+  nk_error_t err = enter_parse_depth(parser);
+  if (err != NK_SUCCESS) {
+    return err;
+  }
+
+  err = parse_char_class_item_impl(parser, tok, out_item_ptr);
+  leave_parse_depth(parser);
+  return err;
+}
+
+static nk_error_t parse_char_class_union(nk_parser_t* parser, token_t* tok, nk_char_class_union_t** out_union_ptr) {
+  nk_error_t err = enter_parse_depth(parser);
+  if (err != NK_SUCCESS) {
+    return err;
+  }
+
+  err = parse_char_class_union_impl(parser, tok, out_union_ptr);
+  leave_parse_depth(parser);
+  return err;
+}
+
+static nk_error_t parse_char_class_intersection(
+  nk_parser_t* parser,
+  const uint8_t* char_class_open_span_bytes,
+  bool* out_is_positive,
+  size_t* out_unions_len,
+  nk_char_class_union_t*** out_unions_ptr
+) {
+  nk_error_t err = enter_parse_depth(parser);
+  if (err != NK_SUCCESS) {
+    return err;
+  }
+
+  err = parse_char_class_intersection_impl(
+    parser,
+    char_class_open_span_bytes,
+    out_is_positive,
+    out_unions_len,
+    out_unions_ptr
+  );
+  leave_parse_depth(parser);
+  return err;
+}
+
 static inline void set_node_span_from_bytes(
   nk_parser_t* parser,
   nk_node_t* node,
@@ -3252,8 +3334,17 @@ static inline nk_error_t alloc_node_from_bytes(
 
 static nk_error_t parse_alt(nk_parser_t* parser, token_t* tok, nk_node_t** out_node_ptr);
 static nk_error_t parse_concat(nk_parser_t* parser, token_t* tok, nk_node_t** out_node_ptr);
+static nk_error_t parse_group_alt_body(nk_parser_t* parser, token_t* tok, nk_node_t** out_child_node_ptr);
+static nk_error_t parse_atom(nk_parser_t* parser, token_t* tok, nk_node_t** out_node_ptr);
+static nk_error_t parse_quantifier(nk_parser_t* parser, token_t* tok, nk_node_t** out_node_ptr);
 
-static nk_error_t parse_group_alt_body(nk_parser_t* parser, token_t* tok, nk_node_t** out_child_node_ptr) {
+static nk_error_t parse_alt_impl(nk_parser_t* parser, token_t* tok, nk_node_t** out_node_ptr);
+static nk_error_t parse_concat_impl(nk_parser_t* parser, token_t* tok, nk_node_t** out_node_ptr);
+static nk_error_t parse_group_alt_body_impl(nk_parser_t* parser, token_t* tok, nk_node_t** out_child_node_ptr);
+static nk_error_t parse_atom_impl(nk_parser_t* parser, token_t* tok, nk_node_t** out_node_ptr);
+static nk_error_t parse_quantifier_impl(nk_parser_t* parser, token_t* tok, nk_node_t** out_node_ptr);
+
+static nk_error_t parse_group_alt_body_impl(nk_parser_t* parser, token_t* tok, nk_node_t** out_child_node_ptr) {
   nk_error_t err = lex(parser, tok);
   if (err != NK_SUCCESS) {
     return err;
@@ -3314,7 +3405,7 @@ static inline void parser_state_restore(nk_parser_t* parser, const parser_state_
   parser->fold_flags = state->fold_flags;
 }
 
-static nk_error_t parse_atom(nk_parser_t* parser, token_t* tok, nk_node_t** out_node_ptr) {
+static nk_error_t parse_atom_impl(nk_parser_t* parser, token_t* tok, nk_node_t** out_node_ptr) {
   const uint8_t* atom_span_bytes = tok->span_bytes;
 
   switch (tok->type) {
@@ -3532,7 +3623,7 @@ static nk_error_t parse_atom(nk_parser_t* parser, token_t* tok, nk_node_t** out_
     case TK_GROUP_OPEN:
     {
       parser->num_capture_groups++;
-      if (parser->num_capture_groups > MAX_GROUP_NUM) {
+      if (parser->num_capture_groups > parser->max_group_num) {
         return NK_ERR_TOO_MANY_CAPTURE_GROUPS;
       }
 
@@ -3562,7 +3653,7 @@ static nk_error_t parse_atom(nk_parser_t* parser, token_t* tok, nk_node_t** out_
     {
       parser->has_named_groups = true;
       parser->num_capture_groups++;
-      if (parser->num_capture_groups > MAX_GROUP_NUM) {
+      if (parser->num_capture_groups > parser->max_group_num) {
         return NK_ERR_TOO_MANY_CAPTURE_GROUPS;
       }
 
@@ -3833,7 +3924,7 @@ static nk_error_t parse_atom(nk_parser_t* parser, token_t* tok, nk_node_t** out_
   return NK_SUCCESS;
 }
 
-static nk_error_t parse_quantifier(nk_parser_t* parser, token_t* tok, nk_node_t** out_node_ptr) {
+static nk_error_t parse_quantifier_impl(nk_parser_t* parser, token_t* tok, nk_node_t** out_node_ptr) {
   nk_error_t err = parse_atom(parser, tok, out_node_ptr);
   if (err != NK_SUCCESS) {
     return err;
@@ -3874,7 +3965,7 @@ static nk_error_t parse_quantifier(nk_parser_t* parser, token_t* tok, nk_node_t*
   return NK_SUCCESS;
 }
 
-static nk_error_t parse_concat(nk_parser_t* parser, token_t* tok, nk_node_t** out_node_ptr) {
+static nk_error_t parse_concat_impl(nk_parser_t* parser, token_t* tok, nk_node_t** out_node_ptr) {
   if (tok->type == TK_ALT || tok->type == TK_GROUP_CLOSE || tok->type == TK_END) {
     nk_node_t* empty_node = NULL;
     nk_error_t err = alloc_node_from_bytes(parser, NK_NODE_TYPE_CONCAT, tok->span_bytes, tok->span_bytes, &empty_node);
@@ -3999,7 +4090,7 @@ static nk_error_t parse_concat(nk_parser_t* parser, token_t* tok, nk_node_t** ou
   return NK_SUCCESS;
 }
 
-static nk_error_t parse_alt(nk_parser_t* parser, token_t* tok, nk_node_t** out_node_ptr) {
+static nk_error_t parse_alt_impl(nk_parser_t* parser, token_t* tok, nk_node_t** out_node_ptr) {
   nk_error_t err = parse_concat(parser, tok, out_node_ptr);
   if (err != NK_SUCCESS) {
     return err;
@@ -4076,6 +4167,61 @@ static nk_error_t parse_alt(nk_parser_t* parser, token_t* tok, nk_node_t** out_n
 
   *out_node_ptr = alt_node;
   return NK_SUCCESS;
+}
+
+static nk_error_t parse_group_alt_body(nk_parser_t* parser, token_t* tok, nk_node_t** out_child_node_ptr) {
+  nk_error_t err = enter_parse_depth(parser);
+  if (err != NK_SUCCESS) {
+    return err;
+  }
+
+  err = parse_group_alt_body_impl(parser, tok, out_child_node_ptr);
+  leave_parse_depth(parser);
+  return err;
+}
+
+static nk_error_t parse_atom(nk_parser_t* parser, token_t* tok, nk_node_t** out_node_ptr) {
+  nk_error_t err = enter_parse_depth(parser);
+  if (err != NK_SUCCESS) {
+    return err;
+  }
+
+  err = parse_atom_impl(parser, tok, out_node_ptr);
+  leave_parse_depth(parser);
+  return err;
+}
+
+static nk_error_t parse_quantifier(nk_parser_t* parser, token_t* tok, nk_node_t** out_node_ptr) {
+  nk_error_t err = enter_parse_depth(parser);
+  if (err != NK_SUCCESS) {
+    return err;
+  }
+
+  err = parse_quantifier_impl(parser, tok, out_node_ptr);
+  leave_parse_depth(parser);
+  return err;
+}
+
+static nk_error_t parse_concat(nk_parser_t* parser, token_t* tok, nk_node_t** out_node_ptr) {
+  nk_error_t err = enter_parse_depth(parser);
+  if (err != NK_SUCCESS) {
+    return err;
+  }
+
+  err = parse_concat_impl(parser, tok, out_node_ptr);
+  leave_parse_depth(parser);
+  return err;
+}
+
+static nk_error_t parse_alt(nk_parser_t* parser, token_t* tok, nk_node_t** out_node_ptr) {
+  nk_error_t err = enter_parse_depth(parser);
+  if (err != NK_SUCCESS) {
+    return err;
+  }
+
+  err = parse_alt_impl(parser, tok, out_node_ptr);
+  leave_parse_depth(parser);
+  return err;
 }
 
 nk_error_t nk_parser_parse(nk_parser_t* parser, nk_node_t** out_node_ptr) {
