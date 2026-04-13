@@ -83,11 +83,14 @@ static inline bool is_ascii_printable(uint32_t code) {
 /**
  * Peeks at the next Unicode code point in the pattern buffer.
  *
- * Note that this functions assumes that the parser does not reach the end of
- * the pattern bytes. The caller should check that
- * `parser->pattern_bytes < parser->pattern_bytes_end` before calling this function.
+ * This function defensively checks for end-of-pattern, but callers should still
+ * check bounds and return context-specific errors when needed.
  */
 static inline nk_error_t peek(nk_parser_t* parser, int8_t* out_width, uint32_t* out_code) {
+  if (parser->pattern_bytes >= parser->pattern_bytes_end) {
+    return NK_ERR_UNEXPECTED_END_OF_PATTERN;
+  }
+
   int8_t width = nk_enc_scan_mbc_width(parser->enc, parser->pattern_bytes, parser->pattern_bytes_end);
   if (width == 0) {
     return NK_ERR_INVALID_BYTE_SEQUENCE;
@@ -451,6 +454,10 @@ static nk_error_t lex_unicode_escape(
       return err;
     }
 
+    if (parser->pattern_bytes >= parser->pattern_bytes_end) {
+      return NK_ERR_UNCLOSED_UNICODE_ESCAPE_BRACE;
+    }
+
     err = peek(parser, &width, &code);
     if (err != NK_SUCCESS) {
       return err;
@@ -517,6 +524,10 @@ static nk_error_t lex_unicode_escape_in_brace(
   err = lex_hexdecimal_number(parser, out_code, 1, 6, NK_ERR_INVALID_UNICODE_ESCAPE);
   if (err != NK_SUCCESS) {
     return err;
+  }
+
+  if (parser->pattern_bytes >= parser->pattern_bytes_end) {
+    return NK_ERR_UNCLOSED_UNICODE_ESCAPE_BRACE;
   }
 
   err = peek(parser, &width, &code);
@@ -2391,6 +2402,11 @@ static nk_error_t lex_posix_char_class_name(
     }
 
     if (code == ':') {
+      if (parser->pattern_bytes >= parser->pattern_bytes_end) {
+        nk_pbuf_free(out_name_buf);
+        return NK_SUCCESS;  // unclosed
+      }
+
       int8_t bracket_width;
       uint32_t bracket_code;
       err = peek(parser, &bracket_width, &bracket_code);
@@ -2409,6 +2425,11 @@ static nk_error_t lex_posix_char_class_name(
 
     if (code == '\\') {
       const uint8_t* escape_bytes = parser->pattern_bytes - width;
+      if (parser->pattern_bytes >= parser->pattern_bytes_end) {
+        nk_pbuf_free(out_name_buf);
+        return NK_ERR_INCOMPLETE_ESCAPE;
+      }
+
       int8_t width;
       uint32_t code;
       nk_error_t err = peek(parser, &width, &code);
@@ -2599,32 +2620,43 @@ static nk_error_t lex_in_char_class_impl(nk_parser_t* parser, token_t* out_token
         bool is_first = state == CC_STATE_BEGIN || state == CC_STATE_BEGIN_AFTER_NEGATION;
         bool is_last = false;
 
-        int8_t next_width;
-        uint32_t next_code;
-        nk_error_t err = peek(parser, &next_width, &next_code);
-        if (err != NK_SUCCESS) {
-          return err;
-        }
-
-        if (next_code == ']') {
-          // `-]` is not a range hyphen
+        if (parser->pattern_bytes >= parser->pattern_bytes_end) {
           is_range_hyphen = false;
           is_last = true;
         }
-        if (next_code == '&') {
-          parser->pattern_bytes += next_width;  // consume `&`
 
-          int8_t next_next_width;
-          uint32_t next_next_code;
-          nk_error_t err = peek(parser, &next_next_width, &next_next_code);
+        int8_t next_width;
+        uint32_t next_code;
+        if (parser->pattern_bytes < parser->pattern_bytes_end) {
+          nk_error_t err = peek(parser, &next_width, &next_code);
           if (err != NK_SUCCESS) {
             return err;
           }
 
-          if (next_next_code == '&') {  // `&&`
-            // `-&&` is not a range hyphen
+          if (next_code == ']') {
+            // `-]` is not a range hyphen
             is_range_hyphen = false;
-            parser->pattern_bytes -= next_width;  // put back `&`
+            is_last = true;
+          }
+          if (next_code == '&') {
+            parser->pattern_bytes += next_width;  // consume `&`
+
+            if (parser->pattern_bytes >= parser->pattern_bytes_end) {
+              parser->pattern_bytes -= next_width;  // put back `&`
+            } else {
+              int8_t next_next_width;
+              uint32_t next_next_code;
+              nk_error_t err = peek(parser, &next_next_width, &next_next_code);
+              if (err != NK_SUCCESS) {
+                return err;
+              }
+
+              if (next_next_code == '&') {  // `&&`
+                // `-&&` is not a range hyphen
+                is_range_hyphen = false;
+              }
+              parser->pattern_bytes -= next_width;  // put back `&`
+            }
           }
         }
 
@@ -2645,6 +2677,10 @@ static nk_error_t lex_in_char_class_impl(nk_parser_t* parser, token_t* out_token
       }
       case '&':
       {
+        if (parser->pattern_bytes >= parser->pattern_bytes_end) {
+          break;
+        }
+
         int8_t next_width;
         uint32_t next_code;
         nk_error_t err = peek(parser, &next_width, &next_code);
@@ -2661,6 +2697,11 @@ static nk_error_t lex_in_char_class_impl(nk_parser_t* parser, token_t* out_token
       }
       case '[':
       {
+        if (parser->pattern_bytes >= parser->pattern_bytes_end) {
+          out_token->type = TK_CHAR_CLASS_OPEN;
+          return NK_SUCCESS;
+        }
+
         int8_t colon_width;
         uint32_t colon_code;
         nk_error_t err = peek(parser, &colon_width, &colon_code);

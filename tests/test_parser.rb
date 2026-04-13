@@ -1552,11 +1552,14 @@ module Parser
 
     def test_char_class_errors
       assert_parse_error('[', 'unterminated character class', offset: 1, length: 0)
+      assert_parse_error('[-', 'unterminated character class', offset: 2, length: 0)
+      assert_parse_error('[&', 'unterminated character class', offset: 2, length: 0)
       assert_parse_error('[]', 'empty character class', offset: 0, length: 2)
       assert_parse_error('[z-a]', 'character class range out of order', offset: 1, length: 3)
       assert_parse_error('[\\d-\\w]', 'invalid character class range', offset: 1, length: 2)
       assert_parse_error('[a-\\d]', 'invalid character class range', offset: 3, length: 2)
       assert_parse_error('[a-\\p{Lu}]', 'invalid character class range', offset: 3, length: 6)
+      assert_parse_error('[[:digit:', 'unterminated character class', offset: 9, length: 0)
       assert_parse_error('[[:^:]]', 'empty POSIX character class name', offset: 4, length: 0)
       assert_parse_error('[[:foo:]]', 'invalid POSIX character class name', offset: 3, length: 3)
       assert_parse_error('[[:^foo:]]', 'invalid POSIX character class name', offset: 4, length: 3)
