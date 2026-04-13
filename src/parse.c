@@ -25,6 +25,14 @@ nk_error_t nk_parser_init(
   out_parser->pattern_bytes_begin = pattern_bytes;
   out_parser->pattern_bytes_end = pattern_bytes_end;
   out_parser->warning_func = options.warning_func;
+  out_parser->user_data = options.user_data;
+
+  out_parser->range_quantifier_max_repetition = options.range_quantifier_max_repetition;
+  out_parser->bare_back_ref_max_num = options.bare_back_ref_max_num;
+  out_parser->max_group_num = options.max_group_num;
+  out_parser->back_ref_max_num = options.back_ref_max_num;
+  out_parser->max_capture_depth = options.max_capture_depth;
+  out_parser->max_parse_depth = options.max_parse_depth;
 
   out_parser->pattern_bytes = pattern_bytes;
 
@@ -35,12 +43,6 @@ nk_error_t nk_parser_init(
   out_parser->char_type_is_ascii_only = options.char_type_is_ascii_only;
   out_parser->posix_char_class_is_ascii_only = options.posix_char_class_is_ascii_only;
   out_parser->fold_flags = options.fold_flags;
-  out_parser->range_quantifier_max_repetition = options.range_quantifier_max_repetition;
-  out_parser->bare_back_ref_max_num = options.bare_back_ref_max_num;
-  out_parser->max_group_num = options.max_group_num;
-  out_parser->back_ref_max_num = options.back_ref_max_num;
-  out_parser->max_capture_depth = options.max_capture_depth;
-  out_parser->max_parse_depth = options.max_parse_depth;
 
   out_parser->in_unicode_escape_brace = false;
   out_parser->num_capture_groups = 0;
@@ -123,6 +125,24 @@ static inline void set_error_span(nk_parser_t* parser, const uint8_t* error_byte
 
 static inline void set_error_span_to_current(nk_parser_t* parser, const uint8_t* error_bytes) {
   set_error_span(parser, error_bytes, parser->pattern_bytes);
+}
+
+static inline void report_warning(
+  nk_parser_t* parser,
+  nk_warning_t warning,
+  const uint8_t* warning_bytes,
+  const uint8_t* warning_bytes_end
+) {
+  if (parser->warning_func == NULL) {
+    return;
+  }
+
+  parser->warning_func(
+    parser,
+    warning,
+    (size_t)(warning_bytes - parser->pattern_bytes_begin),
+    (size_t)(warning_bytes_end - warning_bytes)
+  );
 }
 
 static inline void consume_contiguous_hex_digits(nk_parser_t* parser) {
@@ -1172,7 +1192,7 @@ static nk_error_t lex_char_prop_escape(nk_parser_t* parser, uint32_t code, token
   bool is_positive = code == 'p';
 
   if (parser->pattern_bytes >= parser->pattern_bytes_end) {
-    // TODO: add a warning for the incomplete character property escape.
+    report_warning(parser, NK_WARN_INCOMPLETE_CHAR_PROP_ESCAPE, out_token->span_bytes, parser->pattern_bytes);
     out_token->type = TK_CODE;
     out_token->data.code.value = code;  // 'p' or 'P'
     out_token->data.code.code_bytes = out_token->span_bytes;
@@ -1188,7 +1208,7 @@ static nk_error_t lex_char_prop_escape(nk_parser_t* parser, uint32_t code, token
   }
 
   if (brace_code != '{') {
-    // TODO: add a warning for the incomplete character property escape.
+    report_warning(parser, NK_WARN_INCOMPLETE_CHAR_PROP_ESCAPE, out_token->span_bytes, parser->pattern_bytes);
     out_token->type = TK_CODE;
     out_token->data.code.value = code;  // 'p' or 'P'
     out_token->data.code.code_bytes = out_token->span_bytes;
@@ -2032,7 +2052,7 @@ static nk_error_t lex_impl(nk_parser_t* parser, token_t* out_token) {
           {
             const uint8_t* back_ref_begin = out_token->span_bytes;
             if (parser->pattern_bytes >= parser->pattern_bytes_end) {
-              // TODO: add a warning for the incomplete named back-reference escape.
+              report_warning(parser, NK_WARN_INCOMPLETE_NAMED_BACK_REF_ESCAPE, back_ref_begin, parser->pattern_bytes);
               out_token->type = TK_CODE;
               out_token->data.code.value = 'k';
               out_token->data.code.code_bytes = out_token->span_bytes;
@@ -2048,7 +2068,7 @@ static nk_error_t lex_impl(nk_parser_t* parser, token_t* out_token) {
             }
 
             if (next_code != '<' && next_code != '\'') {
-              // TODO: add a warning for the incomplete named back-reference escape.
+              report_warning(parser, NK_WARN_INCOMPLETE_NAMED_BACK_REF_ESCAPE, back_ref_begin, parser->pattern_bytes);
               out_token->type = TK_CODE;
               out_token->data.code.value = 'k';
               out_token->data.code.code_bytes = out_token->span_bytes;
@@ -2138,7 +2158,7 @@ static nk_error_t lex_impl(nk_parser_t* parser, token_t* out_token) {
           {
             const uint8_t* subexp_call_begin = out_token->span_bytes;
             if (parser->pattern_bytes >= parser->pattern_bytes_end) {
-              // TODO: add a warning for the incomplete sub-expression call escape.
+              report_warning(parser, NK_WARN_INCOMPLETE_SUBEXP_CALL_ESCAPE, subexp_call_begin, parser->pattern_bytes);
               out_token->type = TK_CODE;
               out_token->data.code.value = 'g';
               out_token->data.code.code_bytes = out_token->span_bytes;
@@ -2154,7 +2174,7 @@ static nk_error_t lex_impl(nk_parser_t* parser, token_t* out_token) {
             }
 
             if (next_code != '<' && next_code != '\'') {
-              // TODO: add a warning for the incomplete sub-expression call escape.
+              report_warning(parser, NK_WARN_INCOMPLETE_SUBEXP_CALL_ESCAPE, subexp_call_begin, parser->pattern_bytes);
               out_token->type = TK_CODE;
               out_token->data.code.value = 'g';
               out_token->data.code.code_bytes = out_token->span_bytes;
@@ -2284,7 +2304,14 @@ static nk_error_t lex_impl(nk_parser_t* parser, token_t* out_token) {
       }
     }
 
-    // TODO: add a warning for `]` outside of `[...]`
+    if (code == ']') {
+      report_warning(
+        parser,
+        NK_WARN_LITERAL_RIGHT_BRACKET_OUTSIDE_CHAR_CLASS,
+        out_token->span_bytes,
+        parser->pattern_bytes
+      );
+    }
 
     out_token->type = TK_LITERAL;
     out_token->data.literal.bytes = parser->pattern_bytes - width;
@@ -2581,7 +2608,7 @@ static nk_error_t lex_in_char_class_impl(nk_parser_t* parser, token_t* out_token
         }
 
         if (!is_first && !is_last) {
-          // TODO: add a warning for the literal `-`.
+          report_warning(parser, NK_WARN_LITERAL_HYPHEN_IN_CHAR_CLASS, out_token->span_bytes, parser->pattern_bytes);
         }
 
         out_token->type = TK_CHAR_CLASS_LITERAL_HYPHEN;
@@ -2682,7 +2709,12 @@ static nk_error_t lex_in_char_class_impl(nk_parser_t* parser, token_t* out_token
           out_token->type = TK_CHAR_CLASS_CLOSE;
           return NK_SUCCESS;
         }
-        // TODO: add warning for the literal `]`.
+        report_warning(
+          parser,
+          NK_WARN_LITERAL_RIGHT_BRACKET_IN_CHAR_CLASS,
+          out_token->span_bytes,
+          parser->pattern_bytes
+        );
         break;
       case '\\':
       {
@@ -2996,8 +3028,12 @@ parse_char_class_union_impl(nk_parser_t* parser, token_t* tok, nk_char_class_uni
       }
 
       if (begin_tok.type == TK_CHAR_CLASS_LITERAL_HYPHEN && begin_tok.data.literal_hyphen.is_first) {
-        // TODO: add a warning for the literal `-` at the beginning of a character class.
-        // Note that a warning for non-first literal `-` is already added by `lex_in_char_class`.
+        report_warning(
+          parser,
+          NK_WARN_LITERAL_HYPHEN_AT_BEGINNING_OF_CHAR_CLASS,
+          begin_tok.span_bytes,
+          begin_tok.span_bytes_end
+        );
       }
 
       nk_error_t err = lex_in_char_class(parser, tok, CC_STATE_WAIT_RANGE_END);
@@ -3008,8 +3044,7 @@ parse_char_class_union_impl(nk_parser_t* parser, token_t* tok, nk_char_class_uni
       }
 
       if (tok->type == TK_CHAR_CLASS_LITERAL_HYPHEN && tok->data.literal_hyphen.is_last) {
-        // TODO: add a warning for the literal `-` at the end of a character class.
-        // Note that a warning for non-last literal `-` is already added by `lex_in_char_class`.
+        report_warning(parser, NK_WARN_LITERAL_HYPHEN_AT_END_OF_CHAR_CLASS, tok->span_bytes, tok->span_bytes_end);
       }
 
       if (begin_item->type != NK_CHAR_CLASS_ITEM_TYPE_CODE) {
@@ -3958,8 +3993,6 @@ static nk_error_t parse_quantifier_impl(nk_parser_t* parser, token_t* tok, nk_no
       *out_node_ptr = NULL;
       return err;
     }
-
-    // TODO: add a warning for nested quantifiers.
   }
 
   return NK_SUCCESS;

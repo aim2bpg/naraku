@@ -1,10 +1,12 @@
 #include <string.h>
+#include <stdlib.h>
 
 #include <mruby.h>
 #include <mruby/class.h>
 #include <mruby/data.h>
 #include <mruby/presym.h>
 #include <mruby/value.h>
+#include <mruby/variable.h>
 
 #include "mrb_naraku.h"
 
@@ -14,8 +16,33 @@
 //
 // ============================================================================
 
+typedef struct {
+  mrb_state* mrb;
+  mrb_value warning_func;
+} mrb_naraku_warning_context_t;
+
+static void mrb_naraku_warning_callback(const nk_parser_t* parser, nk_warning_t warning, size_t offset, size_t length) {
+  mrb_naraku_warning_context_t* context = (mrb_naraku_warning_context_t*)parser->user_data;
+  if (context == NULL) {
+    return;
+  }
+
+  mrb_funcall(
+    context->mrb,
+    context->warning_func,
+    "call",
+    3,
+    mrb_fixnum_value((mrb_int)warning),
+    mrb_fixnum_value((mrb_int)offset),
+    mrb_fixnum_value((mrb_int)length)
+  );
+}
+
 static void mrb_naraku_parser_free(mrb_state* mrb, void* ptr) {
   nk_parser_t* parser = (nk_parser_t*)ptr;
+  if (parser->user_data != NULL) {
+    mrb_free(mrb, parser->user_data);
+  }
   mrb_free(mrb, (void*)parser->pattern_bytes_begin);
   nk_parser_free(parser);
 }
@@ -44,12 +71,11 @@ static mrb_value mrb_naraku_parser_new(mrb_state* mrb, mrb_value self) {
   mrb_int back_ref_max_num;
   mrb_int max_capture_depth;
   mrb_int max_parse_depth;
-
-  // TODO: add `warning_func` argument for receiving warnings during parsing
+  mrb_value warning_func;
 
   mrb_get_args(
     mrb,
-    "dsbbbbbbiiiiiii",
+    "dsbbbbbbiiiiiiio",
     &encoding_ptr,
     &mrb_naraku_encoding_type,
     &pattern,
@@ -66,7 +92,8 @@ static mrb_value mrb_naraku_parser_new(mrb_state* mrb, mrb_value self) {
     &max_group_num,
     &back_ref_max_num,
     &max_capture_depth,
-    &max_parse_depth
+    &max_parse_depth,
+    &warning_func
   );
 
   const nk_encoding_t* enc = (const nk_encoding_t*)encoding_ptr;
@@ -74,8 +101,15 @@ static mrb_value mrb_naraku_parser_new(mrb_state* mrb, mrb_value self) {
   nk_parser_t* parser = mrb_malloc(mrb, sizeof(nk_parser_t));
   uint8_t* pattern_copy = (uint8_t*)mrb_malloc(mrb, (size_t)pattern_len);
   memcpy(pattern_copy, pattern, (size_t)pattern_len);
+  mrb_naraku_warning_context_t* warning_context = NULL;
+  nk_warning_func_t warning_callback = NULL;
+  if (!mrb_nil_p(warning_func)) {
+    warning_context = (mrb_naraku_warning_context_t*)mrb_malloc(mrb, sizeof(mrb_naraku_warning_context_t));
+    warning_context->mrb = mrb;
+    warning_context->warning_func = warning_func;
+    warning_callback = mrb_naraku_warning_callback;
+  }
 
-  nk_parser_options_t default_options = nk_parser_options_default();
   nk_parser_options_t options = {
     .is_extended_mode = is_extended_mode ? true : false,
     .is_ignore_case = is_ignore_case ? true : false,
@@ -90,18 +124,26 @@ static mrb_value mrb_naraku_parser_new(mrb_state* mrb, mrb_value self) {
     .back_ref_max_num = (uint32_t)back_ref_max_num,
     .max_capture_depth = (uint32_t)max_capture_depth,
     .max_parse_depth = (uint32_t)max_parse_depth,
-    .warning_func = default_options.warning_func,
+    .warning_func = warning_callback,
+    .user_data = warning_context,
   };
 
   nk_error_t err = nk_parser_init(enc, pattern_copy, pattern_copy + pattern_len, options, parser);
   if (err != NK_SUCCESS) {
+    if (warning_context != NULL) {
+      mrb_free(mrb, warning_context);
+    }
     struct RClass* naraku_module = mrb_module_get(mrb, "Naraku");
     struct RClass* error_class = mrb_class_get_under(mrb, naraku_module, "Error");
     mrb_raise(mrb, error_class, (const char*)nk_error_message(err));
   }
 
   struct RClass* parser_class = mrb_class_ptr(self);
-  return mrb_obj_value(mrb_data_object_alloc(mrb, parser_class, parser, &mrb_naraku_parser_type));
+  mrb_value obj = mrb_obj_value(mrb_data_object_alloc(mrb, parser_class, parser, &mrb_naraku_parser_type));
+  if (!mrb_nil_p(warning_func)) {
+    mrb_iv_set(mrb, obj, mrb_intern_lit(mrb, "@warning_func"), warning_func);
+  }
+  return obj;
 }
 
 static mrb_value mrb_naraku_parser_parse(mrb_state* mrb, mrb_value self) {
@@ -166,6 +208,6 @@ void mrb_naraku_parser_gem_init(mrb_state* mrb, struct RClass* naraku_module) {
   mrb_define_const(mrb, parser_class, "DEFAULT_MAX_CAPTURE_DEPTH", mrb_fixnum_value(NK_DEFAULT_MAX_CAPTURE_DEPTH));
   mrb_define_const(mrb, parser_class, "DEFAULT_MAX_PARSE_DEPTH", mrb_fixnum_value(NK_DEFAULT_MAX_PARSE_DEPTH));
 
-  mrb_define_class_method(mrb, parser_class, "_new", mrb_naraku_parser_new, MRB_ARGS_REQ(15));
+  mrb_define_class_method(mrb, parser_class, "_new", mrb_naraku_parser_new, MRB_ARGS_REQ(16));
   mrb_define_method(mrb, parser_class, "parse", mrb_naraku_parser_parse, MRB_ARGS_NONE());
 }

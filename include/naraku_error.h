@@ -18,7 +18,7 @@ extern "C" {
  *
  * The error codes are negative integers.
  */
-typedef enum {
+typedef enum nk_error {
   // ============================================================================
   //
   // Normal cases (0..-99):
@@ -138,6 +138,20 @@ typedef enum {
   NK_ERR_UNSUPPORTED_CHAR_PROPERTY = -511,
 } nk_error_t;
 
+/**
+ * Type representing a warning code.
+ */
+typedef enum nk_warning {
+  NK_WARN_INCOMPLETE_CHAR_PROP_ESCAPE,
+  NK_WARN_INCOMPLETE_NAMED_BACK_REF_ESCAPE,
+  NK_WARN_INCOMPLETE_SUBEXP_CALL_ESCAPE,
+  NK_WARN_LITERAL_RIGHT_BRACKET_OUTSIDE_CHAR_CLASS,
+  NK_WARN_LITERAL_HYPHEN_IN_CHAR_CLASS,
+  NK_WARN_LITERAL_RIGHT_BRACKET_IN_CHAR_CLASS,
+  NK_WARN_LITERAL_HYPHEN_AT_BEGINNING_OF_CHAR_CLASS,
+  NK_WARN_LITERAL_HYPHEN_AT_END_OF_CHAR_CLASS,
+} nk_warning_t;
+
 // ==========================================================================
 //
 // src/error.c
@@ -149,6 +163,12 @@ typedef enum {
  */
 NARAKU_EXPORTED_FUNCTION
 const uint8_t* nk_error_message(nk_error_t err);
+
+/**
+ * Returns a human-readable warning message corresponding to the given warning code `warning`.
+ */
+NARAKU_EXPORTED_FUNCTION
+const uint8_t* nk_warning_message(nk_warning_t warning);
 
 #ifdef __cplusplus
 }

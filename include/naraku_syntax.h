@@ -499,7 +499,7 @@ typedef struct nk_parser nk_parser_t;
 /**
  * Type representing a warning function.
  */
-typedef void (*nk_warning_func_t)(const char* message);
+typedef void (*nk_warning_func_t)(const nk_parser_t* parser, nk_warning_t warning, size_t offset, size_t length);
 
 #define NK_DEFAULT_RANGE_QUANTIFIER_MAX_REPETITION 1000000u
 #define NK_DEFAULT_BARE_BACK_REF_MAX_NUM 10000u
@@ -513,9 +513,12 @@ struct nk_parser {
   const uint8_t* pattern_bytes_begin;
   const uint8_t* pattern_bytes_end;
   nk_warning_func_t warning_func;
+  void* user_data;
 
+  // States:
   const uint8_t* pattern_bytes;
 
+  // Options:
   bool is_extended_mode;
   bool is_ignore_case;
   bool dot_allows_newline;
@@ -524,14 +527,6 @@ struct nk_parser {
   bool posix_char_class_is_ascii_only;
   nk_fold_flag_t fold_flags;
 
-  // Internal states:
-  bool in_unicode_escape_brace;
-  uint32_t num_capture_groups;
-  uint32_t parse_depth;
-
-  // Statistics:
-  bool has_named_groups;
-
   // Limits:
   uint32_t range_quantifier_max_repetition;
   uint32_t bare_back_ref_max_num;
@@ -539,6 +534,14 @@ struct nk_parser {
   uint32_t back_ref_max_num;
   uint32_t max_capture_depth;
   uint32_t max_parse_depth;
+
+  // Internal states:
+  bool in_unicode_escape_brace;
+  uint32_t num_capture_groups;
+  uint32_t parse_depth;
+
+  // Statistics:
+  bool has_named_groups;
 
   // Error reporting:
   const uint8_t* error_bytes;
@@ -556,6 +559,8 @@ typedef struct {
   bool char_type_is_ascii_only;         // corresponds to `a`, `d`, `u`
   bool posix_char_class_is_ascii_only;  // corresponds to `a`, `d`, `u`
   nk_fold_flag_t fold_flags;            // corresponds to `S`, `F`, `T`, `A`
+
+  // Limits:
   uint32_t range_quantifier_max_repetition;
   uint32_t bare_back_ref_max_num;
   uint32_t max_group_num;
@@ -564,6 +569,7 @@ typedef struct {
   uint32_t max_parse_depth;
 
   nk_warning_func_t warning_func;
+  void* user_data;
 } nk_parser_options_t;
 
 static inline nk_parser_options_t nk_parser_options_default(void) {
@@ -582,6 +588,7 @@ static inline nk_parser_options_t nk_parser_options_default(void) {
     .max_capture_depth = NK_DEFAULT_MAX_CAPTURE_DEPTH,
     .max_parse_depth = NK_DEFAULT_MAX_PARSE_DEPTH,
     .warning_func = (nk_warning_func_t)0,
+    .user_data = (void*)0,
   };
 }
 

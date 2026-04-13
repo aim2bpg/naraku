@@ -125,3 +125,26 @@ const uint8_t* nk_error_message(nk_error_t err) {
 
   return (const uint8_t*)"BUG: unknown error";
 }
+
+const uint8_t* nk_warning_message(nk_warning_t warning) {
+  switch (warning) {
+    case NK_WARN_INCOMPLETE_CHAR_PROP_ESCAPE:
+      return (const uint8_t*)"incomplete character property escape";
+    case NK_WARN_INCOMPLETE_NAMED_BACK_REF_ESCAPE:
+      return (const uint8_t*)"incomplete named back-reference escape";
+    case NK_WARN_INCOMPLETE_SUBEXP_CALL_ESCAPE:
+      return (const uint8_t*)"incomplete sub-expression call escape";
+    case NK_WARN_LITERAL_RIGHT_BRACKET_OUTSIDE_CHAR_CLASS:
+      return (const uint8_t*)"literal `]` outside character class";
+    case NK_WARN_LITERAL_HYPHEN_IN_CHAR_CLASS:
+      return (const uint8_t*)"literal `-` in character class";
+    case NK_WARN_LITERAL_RIGHT_BRACKET_IN_CHAR_CLASS:
+      return (const uint8_t*)"literal `]` in character class";
+    case NK_WARN_LITERAL_HYPHEN_AT_BEGINNING_OF_CHAR_CLASS:
+      return (const uint8_t*)"literal `-` at beginning of character class";
+    case NK_WARN_LITERAL_HYPHEN_AT_END_OF_CHAR_CLASS:
+      return (const uint8_t*)"literal `-` at end of character class";
+  }
+
+  return (const uint8_t*)"BUG: unknown warning";
+}

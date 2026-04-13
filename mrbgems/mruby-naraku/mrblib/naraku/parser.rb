@@ -19,6 +19,7 @@ module Naraku
       back_ref_max_num = options.include?(:back_ref_max_num) ? options[:back_ref_max_num] : DEFAULT_BACK_REF_MAX_NUM
       max_capture_depth = options.include?(:max_capture_depth) ? options[:max_capture_depth] : DEFAULT_MAX_CAPTURE_DEPTH
       max_parse_depth = options.include?(:max_parse_depth) ? options[:max_parse_depth] : DEFAULT_MAX_PARSE_DEPTH
+      warning_func = options.include?(:warning_func) ? options[:warning_func] : nil
 
       fold_flags = Naraku::Encoding.parse_fold_flags(fold_flags) if fold_flags.is_a?(Array)
 
@@ -37,7 +38,8 @@ module Naraku
         max_group_num,
         back_ref_max_num,
         max_capture_depth,
-        max_parse_depth
+        max_parse_depth,
+        warning_func
       )
       parser.set_pattern(enc, pattern)
       parser

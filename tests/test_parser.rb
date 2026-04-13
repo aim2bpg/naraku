@@ -30,6 +30,26 @@ module Parser
       assert false, "Expected Naraku::ParseError to be raised for #{pattern.inspect}"
     end
 
+    def collect_parse_warnings(pattern, encoding: Naraku::Encoding::UTF_8, **options)
+      warnings = []
+      parser = Naraku::Parser.new(
+        encoding,
+        pattern,
+        warning_func: ->(warning, offset, length) {
+          warnings << {
+            warning: warning,
+            message: Naraku.warning_message(warning),
+            offset: offset,
+            length: length,
+          }
+        },
+        **options
+      )
+      result = parser.parse.to_h
+      assert_span_consistency(pattern, result)
+      warnings
+    end
+
     def assert_span_consistency(pattern, root)
       pattern_len = pattern.bytesize
       assert_node_span(root, pattern_len, 0, pattern_len)
@@ -578,6 +598,34 @@ module Parser
       assert_parse_error('\xED\xA0\x80', 'invalid escaped byte sequence', offset: 0, length: 12)
     end
 
+    def test_warning_for_incomplete_named_escapes
+      warnings = collect_parse_warnings('\p')
+      assert_equal 1, warnings.length
+      assert_equal 'incomplete character property escape', warnings[0][:message]
+      assert_equal 0, warnings[0][:offset]
+      assert_equal 2, warnings[0][:length]
+
+      warnings = collect_parse_warnings('\k')
+      assert_equal 1, warnings.length
+      assert_equal 'incomplete named back-reference escape', warnings[0][:message]
+      assert_equal 0, warnings[0][:offset]
+      assert_equal 2, warnings[0][:length]
+
+      warnings = collect_parse_warnings('\g')
+      assert_equal 1, warnings.length
+      assert_equal 'incomplete sub-expression call escape', warnings[0][:message]
+      assert_equal 0, warnings[0][:offset]
+      assert_equal 2, warnings[0][:length]
+    end
+
+    def test_warning_for_literal_right_bracket_outside_char_class
+      warnings = collect_parse_warnings(']')
+      assert_equal 1, warnings.length
+      assert_equal 'literal `]` outside character class', warnings[0][:message]
+      assert_equal 0, warnings[0][:offset]
+      assert_equal 1, warnings[0][:length]
+    end
+
     # ========================================================================
     #
     # Unicode properties:
@@ -863,6 +911,7 @@ module Parser
       assert_equal :char_type, result[:child][:type]
       assert_equal :digit, result[:child][:char_type]
     end
+
 
     def test_quantifier_nothing_to_repeat
       assert_parse_error('*', 'nothing to repeat', offset: 0, length: 1)
@@ -1475,6 +1524,35 @@ module Parser
       assert_parse_error('[[:foo:]]', 'invalid POSIX character class name', offset: 3, length: 3)
       assert_parse_error('[[:^foo:]]', 'invalid POSIX character class name', offset: 4, length: 3)
       assert_parse_error('[[:digitx:]]', 'invalid POSIX character class name', offset: 3, length: 6)
+    end
+
+    def test_char_class_warnings
+      warnings = collect_parse_warnings('[a-b-c]')
+      assert_equal 1, warnings.length
+      assert_equal 'literal `-` in character class', warnings[0][:message]
+      assert_equal 4, warnings[0][:offset]
+      assert_equal 1, warnings[0][:length]
+
+      warnings = collect_parse_warnings('[]a]')
+      assert_equal 1, warnings.length
+      assert_equal 'literal `]` in character class', warnings[0][:message]
+      assert_equal 1, warnings[0][:offset]
+      assert_equal 1, warnings[0][:length]
+
+      warnings = collect_parse_warnings('[--a]')
+      assert_equal 1, warnings.length
+      assert_equal 'literal `-` at beginning of character class', warnings[0][:message]
+      assert_equal 1, warnings[0][:offset]
+      assert_equal 1, warnings[0][:length]
+
+      warnings = collect_parse_warnings('[ --]')
+      assert_equal 1, warnings.length
+      assert_equal 'literal `-` at end of character class', warnings[0][:message]
+      assert_equal 3, warnings[0][:offset]
+      assert_equal 1, warnings[0][:length]
+
+      assert_equal [], collect_parse_warnings('[-a-z]')
+      assert_equal [], collect_parse_warnings('[a-z-]')
     end
 
     def test_char_class_span
