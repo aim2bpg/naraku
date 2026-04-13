@@ -21,7 +21,7 @@ module Naraku
       max_parse_depth = options.include?(:max_parse_depth) ? options[:max_parse_depth] : DEFAULT_MAX_PARSE_DEPTH
       warning_func = options.include?(:warning_func) ? options[:warning_func] : nil
 
-      fold_flags = Naraku::Encoding.parse_fold_flags(fold_flags) if fold_flags.is_a?(Array)
+      fold_flags = Naraku.parse_fold_flags(fold_flags) if fold_flags.is_a?(Array)
 
       parser = _new(
         enc,

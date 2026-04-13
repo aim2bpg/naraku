@@ -1,56 +1,31 @@
 module Naraku
   class Encoding
-    NK_ENC_FLAG_UNICODE = 1 << 0
-    NK_ENC_FLAG_SELF_SYNC = 1 << 1
-
-    NK_FOLD_DEFAULT = 0
-    NK_FOLD_FULL = 1 << 0
-    NK_FOLD_TURKISH_AZERI = 1 << 1
-    NK_FOLD_ASCII_ONLY = 1 << 2
-
     def unicode?
-      (flags & NK_ENC_FLAG_UNICODE) != 0
+      (flags & FLAG_UNICODE) != 0
     end
 
     def self_sync?
-      (flags & NK_ENC_FLAG_SELF_SYNC) != 0
-    end
-
-    def self.parse_fold_flags(options)
-      flags = NK_FOLD_DEFAULT
-      options.each do |option|
-        case option
-        when :full
-          flags |= NK_FOLD_FULL
-        when :turkish_azeri
-          flags |= NK_FOLD_TURKISH_AZERI
-        when :ascii_only
-          flags |= NK_FOLD_ASCII_ONLY
-        else
-          raise ArgumentError, "invalid option: #{option}"
-        end
-      end
-      flags
+      (flags & FLAG_SELF_SYNC) != 0
     end
 
     private :_get_case_fold
 
     def case_fold(code, *options)
-      flags = Naraku::Encoding.parse_fold_flags(options)
+      flags = Naraku.parse_fold_flags(options)
       _get_case_fold(code, flags)
     end
 
     private :_expand_case_unfold
 
     def expand_case_unfold(codes, *options)
-      flags = Naraku::Encoding.parse_fold_flags(options)
+      flags = Naraku.parse_fold_flags(options)
       _expand_case_unfold(codes, flags)
     end
 
     private :_iterate_case_fold
 
     def iterate_case_fold(*options, &block)
-      flags = Naraku::Encoding.parse_fold_flags(options)
+      flags = Naraku.parse_fold_flags(options)
       _iterate_case_fold(flags, &block)
     end
 

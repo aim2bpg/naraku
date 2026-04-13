@@ -443,6 +443,9 @@ void mrb_naraku_encoding_gem_init(mrb_state* mrb, struct RClass* naraku_module) 
     MRB_ARGS_REQ(1)
   );
 
+  mrb_define_const(mrb, encoding_class, "FLAG_UNICODE", mrb_fixnum_value(NK_ENC_FLAG_UNICODE));
+  mrb_define_const(mrb, encoding_class, "FLAG_SELF_SYNC", mrb_fixnum_value(NK_ENC_FLAG_SELF_SYNC));
+
   mrb_define_const(mrb, encoding_class, "ASCII_8BIT", mrb_naraku_encoding_new(mrb, encoding_class, nk_enc_ascii_8bit));
   mrb_define_const(mrb, encoding_class, "ISO_8859_1", mrb_naraku_encoding_new(mrb, encoding_class, nk_enc_iso_8859_1));
   mrb_define_const(mrb, encoding_class, "SHIFT_JIS", mrb_naraku_encoding_new(mrb, encoding_class, nk_enc_shift_jis));
