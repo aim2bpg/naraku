@@ -16,8 +16,6 @@ SOURCES := $(wildcard src/*.c src/encoding/*.c)
 FORMAT_FILES := $(HEADERS) $(SOURCES) $(wildcard mrbgems/*/src/*.h mrbgems/*/src/*.c)
 STATIC_OBJECTS := $(subst src/,build/static/,$(SOURCES:.c=.o))
 
-UNICODE_RUBY_SOURCES := $(wildcard tools/unicode/*.rb)
-
 # Compilers.
 CC ?= cc
 AR ?= ar
@@ -26,11 +24,6 @@ AR ?= ar
 CPPFLAGS := -Iinclude $(CPPFLAGS)
 CFLAGS := -g -O2 -std=c99 -Wall -Werror -Wextra -Wpedantic -Wundef -Wconversion -Wno-missing-braces -fPIC -fvisibility=hidden -Wimplicit-fallthrough $(CFLAGS)
 ARFLAGS ?= -r$(V0:1=v)
-
-# A path to mruby build config file (relative to the mruby directory).
-MRUBY_CONFIG ?= ../../build_config.rb
-
-UNICODE_VERSION := 17.0.0
 
 build/libnaraku.a: $(STATIC_OBJECTS)
 	$(ECHO) "building $@ with $(AR)"
@@ -47,61 +40,6 @@ build/static/encoding_unicode.o: src/.gen/cprop_range_unicode.gen.h src/.gen/cas
 build/static/encoding/iso_8859_1.o: src/encoding/.gen/cprop_range_iso_8859_1.gen.h src/encoding/.gen/case_map_iso_8859_1.gen.h
 build/static/encoding/shift_jis.o: src/encoding/.gen/cprop_range_shift_jis.gen.h src/encoding/.gen/case_map_shift_jis.gen.h
 
-include/naraku_cprop_names.h: tools/gen-cprop-names.rb $(UNICODE_RUBY_SOURCES)
-	$(ECHO) "generating $@ with tools/gen-cprop-names.rb"
-	$(Q) $(MAKEDIRS) $(@D)
-	$(Q) ruby tools/gen-cprop-names.rb --header $(UNICODE_VERSION) > $@
-
-src/.gen/name2cprop.gen.h: tools/gen-cprop-names.rb $(UNICODE_RUBY_SOURCES)
-	$(ECHO) "generating $@ with tools/gen-cprop-names.rb"
-	$(Q) $(MAKEDIRS) $(@D)
-	$(Q) ruby tools/gen-cprop-names.rb $(UNICODE_VERSION) > $@
-
-src/.gen/cprop_range_ascii.gen.h: tools/gen-cprop-range.rb $(UNICODE_RUBY_SOURCES)
-	$(ECHO) "generating $@ with tools/gen-cprop-range.rb"
-	$(Q) $(MAKEDIRS) $(@D)
-	$(Q) ruby tools/gen-cprop-range.rb $(UNICODE_VERSION) --ascii > $@
-
-src/.gen/case_map_ascii.gen.h: tools/gen-case-map.rb $(UNICODE_RUBY_SOURCES)
-	$(ECHO) "generating $@ with tools/gen-case-map.rb"
-	$(Q) $(MAKEDIRS) $(@D)
-	$(Q) ruby tools/gen-case-map.rb $(UNICODE_VERSION) --ascii > $@
-
-src/.gen/cprop_range_unicode.gen.h: tools/gen-cprop-range.rb $(UNICODE_RUBY_SOURCES)
-	$(ECHO) "generating $@ with tools/gen-cprop-range.rb"
-	$(Q) $(MAKEDIRS) $(@D)
-	$(Q) ruby tools/gen-cprop-range.rb $(UNICODE_VERSION) --unicode > $@
-
-src/.gen/case_map_unicode.gen.h: tools/gen-case-map.rb $(UNICODE_RUBY_SOURCES)
-	$(ECHO) "generating $@ with tools/gen-case-map.rb"
-	$(Q) $(MAKEDIRS) $(@D)
-	$(Q) ruby tools/gen-case-map.rb $(UNICODE_VERSION) --unicode > $@
-
-src/encoding/.gen/cprop_range_iso_8859_1.gen.h: tools/gen-cprop-range.rb $(UNICODE_RUBY_SOURCES)
-	$(ECHO) "generating $@ with tools/gen-cprop-range.rb"
-	$(Q) $(MAKEDIRS) $(@D)
-	$(Q) ruby tools/gen-cprop-range.rb $(UNICODE_VERSION) --single-byte ISO-8859-1 --prefix iso_8859_1 > $@
-
-src/encoding/.gen/case_map_iso_8859_1.gen.h: tools/gen-case-map.rb $(UNICODE_RUBY_SOURCES)
-	$(ECHO) "generating $@ with tools/gen-case-map.rb"
-	$(Q) $(MAKEDIRS) $(@D)
-	$(Q) ruby tools/gen-case-map.rb $(UNICODE_VERSION) --single-byte ISO-8859-1 --prefix iso_8859_1 > $@
-
-src/encoding/.gen/cprop_range_shift_jis.gen.h: tools/gen-cprop-range.rb $(UNICODE_RUBY_SOURCES)
-	$(ECHO) "generating $@ with tools/gen-cprop-range.rb"
-	$(Q) $(MAKEDIRS) $(@D)
-	$(Q) ruby tools/gen-cprop-range.rb $(UNICODE_VERSION) --multi-byte2 Shift_JIS --prefix shift_jis > $@
-
-src/encoding/.gen/case_map_shift_jis.gen.h: tools/gen-case-map.rb $(UNICODE_RUBY_SOURCES)
-	$(ECHO) "generating $@ with tools/gen-case-map.rb"
-	$(Q) $(MAKEDIRS) $(@D)
-	$(Q) ruby tools/gen-case-map.rb $(UNICODE_VERSION) --multi-byte2 Shift_JIS --prefix shift_jis > $@
-
-.PHONY: build-mruby
-build-mruby: build/libnaraku.a
-	$(ECHO) "building mruby"
-	$(Q) cd submodules/mruby && rake MRUBY_CONFIG=$(MRUBY_CONFIG)
-
 .PHONY: format
 format:
 	$(ECHO) "formatting C files"
@@ -111,5 +49,3 @@ format:
 clean:
 	$(ECHO) "cleaning build artifacts"
 	$(Q) $(RMALL) build
-	$(ECHO) "cleaning mruby build artifacts"
-	$(Q) cd submodules/mruby && rake clean

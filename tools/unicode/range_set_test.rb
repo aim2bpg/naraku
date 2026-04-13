@@ -2,7 +2,7 @@
 
 require 'test/unit'
 
-require_relative './range_set'
+require_relative 'range_set'
 
 module Unicode
   class RangeSetTest < Test::Unit::TestCase
@@ -18,14 +18,14 @@ module Unicode
       rs << (150..250)
       assert_equal [100..250], rs.each_range.to_a
 
-       rs << (300..400)
-       assert_equal [100..250, 300..400], rs.each_range.to_a
+      rs << (300..400)
+      assert_equal [100..250, 300..400], rs.each_range.to_a
 
-       rs << (255..295)
-       assert_equal [100..250, 255..295, 300..400], rs.each_range.to_a
+      rs << (255..295)
+      assert_equal [100..250, 255..295, 300..400], rs.each_range.to_a
 
-       rs << (251..299)
-       assert_equal [100..400], rs.each_range.to_a
+      rs << (251..299)
+      assert_equal [100..400], rs.each_range.to_a
 
       rs << (50..500)
       assert_equal [50..500], rs.each_range.to_a

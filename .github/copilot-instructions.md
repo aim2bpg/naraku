@@ -16,6 +16,11 @@ Naraku is a Ruby/Onigmo-compatible regular expression engine implemented in C.
   - mruby binding layer:
     - C bridge: `src/mrb_naraku*.c`
     - mruby wrapper classes/modules: `mrblib/naraku/*.rb`
+- `ruby-prototype/`
+  - Ruby-side prototyping code (VM/compiler experiments and bridge utilities).
+  - `ruby-prototype/lib/mruby-scripts/`: scripts executed by mruby.
+  - `ruby-prototype/lib/naraku_ruby/`: CRuby-side helper code for prototype workflow.
+  - `ruby-prototype/tests/`: prototype tests (run via top-level Rake task).
 - `tests/`
   - mruby-based tests (entrypoint: `tests/run_test.rb`)
   - custom framework: `Mtest`
@@ -33,13 +38,21 @@ Naraku is a Ruby/Onigmo-compatible regular expression engine implemented in C.
 
 ## Build and test commands
 
-- Normal build:
-  - `make build-mruby`
+- List tasks:
+  - `bundle exec rake -T`
+- Build mruby integration:
+  - `bundle exec rake naraku:build_mruby`
 - ASan build:
-  - `make CFLAGS='-g -fsanitize=address' LD=clang LDFLAGS=-fsanitize=address clean build-mruby`
-- Test:
-  - `bin/mruby tests/run_test.rb`
-  - verbose: `bin/mruby tests/run_test.rb -v`
+  - `bundle exec rake naraku:build_mruby_asan`
+- mruby tests:
+  - `bundle exec rake naraku:test_mruby`
+  - verbose: `bundle exec rake naraku:test_mruby_verbose`
+- Ruby prototype test:
+  - `bundle exec rake ruby_prototype:test`
+- Lint:
+  - `bundle exec rake lint`
+- Format (C + Ruby):
+  - `bundle exec rake format`
 
 ## Parser/lexer implementation guidance
 

@@ -16,11 +16,10 @@ module NarakuRuby
   end
 
   class MRubyBridge
-    MRUBY_BIN = File.expand_path('../../../bin/mruby', __FILE__)
+    MRUBY_BIN = File.expand_path('../../../bin/mruby', __dir__)
 
     def initialize(
-      mruby_bin: MRUBY_BIN,
-      script_path:
+      script_path:, mruby_bin: MRUBY_BIN
     )
       @mruby_bin = mruby_bin
       @script_path = script_path
@@ -30,14 +29,10 @@ module NarakuRuby
       stdout, stderr, status =
         Open3.capture3(@mruby_bin, @script_path, stdin_data: JSON.generate(request))
 
-      unless status.success?
-        raise MRubyBridgeError, "mruby failed: #{stderr.strip}"
-      end
+      raise MRubyBridgeError, "mruby failed: #{stderr.strip}" unless status.success?
 
       response = JSON.parse(stdout, symbolize_names: true)
-      unless response[:ok]
-        raise MRubyBridgeResponseError.new(response[:error])
-      end
+      raise MRubyBridgeResponseError, response[:error] unless response[:ok]
 
       response[:data]
     end

@@ -1,7 +1,7 @@
 def run(request)
   pattern = request['pattern']
   options = request['options'].transform_keys(&:to_sym)
-  
+
   warnings = []
   if options[:enable_warning]
     options.delete(:enable_warning)

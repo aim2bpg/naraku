@@ -17,31 +17,69 @@ It is a successor to Oniguruma (鬼車) and Onigmo (鬼雲).
 
 ## Build
 
+Primary task runner:
+
 ```sh
-make build-mruby
+bundle exec rake -T
+```
+
+Build mruby integration:
+
+```sh
+bundle exec rake naraku:build_mruby
 ```
 
 ### Build with AddressSanitizer
 
 ```sh
-make CFLAGS='-g -fsanitize=address' LD=clang LDFLAGS=-fsanitize=address clean build-mruby
+bundle exec rake naraku:build_mruby_asan
 ```
 
 ## Test
 
-After building mruby:
+Run mruby parser tests:
 
 ```sh
-bin/mruby tests/run_test.rb
+bundle exec rake naraku:test_mruby
 ```
 
 Verbose mode:
 
 ```sh
-bin/mruby tests/run_test.rb -v
+bundle exec rake naraku:test_mruby_verbose
 ```
 
 ### Notes about tests
 
 - Tests are written in mruby (not CRuby).
 - The test suite uses the project's own lightweight test framework, `Mtest`.
+
+## Ruby prototype
+
+- Prototype code is placed under `ruby-prototype/`.
+  - Library code: `ruby-prototype/lib`
+  - Tests: `ruby-prototype/tests`
+
+Bundler setup (project root):
+
+```sh
+bundle install
+```
+
+Run Ruby prototype tests:
+
+```sh
+bundle exec rake ruby_prototype:test
+```
+
+Lint:
+
+```sh
+bundle exec rake lint
+```
+
+Format (C + Ruby):
+
+```sh
+bundle exec rake format
+```
