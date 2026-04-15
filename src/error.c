@@ -78,8 +78,8 @@ const uint8_t* nk_error_message(nk_error_t err) {
       return (const uint8_t*)"too many capture groups";
     case NK_ERR_INVALID_CONDITIONAL_GROUP:
       return (const uint8_t*)"invalid conditional group";
-    case NK_ERR_INVALID_CONDITIONAL_GROUP_NUMBER:
-      return (const uint8_t*)"invalid conditional group number";
+    case NK_ERR_INVALID_CONDITIONAL_CAPTURE_NUMBER:
+      return (const uint8_t*)"invalid conditional capture number";
     case NK_ERR_PARSE_DEPTH_LIMIT_EXCEEDED:
       return (const uint8_t*)"parse depth limit exceeded";
     case NK_ERR_NON_BOOLEAN_GROUP_OPTION:
@@ -88,20 +88,28 @@ const uint8_t* nk_error_message(nk_error_t err) {
       return (const uint8_t*)"invalid group name";
     case NK_ERR_EMPTY_GROUP_NAME:
       return (const uint8_t*)"empty group name";
-    case NK_ERR_TOO_LARGE_GROUP_NUMBER:
-      return (const uint8_t*)"group number is too large";
-    case NK_ERR_GROUP_NUMBER_OUT_OF_RANGE:
-      return (const uint8_t*)"group number is out of range";
+    case NK_ERR_TOO_LARGE_CAPTURE_NUMBER:
+      return (const uint8_t*)"capture number is too large";
+    case NK_ERR_CAPTURE_NUMBER_OUT_OF_RANGE:
+      return (const uint8_t*)"capture number is out of range";
     case NK_ERR_INCOMPLETE_CAPTURE_DEPTH:
       return (const uint8_t*)"incomplete capture depth";
     case NK_ERR_TOO_LARGE_CAPTURE_DEPTH:
       return (const uint8_t*)"capture depth is too large";
     case NK_ERR_INCOMPLETE_SUBEXP_CALL:
       return (const uint8_t*)"incomplete sub-expression call";
+    case NK_ERR_INVALID_SUBEXP_CALL:
+      return (const uint8_t*)"invalid sub-expression call";
+    case NK_ERR_UNDEFINED_SUBEXP_CALL:
+      return (const uint8_t*)"undefined sub-expression call";
     case NK_ERR_INCOMPLETE_BACK_REF:
       return (const uint8_t*)"incomplete back reference";
     case NK_ERR_INVALID_BACK_REF:
       return (const uint8_t*)"invalid back reference";
+    case NK_ERR_UNDEFINED_BACK_REF:
+      return (const uint8_t*)"undefined back reference";
+    case NK_ERR_UNDEFINED_CONDITIONAL_REF:
+      return (const uint8_t*)"undefined conditional reference";
     case NK_ERR_UNTERMINATED_CHAR_CLASS:
       return (const uint8_t*)"unterminated character class";
     case NK_ERR_INVALID_CHAR_CLASS_RANGE:
@@ -148,6 +156,8 @@ const uint8_t* nk_warning_message(nk_warning_t warning) {
       return (const uint8_t*)"literal `-` at end of character class";
     case NK_WARN_REDUNDANT_GROUP_OPTION_MINUS:
       return (const uint8_t*)"redundant '-' in group options";
+    case NK_WARN_NAMED_GROUP_DEFINED_AFTER_REFERENCE:
+      return (const uint8_t*)"named group defined after this reference will not be used";
   }
 
   return (const uint8_t*)"BUG: unknown warning";

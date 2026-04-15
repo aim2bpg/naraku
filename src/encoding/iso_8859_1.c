@@ -1,11 +1,5 @@
 #include <naraku_encoding.h>
 
-#if defined(__GNUC__)
-#define ARG_UNUSED __attribute__((unused))
-#else
-#define ARG_UNUSED
-#endif
-
 #include ".gen/cprop_range_iso_8859_1.gen.h"
 #include ".gen/case_map_iso_8859_1.gen.h"
 

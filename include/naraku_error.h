@@ -94,25 +94,31 @@ typedef enum nk_error {
   NK_ERR_UNTERMINATED_GROUP = -363,
   NK_ERR_TOO_MANY_CAPTURE_GROUPS = -364,
   NK_ERR_INVALID_CONDITIONAL_GROUP = -365,
-  NK_ERR_INVALID_CONDITIONAL_GROUP_NUMBER = -366,
+  NK_ERR_INVALID_CONDITIONAL_CAPTURE_NUMBER = -366,
   NK_ERR_PARSE_DEPTH_LIMIT_EXCEEDED = -367,
   NK_ERR_NON_BOOLEAN_GROUP_OPTION = -368,
 
-  // Errors related to group names and group numbers
+  // Errors related to group names and capture numbers
   // (for named groups, named back-references, and sub-expression calls):
   NK_ERR_INVALID_GROUP_NAME = -370,
   NK_ERR_EMPTY_GROUP_NAME = -371,
-  NK_ERR_TOO_LARGE_GROUP_NUMBER = -372,
-  NK_ERR_GROUP_NUMBER_OUT_OF_RANGE = -373,
+  NK_ERR_TOO_LARGE_CAPTURE_NUMBER = -372,
+  NK_ERR_CAPTURE_NUMBER_OUT_OF_RANGE = -373,
   NK_ERR_INCOMPLETE_CAPTURE_DEPTH = -374,
   NK_ERR_TOO_LARGE_CAPTURE_DEPTH = -375,
 
   // Errors related to sub-expression calls:
   NK_ERR_INCOMPLETE_SUBEXP_CALL = -380,
+  NK_ERR_INVALID_SUBEXP_CALL = -381,
+  NK_ERR_UNDEFINED_SUBEXP_CALL = -382,
 
   // Errors related to back-references:
   NK_ERR_INCOMPLETE_BACK_REF = -390,
   NK_ERR_INVALID_BACK_REF = -391,
+  NK_ERR_UNDEFINED_BACK_REF = -392,
+
+  // Errors related to conditionals:
+  NK_ERR_UNDEFINED_CONDITIONAL_REF = -395,
 
   // Errors related to character classes:
   NK_ERR_UNTERMINATED_CHAR_CLASS = -400,
@@ -152,6 +158,7 @@ typedef enum nk_warning {
   NK_WARN_LITERAL_HYPHEN_AT_BEGINNING_OF_CHAR_CLASS,
   NK_WARN_LITERAL_HYPHEN_AT_END_OF_CHAR_CLASS,
   NK_WARN_REDUNDANT_GROUP_OPTION_MINUS,
+  NK_WARN_NAMED_GROUP_DEFINED_AFTER_REFERENCE,
 } nk_warning_t;
 
 // ==========================================================================

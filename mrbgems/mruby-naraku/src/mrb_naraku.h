@@ -35,5 +35,7 @@ void mrb_naraku_parser_gem_init(mrb_state* mrb, struct RClass* naraku_module);
 // ============================================================================
 
 mrb_value mrb_naraku_node_create_root(mrb_state* mrb, nk_node_t* node);
+nk_node_t* mrb_naraku_node_get_ptr(mrb_state* mrb, mrb_value self);
+nk_parser_t* mrb_naraku_parser_get_ptr(mrb_state* mrb, mrb_value self);
 
 #endif  // MRB_NARAKU_H

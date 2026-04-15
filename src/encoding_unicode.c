@@ -1,12 +1,6 @@
 #include <naraku_encoding.h>
 #include <naraku_encoding_internal.h>
 
-#if defined(__GNUC__)
-#define ARG_UNUSED __attribute__((unused))
-#else
-#define ARG_UNUSED
-#endif
-
 #define FOLD (1 << 0)
 #define FOLD_FULL (1 << 1)
 #define LOWER (1 << 2)
@@ -132,7 +126,7 @@ uint32_t unicode_unfold3_lookup(uint32_t code1, uint32_t code2, uint32_t code3) 
 }
 
 size_t nk_enc_unicode_get_case_fold(
-  const nk_encoding_t* enc ARG_UNUSED,
+  const nk_encoding_t* enc NARAKU_ARG_UNUSED,
   nk_fold_flag_t flags,
   uint32_t code,
   uint32_t* out_folded_codes
@@ -186,7 +180,7 @@ size_t nk_enc_unicode_get_case_fold(
 }
 
 size_t nk_enc_unicode_expand_case_unfold(
-  const nk_encoding_t* enc ARG_UNUSED,
+  const nk_encoding_t* enc NARAKU_ARG_UNUSED,
   nk_fold_flag_t flags,
   const uint32_t* folded_codes,
   size_t folded_codes_len,
@@ -299,7 +293,7 @@ size_t nk_enc_unicode_expand_case_unfold(
 }
 
 nk_error_t nk_enc_unicode_iterate_case_fold(
-  const nk_encoding_t* enc ARG_UNUSED,
+  const nk_encoding_t* enc NARAKU_ARG_UNUSED,
   nk_fold_flag_t flags,
   nk_case_fold_callback_t callback,
   void* user_data
@@ -367,7 +361,7 @@ nk_error_t nk_enc_unicode_iterate_case_fold(
   return NK_SUCCESS;
 }
 
-bool nk_enc_unicode_code_is_cprop(const nk_encoding_t* enc ARG_UNUSED, uint32_t code, nk_cprop_t cprop) {
+bool nk_enc_unicode_code_is_cprop(const nk_encoding_t* enc NARAKU_ARG_UNUSED, uint32_t code, nk_cprop_t cprop) {
   if (cprop > NK_MAX_CPROP) {
     return false;
   }
@@ -378,7 +372,7 @@ bool nk_enc_unicode_code_is_cprop(const nk_encoding_t* enc ARG_UNUSED, uint32_t 
 }
 
 nk_error_t nk_enc_unicode_get_cprop_code_range(
-  const nk_encoding_t* enc ARG_UNUSED,
+  const nk_encoding_t* enc NARAKU_ARG_UNUSED,
   nk_cprop_t cprop,
   nk_code_range_delegation_t* out_delegation,
   nk_static_code_range_t* out_code_range

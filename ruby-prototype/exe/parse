@@ -7,9 +7,12 @@ require 'optparse'
 $LOAD_PATH.unshift(File.expand_path('../lib', __dir__))
 require 'naraku_ruby'
 
+postprocess = false
 options = {}
 parser = OptionParser.new do |opts|
   opts.banner = "Usage: #{File.basename($PROGRAM_NAME)} [options] PATTERN"
+  opts.on('--postprocess', 'Postprocess the parsed node') { postprocess = true }
+
   opts.on('-x', '--extended', 'Enable extended mode') { options[:is_extended_mode] = true }
   opts.on('-i', '--ignore-case', 'Enable ignore case mode') { options[:is_ignore_case] = true }
   opts.on('-m', '--dot-allows-newline', 'Let dot match newline') { options[:dot_allows_newline] = true }
@@ -23,15 +26,15 @@ parser = OptionParser.new do |opts|
   end
 
   opts.on('--range-quantifier-max-repetition N', Integer, 'Set range quantifier max repetition') do |value|
-    options[:range_quantifier_max_repetition] = value
+    options[:range_quantifier_max_repetition_limit] = value
   end
   opts.on('--bare-back-ref-max-num N', Integer, 'Set bare back-reference max number') do |value|
-    options[:bare_back_ref_max_num] = value
+    options[:bare_back_ref_max_num_limit] = value
   end
-  opts.on('--max-group-num N', Integer, 'Set max group number') { |value| options[:max_group_num] = value }
-  opts.on('--back-ref-max-num N', Integer, 'Set back-reference max number') { |value| options[:back_ref_max_num] = value }
-  opts.on('--max-capture-depth N', Integer, 'Set max capture depth') { |value| options[:max_capture_depth] = value }
-  opts.on('--max-parse-depth N', Integer, 'Set max parse depth') { |value| options[:max_parse_depth] = value }
+  opts.on('--max-capture-num N', Integer, 'Set max capture number') { |value| options[:max_capture_num_limit] = value }
+  opts.on('--back-ref-max-num N', Integer, 'Set back-reference max number') { |value| options[:back_ref_max_num_limit] = value }
+  opts.on('--max-capture-depth N', Integer, 'Set max capture depth') { |value| options[:max_capture_depth_limit] = value }
+  opts.on('--max-parse-depth N', Integer, 'Set max parse depth') { |value| options[:max_parse_depth_limit] = value }
   opts.on('--warning', 'Enable parser warning callback output') { options[:enable_warning] = true }
 end
 parser.parse!(ARGV)
@@ -39,4 +42,4 @@ parser.parse!(ARGV)
 pattern = ARGV.shift
 abort "#{parser}\nPATTERN is required" if pattern.nil?
 
-pp NarakuRuby.parse(pattern, **options)
+pp NarakuRuby.parse(pattern, postprocess:, **options)

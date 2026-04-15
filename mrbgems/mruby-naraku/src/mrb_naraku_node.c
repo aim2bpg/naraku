@@ -86,6 +86,10 @@ static mrb_value mrb_naraku_node_wrap(mrb_state* mrb, nk_node_t* node, mrb_value
   // Store `root_ref` as an instance variable to prevent GC of the root.
   // NOTE: Non-`@`-prefixed name is used to avoid referencing the root from user code.
   mrb_iv_set(mrb, obj, mrb_intern_cstr(mrb, "_root"), root_ref);
+  mrb_value parser_ref = mrb_iv_get(mrb, root_ref, mrb_intern_lit(mrb, "_parser"));
+  if (!mrb_nil_p(parser_ref)) {
+    mrb_iv_set(mrb, obj, mrb_intern_lit(mrb, "_parser"), parser_ref);
+  }
 
   return obj;
 }
@@ -113,7 +117,7 @@ mrb_value mrb_naraku_node_create_root(mrb_state* mrb, nk_node_t* node) {
   return mrb_naraku_node_wrap(mrb, node, root_ref);
 }
 
-static nk_node_t* mrb_naraku_node_get_ptr(mrb_state* mrb, mrb_value self) {
+nk_node_t* mrb_naraku_node_get_ptr(mrb_state* mrb, mrb_value self) {
   mrb_naraku_node_t* wrapper = (mrb_naraku_node_t*)mrb_data_get_ptr(mrb, self, &mrb_naraku_node_type);
   return wrapper->node;
 }
@@ -452,6 +456,8 @@ static const char* node_type_name(nk_node_type_t type) {
       return "assertion";
     case NK_NODE_TYPE_QUANTIFIER:
       return "quantifier";
+    case NK_NODE_TYPE_CAPTURE:
+      return "capture";
     case NK_NODE_TYPE_GROUP:
       return "group";
     case NK_NODE_TYPE_ATOMIC:
@@ -593,13 +599,13 @@ static mrb_value mrb_naraku_node_has_name(mrb_state* mrb, mrb_value self) {
   nk_node_t* node = mrb_naraku_node_get_ptr(mrb, self);
   switch (node->base.type) {
     case NK_NODE_TYPE_BACK_REF:
-      return mrb_bool_value(node->back_ref.has_name);
+      return mrb_bool_value(node->back_ref.target_kind == NK_REF_TARGET_KIND_NAME);
     case NK_NODE_TYPE_CALL:
-      return mrb_bool_value(node->call.has_name);
-    case NK_NODE_TYPE_GROUP:
-      return mrb_bool_value(node->group.has_name);
+      return mrb_bool_value(node->call.target_kind == NK_CALL_TARGET_KIND_NAME);
+    case NK_NODE_TYPE_CAPTURE:
+      return mrb_bool_value(node->capture.has_name);
     case NK_NODE_TYPE_CONDITIONAL:
-      return mrb_bool_value(node->conditional.has_name);
+      return mrb_bool_value(node->conditional.target_kind == NK_REF_TARGET_KIND_NAME);
     default:
       mrb_raisef(mrb, E_RUNTIME_ERROR, "has_name is not available for %s node", node_type_name(node->base.type));
       return mrb_nil_value();
@@ -610,16 +616,16 @@ static mrb_value mrb_naraku_node_name(mrb_state* mrb, mrb_value self) {
   nk_node_t* node = mrb_naraku_node_get_ptr(mrb, self);
   switch (node->base.type) {
     case NK_NODE_TYPE_BACK_REF:
-      if (!node->back_ref.has_name) return mrb_nil_value();
+      if (node->back_ref.target_kind != NK_REF_TARGET_KIND_NAME) return mrb_nil_value();
       return mrb_naraku_pbuf_to_str(mrb, &node->back_ref.name_buf);
     case NK_NODE_TYPE_CALL:
-      if (!node->call.has_name) return mrb_nil_value();
+      if (node->call.target_kind != NK_CALL_TARGET_KIND_NAME) return mrb_nil_value();
       return mrb_naraku_pbuf_to_str(mrb, &node->call.name_buf);
-    case NK_NODE_TYPE_GROUP:
-      if (!node->group.has_name) return mrb_nil_value();
-      return mrb_naraku_pbuf_to_str(mrb, &node->group.name_buf);
+    case NK_NODE_TYPE_CAPTURE:
+      if (!node->capture.has_name) return mrb_nil_value();
+      return mrb_naraku_pbuf_to_str(mrb, &node->capture.name_buf);
     case NK_NODE_TYPE_CONDITIONAL:
-      if (!node->conditional.has_name) return mrb_nil_value();
+      if (node->conditional.target_kind != NK_REF_TARGET_KIND_NAME) return mrb_nil_value();
       return mrb_naraku_pbuf_to_str(mrb, &node->conditional.name_buf);
     default:
       mrb_raisef(mrb, E_RUNTIME_ERROR, "name is not available for %s node", node_type_name(node->base.type));
@@ -627,21 +633,77 @@ static mrb_value mrb_naraku_node_name(mrb_state* mrb, mrb_value self) {
   }
 }
 
-static mrb_value mrb_naraku_node_group_num(mrb_state* mrb, mrb_value self) {
+static mrb_value mrb_naraku_node_capture_num(mrb_state* mrb, mrb_value self) {
   nk_node_t* node = mrb_naraku_node_get_ptr(mrb, self);
   switch (node->base.type) {
     case NK_NODE_TYPE_BACK_REF:
-      return mrb_fixnum_value(node->back_ref.group_num);
+      if (node->back_ref.target_kind != NK_REF_TARGET_KIND_CAPTURE_NUM) return mrb_nil_value();
+      return mrb_fixnum_value(node->back_ref.capture_num);
     case NK_NODE_TYPE_CALL:
-      return mrb_fixnum_value(node->call.group_num);
-    case NK_NODE_TYPE_GROUP:
-      return mrb_fixnum_value(node->group.group_num);
+      if (node->call.target_kind != NK_CALL_TARGET_KIND_CAPTURE_NUM) return mrb_nil_value();
+      return mrb_fixnum_value(node->call.capture_num);
+    case NK_NODE_TYPE_CAPTURE:
+      return mrb_fixnum_value(node->capture.capture_num);
     case NK_NODE_TYPE_CONDITIONAL:
-      return mrb_fixnum_value(node->conditional.group_num);
+      if (node->conditional.target_kind != NK_REF_TARGET_KIND_CAPTURE_NUM) return mrb_nil_value();
+      return mrb_fixnum_value(node->conditional.capture_num);
     default:
-      mrb_raisef(mrb, E_RUNTIME_ERROR, "group_num is not available for %s node", node_type_name(node->base.type));
+      mrb_raisef(mrb, E_RUNTIME_ERROR, "capture_num is not available for %s node", node_type_name(node->base.type));
       return mrb_nil_value();
   }
+}
+
+static mrb_value mrb_naraku_node_resolved_capture_nums(mrb_state* mrb, mrb_value self) {
+  nk_node_t* node = mrb_naraku_node_get_ptr(mrb, self);
+  size_t resolved_capture_num_count = 0;
+  switch (node->base.type) {
+    case NK_NODE_TYPE_BACK_REF:
+      resolved_capture_num_count = node->back_ref.resolved_capture_num_count;
+      break;
+    case NK_NODE_TYPE_CONDITIONAL:
+      resolved_capture_num_count = node->conditional.resolved_capture_num_count;
+      break;
+    default:
+      mrb_raisef(
+        mrb,
+        E_RUNTIME_ERROR,
+        "resolved_capture_nums is not available for %s node",
+        node_type_name(node->base.type)
+      );
+      return mrb_nil_value();
+  }
+
+  mrb_value ary = mrb_ary_new_capa(mrb, resolved_capture_num_count);
+  if (resolved_capture_num_count == 0) {
+    return ary;
+  }
+
+  mrb_value parser_obj = mrb_iv_get(mrb, self, mrb_intern_lit(mrb, "_parser"));
+  if (mrb_nil_p(parser_obj)) {
+    mrb_raise(mrb, E_RUNTIME_ERROR, "resolved_capture_nums requires parser.postprocess result");
+  }
+
+  nk_parser_t* parser = mrb_naraku_parser_get_ptr(mrb, parser_obj);
+  uint32_t* resolved_capture_nums = (uint32_t*)mrb_malloc(mrb, sizeof(uint32_t) * resolved_capture_num_count);
+  nk_error_t err = nk_node_get_resolved_capture_nums(parser, node, resolved_capture_nums);
+  if (err != NK_SUCCESS) {
+    mrb_free(mrb, resolved_capture_nums);
+    struct RClass* naraku_module = mrb_module_get(mrb, "Naraku");
+    struct RClass* error_class = mrb_class_get_under(mrb, naraku_module, "Error");
+    mrb_raise(mrb, error_class, (const char*)nk_error_message(err));
+  }
+
+  for (size_t i = 0; i < resolved_capture_num_count; i++) {
+    mrb_ary_push(mrb, ary, mrb_fixnum_value((mrb_int)resolved_capture_nums[i]));
+  }
+  mrb_free(mrb, resolved_capture_nums);
+  return ary;
+}
+
+static mrb_value mrb_naraku_node_resolved_capture_num(mrb_state* mrb, mrb_value self) {
+  nk_node_t* node = mrb_naraku_node_get_ptr(mrb, self);
+  node_check_type(mrb, node, NK_NODE_TYPE_CALL, "resolved_capture_num");
+  return mrb_fixnum_value((mrb_int)node->call.resolved_capture_num);
 }
 
 static mrb_value mrb_naraku_node_has_depth(mrb_state* mrb, mrb_value self) {
@@ -700,6 +762,37 @@ static const char* assertion_type_sym_name(nk_assertion_type_t type) {
   return "unknown";
 }
 
+static const char* call_target_kind_sym_name(nk_call_target_kind_t kind) {
+  switch (kind) {
+    case NK_CALL_TARGET_KIND_ROOT:
+      return "root";
+    case NK_CALL_TARGET_KIND_CAPTURE_NUM:
+      return "capture_num";
+    case NK_CALL_TARGET_KIND_NAME:
+      return "name";
+  }
+  return "unknown";
+}
+
+static mrb_value mrb_naraku_node_target_kind(mrb_state* mrb, mrb_value self) {
+  nk_node_t* node = mrb_naraku_node_get_ptr(mrb, self);
+  switch (node->base.type) {
+    case NK_NODE_TYPE_BACK_REF:
+      return mrb_symbol_value(
+        mrb_intern_cstr(mrb, node->back_ref.target_kind == NK_REF_TARGET_KIND_NAME ? "name" : "capture_num")
+      );
+    case NK_NODE_TYPE_CALL:
+      return mrb_symbol_value(mrb_intern_cstr(mrb, call_target_kind_sym_name(node->call.target_kind)));
+    case NK_NODE_TYPE_CONDITIONAL:
+      return mrb_symbol_value(
+        mrb_intern_cstr(mrb, node->conditional.target_kind == NK_REF_TARGET_KIND_NAME ? "name" : "capture_num")
+      );
+    default:
+      mrb_raisef(mrb, E_RUNTIME_ERROR, "target_kind is not available for %s node", node_type_name(node->base.type));
+      return mrb_nil_value();
+  }
+}
+
 static mrb_value mrb_naraku_node_assertion_type(mrb_state* mrb, mrb_value self) {
   nk_node_t* node = mrb_naraku_node_get_ptr(mrb, self);
   node_check_type(mrb, node, NK_NODE_TYPE_ASSERTION, "assertion_type");
@@ -714,6 +807,8 @@ static mrb_value mrb_naraku_node_child(mrb_state* mrb, mrb_value self) {
       return mrb_naraku_node_wrap(mrb, node->assertion.child, root_ref);
     case NK_NODE_TYPE_QUANTIFIER:
       return mrb_naraku_node_wrap(mrb, node->quantifier.child, root_ref);
+    case NK_NODE_TYPE_CAPTURE:
+      return mrb_naraku_node_wrap(mrb, node->capture.child, root_ref);
     case NK_NODE_TYPE_GROUP:
       return mrb_naraku_node_wrap(mrb, node->group.child, root_ref);
     case NK_NODE_TYPE_ATOMIC:
@@ -732,9 +827,16 @@ static mrb_value mrb_naraku_node_min(mrb_state* mrb, mrb_value self) {
   return mrb_fixnum_value(node->quantifier.min);
 }
 
+static mrb_value mrb_naraku_node_has_max(mrb_state* mrb, mrb_value self) {
+  nk_node_t* node = mrb_naraku_node_get_ptr(mrb, self);
+  node_check_type(mrb, node, NK_NODE_TYPE_QUANTIFIER, "has_max");
+  return mrb_bool_value(node->quantifier.has_max);
+}
+
 static mrb_value mrb_naraku_node_max(mrb_state* mrb, mrb_value self) {
   nk_node_t* node = mrb_naraku_node_get_ptr(mrb, self);
   node_check_type(mrb, node, NK_NODE_TYPE_QUANTIFIER, "max");
+  if (!node->quantifier.has_max) return mrb_nil_value();
   return mrb_fixnum_value(node->quantifier.max);
 }
 
@@ -819,12 +921,16 @@ void mrb_naraku_node_gem_init(mrb_state* mrb, struct RClass* naraku_module) {
   mrb_define_method(mrb, node_class, "allows_newline", mrb_naraku_node_allows_newline, MRB_ARGS_NONE());
   mrb_define_method(mrb, node_class, "has_name", mrb_naraku_node_has_name, MRB_ARGS_NONE());
   mrb_define_method(mrb, node_class, "name", mrb_naraku_node_name, MRB_ARGS_NONE());
-  mrb_define_method(mrb, node_class, "group_num", mrb_naraku_node_group_num, MRB_ARGS_NONE());
+  mrb_define_method(mrb, node_class, "capture_num", mrb_naraku_node_capture_num, MRB_ARGS_NONE());
+  mrb_define_method(mrb, node_class, "resolved_capture_nums", mrb_naraku_node_resolved_capture_nums, MRB_ARGS_NONE());
+  mrb_define_method(mrb, node_class, "resolved_capture_num", mrb_naraku_node_resolved_capture_num, MRB_ARGS_NONE());
   mrb_define_method(mrb, node_class, "has_depth", mrb_naraku_node_has_depth, MRB_ARGS_NONE());
   mrb_define_method(mrb, node_class, "depth", mrb_naraku_node_depth, MRB_ARGS_NONE());
+  mrb_define_method(mrb, node_class, "target_kind", mrb_naraku_node_target_kind, MRB_ARGS_NONE());
   mrb_define_method(mrb, node_class, "assertion_type", mrb_naraku_node_assertion_type, MRB_ARGS_NONE());
   mrb_define_method(mrb, node_class, "child", mrb_naraku_node_child, MRB_ARGS_NONE());
   mrb_define_method(mrb, node_class, "min", mrb_naraku_node_min, MRB_ARGS_NONE());
+  mrb_define_method(mrb, node_class, "has_max", mrb_naraku_node_has_max, MRB_ARGS_NONE());
   mrb_define_method(mrb, node_class, "max", mrb_naraku_node_max, MRB_ARGS_NONE());
   mrb_define_method(mrb, node_class, "quantifier_type", mrb_naraku_node_quantifier_type, MRB_ARGS_NONE());
   mrb_define_method(mrb, node_class, "yes_child", mrb_naraku_node_yes_child, MRB_ARGS_NONE());

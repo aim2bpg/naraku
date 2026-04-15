@@ -1,11 +1,5 @@
 #include <naraku_encoding.h>
 
-#if defined(__GNUC__)
-#define ARG_UNUSED __attribute__((unused))
-#else
-#define ARG_UNUSED
-#endif
-
 static const int8_t UTF_8_EXPECTED_WIDTH[] = {
   1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
   1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
@@ -172,7 +166,7 @@ static const int8_t UTF_8_TRANS_TABLE[][0x100] = {
 #undef F
 
 static int8_t
-utf_8_scan_mbc_width(const nk_encoding_t* enc ARG_UNUSED, const uint8_t* bytes, const uint8_t* bytes_end) {
+utf_8_scan_mbc_width(const nk_encoding_t* enc NARAKU_ARG_UNUSED, const uint8_t* bytes, const uint8_t* bytes_end) {
   int8_t expected_width = UTF_8_EXPECTED_WIDTH[*bytes];
   int8_t state = UTF_8_TRANS_TABLE[0][*bytes++];
   if (state < 0) {
@@ -203,7 +197,7 @@ utf_8_scan_mbc_width(const nk_encoding_t* enc ARG_UNUSED, const uint8_t* bytes, 
 }
 
 static nk_error_t
-utf_8_encode_mbc(const nk_encoding_t* enc ARG_UNUSED, uint32_t code, size_t* out_width, uint8_t* out_bytes) {
+utf_8_encode_mbc(const nk_encoding_t* enc NARAKU_ARG_UNUSED, uint32_t code, size_t* out_width, uint8_t* out_bytes) {
   int32_t mbc_len = 0;
   if (code <= 0x7F) {
     mbc_len = 1;
@@ -250,8 +244,11 @@ utf_8_encode_mbc(const nk_encoding_t* enc ARG_UNUSED, uint32_t code, size_t* out
   return NK_SUCCESS;
 }
 
-static uint32_t
-utf_8_decode_mbc(const nk_encoding_t* enc ARG_UNUSED, const uint8_t* bytes, const uint8_t* bytes_end ARG_UNUSED) {
+static uint32_t utf_8_decode_mbc(
+  const nk_encoding_t* enc NARAKU_ARG_UNUSED,
+  const uint8_t* bytes,
+  const uint8_t* bytes_end NARAKU_ARG_UNUSED
+) {
   int8_t expected_width = UTF_8_EXPECTED_WIDTH[bytes[0]];
   switch (expected_width) {
     case 2:
@@ -267,7 +264,7 @@ utf_8_decode_mbc(const nk_encoding_t* enc ARG_UNUSED, const uint8_t* bytes, cons
 }
 
 nk_error_t utf_8_adjust_mbc_head(
-  const nk_encoding_t* enc ARG_UNUSED,
+  const nk_encoding_t* enc NARAKU_ARG_UNUSED,
   const uint8_t** bytes_to_adjust,
   nk_adjust_mbc_head_context_t* context
 ) {

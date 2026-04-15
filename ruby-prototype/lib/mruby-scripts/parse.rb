@@ -23,6 +23,8 @@ def run(request)
   parser = Naraku::Parser.new(enc, pattern, **options)
   node = parser.parse
 
+  parser.postprocess(node) if request['postprocess']
+
   {
     'ok' => true,
     'data' => {

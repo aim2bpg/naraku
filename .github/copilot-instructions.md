@@ -73,6 +73,7 @@ Naraku is a Ruby/Onigmo-compatible regular expression engine implemented in C.
 - `Naraku::Parser.new` options are wired through:
   - `mrblib/naraku/parser.rb` -> `_new`
   - `src/mrb_naraku_parser.c` -> `nk_parser_options_t`
+- In `bin/mruby`, `Naraku` is built-in; do not call `require 'naraku'`.
 - Keep Ruby Proc callbacks alive (e.g., warning callback stored on parser object) to avoid GC issues.
 - Free C-side user data correctly in parser free hooks.
 - Parse errors exposed to Ruby should preserve `offset`/`length` from parser error span fields.

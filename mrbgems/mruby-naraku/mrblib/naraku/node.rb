@@ -33,38 +33,47 @@ module Naraku
       when :newline, :grapheme_cluster, :keep
         # no extra fields
       when :back_ref
+        h[:target_kind] = target_kind
         h[:is_ignore_case] = is_ignore_case
         h[:fold_flags] = fold_flags
         h[:has_name] = has_name
         h[:name] = name
-        h[:group_num] = group_num
+        h[:capture_num] = capture_num
+        h[:resolved_capture_nums] = resolved_capture_nums
         h[:has_depth] = has_depth
         h[:depth] = depth
       when :call
+        h[:target_kind] = target_kind
         h[:has_name] = has_name
         h[:name] = name
-        h[:group_num] = group_num
+        h[:capture_num] = capture_num
+        h[:resolved_capture_num] = resolved_capture_num
       when :assertion
         h[:assertion_type] = assertion_type
         h[:child] = child&.to_h
       when :quantifier
         h[:min] = min
+        h[:has_max] = has_max
         h[:max] = max
         h[:quantifier_type] = quantifier_type
         h[:child] = child.to_h
-      when :group
+      when :capture
         h[:has_name] = has_name
         h[:name] = name
-        h[:group_num] = group_num
+        h[:capture_num] = capture_num
+        h[:child] = child.to_h
+      when :group
         h[:child] = child.to_h
       when :atomic
         h[:child] = child.to_h
       when :absence
         h[:child] = child.to_h
       when :conditional
+        h[:target_kind] = target_kind
         h[:has_name] = has_name
         h[:name] = name
-        h[:group_num] = group_num
+        h[:capture_num] = capture_num
+        h[:resolved_capture_nums] = resolved_capture_nums
         h[:has_depth] = has_depth
         h[:depth] = depth
         h[:yes_child] = yes_child&.to_h

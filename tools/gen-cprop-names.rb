@@ -87,7 +87,7 @@ def gen_source(cat, debug:)
   end
 
   puts gperf_code
-    .gsub(%r{/\*FALLTHROUGH\*/}, '__attribute__((fallthrough));')
+    .gsub(%r{/\*FALLTHROUGH\*/}, 'NARAKU_FALLTHROUGH;')
     .gsub(%r{\{-1\}}, '{-1, 0}')
     .gsub('offsetof', '(int32_t)offsetof')
 end

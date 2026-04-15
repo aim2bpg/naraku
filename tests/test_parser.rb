@@ -1,6 +1,4 @@
 module Parser
-  UINT32_MAX = (2**32) - 1
-
   class TestParser < Mtest::Test
     def parse(pattern, encoding: Naraku::Encoding::UTF_8, **options)
       parser = Naraku::Parser.new(encoding, pattern, **options)
@@ -82,7 +80,7 @@ module Parser
         node[:unions].each do |char_class_union|
           assert_char_class_union_span(char_class_union, pattern_len, offset, span_end)
         end
-      when :assertion, :quantifier, :group, :atomic, :absence
+      when :assertion, :quantifier, :capture, :group, :atomic, :absence
         assert_node_span(node[:child], pattern_len, offset, span_end) if node[:child]
       when :conditional
         assert_node_span(node[:yes_child], pattern_len, offset, span_end)
@@ -125,7 +123,7 @@ module Parser
     def test_parser_default_limit_constants
       assert_equal 1_000_000, Naraku::Parser::DEFAULT_RANGE_QUANTIFIER_MAX_REPETITION
       assert_equal 10_000, Naraku::Parser::DEFAULT_BARE_BACK_REF_MAX_NUM
-      assert_equal 10_000_000, Naraku::Parser::DEFAULT_MAX_GROUP_NUM
+      assert_equal 10_000_000, Naraku::Parser::DEFAULT_MAX_CAPTURE_NUM
       assert_equal 10_000_000, Naraku::Parser::DEFAULT_BACK_REF_MAX_NUM
       assert_equal 1_000, Naraku::Parser::DEFAULT_MAX_CAPTURE_DEPTH
       assert_equal 1_000, Naraku::Parser::DEFAULT_MAX_PARSE_DEPTH
@@ -741,7 +739,8 @@ module Parser
       result = parse('a*')
       assert_equal :quantifier, result[:type]
       assert_equal 0, result[:min]
-      assert_equal UINT32_MAX, result[:max]
+      assert_equal false, result[:has_max]
+      assert_equal nil, result[:max]
       assert_equal :greedy, result[:quantifier_type]
       assert_equal :literal, result[:child][:type]
       assert_equal 'a', result[:child][:buf]
@@ -751,7 +750,8 @@ module Parser
       result = parse('a+')
       assert_equal :quantifier, result[:type]
       assert_equal 1, result[:min]
-      assert_equal UINT32_MAX, result[:max]
+      assert_equal false, result[:has_max]
+      assert_equal nil, result[:max]
       assert_equal :greedy, result[:quantifier_type]
     end
 
@@ -759,6 +759,7 @@ module Parser
       result = parse('a?')
       assert_equal :quantifier, result[:type]
       assert_equal 0, result[:min]
+      assert_equal true, result[:has_max]
       assert_equal 1, result[:max]
       assert_equal :greedy, result[:quantifier_type]
     end
@@ -769,7 +770,8 @@ module Parser
       result = parse('a*?')
       assert_equal :quantifier, result[:type]
       assert_equal 0, result[:min]
-      assert_equal UINT32_MAX, result[:max]
+      assert_equal false, result[:has_max]
+      assert_equal nil, result[:max]
       assert_equal :reluctant, result[:quantifier_type]
     end
 
@@ -777,7 +779,8 @@ module Parser
       result = parse('a+?')
       assert_equal :quantifier, result[:type]
       assert_equal 1, result[:min]
-      assert_equal UINT32_MAX, result[:max]
+      assert_equal false, result[:has_max]
+      assert_equal nil, result[:max]
       assert_equal :reluctant, result[:quantifier_type]
     end
 
@@ -785,6 +788,7 @@ module Parser
       result = parse('a??')
       assert_equal :quantifier, result[:type]
       assert_equal 0, result[:min]
+      assert_equal true, result[:has_max]
       assert_equal 1, result[:max]
       assert_equal :reluctant, result[:quantifier_type]
     end
@@ -795,7 +799,8 @@ module Parser
       result = parse('a*+')
       assert_equal :quantifier, result[:type]
       assert_equal 0, result[:min]
-      assert_equal UINT32_MAX, result[:max]
+      assert_equal false, result[:has_max]
+      assert_equal nil, result[:max]
       assert_equal :possessive, result[:quantifier_type]
     end
 
@@ -803,7 +808,8 @@ module Parser
       result = parse('a++')
       assert_equal :quantifier, result[:type]
       assert_equal 1, result[:min]
-      assert_equal UINT32_MAX, result[:max]
+      assert_equal false, result[:has_max]
+      assert_equal nil, result[:max]
       assert_equal :possessive, result[:quantifier_type]
     end
 
@@ -811,6 +817,7 @@ module Parser
       result = parse('a?+')
       assert_equal :quantifier, result[:type]
       assert_equal 0, result[:min]
+      assert_equal true, result[:has_max]
       assert_equal 1, result[:max]
       assert_equal :possessive, result[:quantifier_type]
     end
@@ -821,6 +828,7 @@ module Parser
       result = parse('a{3}')
       assert_equal :quantifier, result[:type]
       assert_equal 3, result[:min]
+      assert_equal true, result[:has_max]
       assert_equal 3, result[:max]
       assert_equal :greedy, result[:quantifier_type]
     end
@@ -829,6 +837,7 @@ module Parser
       result = parse('a{2,5}')
       assert_equal :quantifier, result[:type]
       assert_equal 2, result[:min]
+      assert_equal true, result[:has_max]
       assert_equal 5, result[:max]
       assert_equal :greedy, result[:quantifier_type]
     end
@@ -837,7 +846,8 @@ module Parser
       result = parse('a{2,}')
       assert_equal :quantifier, result[:type]
       assert_equal 2, result[:min]
-      assert_equal UINT32_MAX, result[:max]
+      assert_equal false, result[:has_max]
+      assert_equal nil, result[:max]
       assert_equal :greedy, result[:quantifier_type]
     end
 
@@ -845,6 +855,7 @@ module Parser
       result = parse('a{,5}')
       assert_equal :quantifier, result[:type]
       assert_equal 0, result[:min]
+      assert_equal true, result[:has_max]
       assert_equal 5, result[:max]
       assert_equal :greedy, result[:quantifier_type]
     end
@@ -853,6 +864,7 @@ module Parser
       result = parse('a{2,5}?')
       assert_equal :quantifier, result[:type]
       assert_equal 2, result[:min]
+      assert_equal true, result[:has_max]
       assert_equal 5, result[:max]
       assert_equal :reluctant, result[:quantifier_type]
     end
@@ -861,6 +873,7 @@ module Parser
       result = parse('a{2,5}+')
       assert_equal :quantifier, result[:type]
       assert_equal 2, result[:min]
+      assert_equal true, result[:has_max]
       assert_equal 5, result[:max]
       assert_equal :possessive, result[:quantifier_type]
     end
@@ -870,10 +883,12 @@ module Parser
       result = parse('a{3}?')
       assert_equal :quantifier, result[:type]
       assert_equal 0, result[:min]
+      assert_equal true, result[:has_max]
       assert_equal 1, result[:max]
       child = result[:child]
       assert_equal :quantifier, child[:type]
       assert_equal 3, child[:min]
+      assert_equal true, child[:has_max]
       assert_equal 3, child[:max]
     end
 
@@ -930,7 +945,7 @@ module Parser
         'number in quantifier is too large',
         offset: 2,
         length: 2,
-        range_quantifier_max_repetition: 10
+        range_quantifier_max_repetition_limit: 10
       )
     end
 
@@ -1171,7 +1186,8 @@ module Parser
       child = result[:child]
       assert_equal :quantifier, child[:type]
       assert_equal 0, child[:min]
-      assert_equal UINT32_MAX, child[:max]
+      assert_equal false, child[:has_max]
+      assert_equal nil, child[:max]
       assert_equal :greedy, child[:quantifier_type]
 
       child = child[:child]
@@ -1198,16 +1214,16 @@ module Parser
 
     def test_group_capturing
       result = parse('(a)')
-      assert_equal :group, result[:type]
-      assert_equal 1, result[:group_num]
+      assert_equal :capture, result[:type]
+      assert_equal 1, result[:capture_num]
       assert_equal :literal, result[:child][:type]
       assert_equal 'a', result[:child][:buf]
     end
 
     def test_group_nested
       result = parse('(a(b))')
-      assert_equal :group, result[:type]
-      assert_equal 1, result[:group_num]
+      assert_equal :capture, result[:type]
+      assert_equal 1, result[:capture_num]
 
       child = result[:child]
       assert_equal :concat, child[:type]
@@ -1216,16 +1232,14 @@ module Parser
       assert_equal 'a', child[:children][0][:buf]
 
       inner_group = child[:children][1]
-      assert_equal :group, inner_group[:type]
-      assert_equal 2, inner_group[:group_num]
+      assert_equal :capture, inner_group[:type]
+      assert_equal 2, inner_group[:capture_num]
       assert_equal 'b', inner_group[:child][:buf]
     end
 
     def test_group_non_capturing
       result = parse('(?:a)')
       assert_equal :group, result[:type]
-      assert_equal false, result[:has_name]
-      assert_equal 0, result[:group_num]
       assert_equal :literal, result[:child][:type]
       assert_equal 'a', result[:child][:buf]
     end
@@ -1289,16 +1303,16 @@ module Parser
 
     def test_group_named
       result = parse('(?<name>a)')
-      assert_equal :group, result[:type]
+      assert_equal :capture, result[:type]
       assert_equal true, result[:has_name]
       assert_equal 'name', result[:name]
-      assert_equal 0, result[:group_num]
+      assert_equal 0, result[:capture_num]
 
       result = parse("(?'name'a)")
-      assert_equal :group, result[:type]
+      assert_equal :capture, result[:type]
       assert_equal true, result[:has_name]
       assert_equal 'name', result[:name]
-      assert_equal 0, result[:group_num]
+      assert_equal 0, result[:capture_num]
     end
 
     def test_error_invalid_group_name
@@ -1361,7 +1375,8 @@ module Parser
     def test_conditional
       result = parse('(?(1)a|b)')
       assert_equal :conditional, result[:type]
-      assert_equal 1, result[:group_num]
+      assert_equal :capture_num, result[:target_kind]
+      assert_equal 1, result[:capture_num]
       assert_equal :literal, result[:yes_child][:type]
       assert_equal 'a', result[:yes_child][:buf]
       assert_equal :literal, result[:no_child][:type]
@@ -1370,7 +1385,8 @@ module Parser
       # Conditional with only true branch
       result = parse('(?(1)a)')
       assert_equal :conditional, result[:type]
-      assert_equal 1, result[:group_num]
+      assert_equal :capture_num, result[:target_kind]
+      assert_equal 1, result[:capture_num]
       assert_equal :literal, result[:yes_child][:type]
       assert_equal 'a', result[:yes_child][:buf]
       assert_equal nil, result[:no_child]
@@ -1379,7 +1395,8 @@ module Parser
     def test_conditional_with_depth
       result = parse('(?(1+1)a|b)')
       assert_equal :conditional, result[:type]
-      assert_equal 1, result[:group_num]
+      assert_equal :capture_num, result[:target_kind]
+      assert_equal 1, result[:capture_num]
       assert_equal true, result[:has_depth]
       assert_equal 1, result[:depth]
       assert_equal :literal, result[:yes_child][:type]
@@ -1391,8 +1408,10 @@ module Parser
     def test_conditional_named
       result = parse('(?(<name>)a|b)')
       assert_equal :conditional, result[:type]
+      assert_equal :name, result[:target_kind]
       assert_equal true, result[:has_name]
       assert_equal 'name', result[:name]
+      assert_equal nil, result[:capture_num]
       assert_equal :literal, result[:yes_child][:type]
       assert_equal 'a', result[:yes_child][:buf]
       assert_equal :literal, result[:no_child][:type]
@@ -1400,8 +1419,10 @@ module Parser
 
       result = parse(%q{(?('name')a|b)})
       assert_equal :conditional, result[:type]
+      assert_equal :name, result[:target_kind]
       assert_equal true, result[:has_name]
       assert_equal 'name', result[:name]
+      assert_equal nil, result[:capture_num]
       assert_equal :literal, result[:yes_child][:type]
       assert_equal 'a', result[:yes_child][:buf]
       assert_equal :literal, result[:no_child][:type]
@@ -1412,8 +1433,8 @@ module Parser
       assert_parse_error('(?(1', 'incomplete group specifier', offset: 0, length: 4)
     end
 
-    def test_conditional_invalid_group_number
-      assert_parse_error('(?(0)a|b)', 'invalid conditional group number', offset: 3, length: 1)
+    def test_conditional_invalid_capture_number
+      assert_parse_error('(?(0)a|b)', 'invalid conditional capture number', offset: 3, length: 1)
     end
 
     def test_conditional_errors
@@ -1620,45 +1641,56 @@ module Parser
     def test_back_ref_number
       result = parse('\1')
       assert_equal :back_ref, result[:type]
+      assert_equal :capture_num, result[:target_kind]
       assert_equal false, result[:has_name]
-      assert_equal 1, result[:group_num]
+      assert_equal 1, result[:capture_num]
 
       result = parse('\k<1>')
       assert_equal :back_ref, result[:type]
+      assert_equal :capture_num, result[:target_kind]
       assert_equal false, result[:has_name]
-      assert_equal 1, result[:group_num]
+      assert_equal 1, result[:capture_num]
 
       # Relative back-reference
       result = parse('()\k<-1>')
       assert_equal :concat, result[:type]
       assert_equal 2, result[:children].length
       assert_equal :back_ref, result[:children][1][:type]
-      assert_equal 1, result[:children][1][:group_num]
+      assert_equal :capture_num, result[:children][1][:target_kind]
+      assert_equal 1, result[:children][1][:capture_num]
     end
 
     def test_back_ref_named
       result = parse('\k<name>')
       assert_equal :back_ref, result[:type]
+      assert_equal :name, result[:target_kind]
       assert_equal true, result[:has_name]
       assert_equal 'name', result[:name]
+      assert_equal nil, result[:capture_num]
 
       result = parse(%q{\k'name'})
       assert_equal :back_ref, result[:type]
+      assert_equal :name, result[:target_kind]
       assert_equal true, result[:has_name]
       assert_equal 'name', result[:name]
+      assert_equal nil, result[:capture_num]
 
       # With depth
       result = parse('\k<name+1>')
       assert_equal :back_ref, result[:type]
+      assert_equal :name, result[:target_kind]
       assert_equal true, result[:has_name]
       assert_equal 'name', result[:name]
+      assert_equal nil, result[:capture_num]
       assert_equal true, result[:has_depth]
       assert_equal 1, result[:depth]
 
       result = parse('\k<name-1>')
       assert_equal :back_ref, result[:type]
+      assert_equal :name, result[:target_kind]
       assert_equal true, result[:has_name]
       assert_equal 'name', result[:name]
+      assert_equal nil, result[:capture_num]
       assert_equal true, result[:has_depth]
       assert_equal(-1, result[:depth])
     end
@@ -1674,15 +1706,15 @@ module Parser
     end
 
     def test_bare_back_ref_with_custom_limit
-      result = parse('\9', bare_back_ref_max_num: 8)
+      result = parse('\9', bare_back_ref_max_num_limit: 8)
       assert_equal :literal, result[:type]
       assert_equal '9', result[:buf]
     end
 
-    def test_error_group_number_out_of_range
+    def test_error_capture_number_out_of_range
       # In \k<-1>, the error is reported at > (offset 5)
-      assert_parse_error('\k<-1>', 'group number is out of range', offset: 3, length: 2)
-      assert_parse_error('\g<-1>', 'group number is out of range', offset: 3, length: 2)
+      assert_parse_error('\k<-1>', 'capture number is out of range', offset: 3, length: 2)
+      assert_parse_error('\g<-1>', 'capture number is out of range', offset: 3, length: 2)
     end
 
     def test_error_incomplete_back_ref
@@ -1698,13 +1730,13 @@ module Parser
 
     def test_error_capture_depth_too_large
       assert_parse_error('\k<name+1001>', 'capture depth is too large', offset: 8, length: 4)
-      assert_parse_error('\k<name+3>', 'capture depth is too large', offset: 8, length: 1, max_capture_depth: 2)
+      assert_parse_error('\k<name+3>', 'capture depth is too large', offset: 8, length: 1, max_capture_depth_limit: 2)
     end
 
-    def test_error_group_number_too_large
-      assert_parse_error('\k<10000001>', 'group number is too large', offset: 3, length: 8)
-      assert_parse_error('\g<10000001>', 'group number is too large', offset: 3, length: 8)
-      assert_parse_error('\k<11>', 'group number is too large', offset: 3, length: 2, back_ref_max_num: 10)
+    def test_error_capture_number_too_large
+      assert_parse_error('\k<10000001>', 'capture number is too large', offset: 3, length: 8)
+      assert_parse_error('\g<10000001>', 'capture number is too large', offset: 3, length: 8)
+      assert_parse_error('\k<11>', 'capture number is too large', offset: 3, length: 2, back_ref_max_num_limit: 10)
     end
 
     def test_error_invalid_back_ref
@@ -1712,11 +1744,11 @@ module Parser
     end
 
     def test_error_too_many_capture_groups_with_custom_limit
-      assert_parse_error('(a)(b)', 'too many capture groups', offset: 3, length: 1, max_group_num: 1)
+      assert_parse_error('(a)(b)', 'too many capture groups', offset: 3, length: 1, max_capture_num_limit: 1)
     end
 
     def test_error_parse_depth_limit_exceeded
-      assert_parse_error('a', 'parse depth limit exceeded', offset: 1, length: 0, max_parse_depth: 1)
+      assert_parse_error('a', 'parse depth limit exceeded', offset: 1, length: 0, max_parse_depth_limit: 1)
     end
 
     # ========================================================================
@@ -1728,30 +1760,37 @@ module Parser
     def test_subexp_call
       result = parse('\g<1>')
       assert_equal :call, result[:type]
+      assert_equal :capture_num, result[:target_kind]
       assert_equal false, result[:has_name]
-      assert_equal 1, result[:group_num]
+      assert_equal 1, result[:capture_num]
 
       result = parse('\g<0>')
       assert_equal :call, result[:type]
+      assert_equal :root, result[:target_kind]
       assert_equal false, result[:has_name]
-      assert_equal 0, result[:group_num]
+      assert_equal nil, result[:capture_num]
 
       result = parse('\g<name>')
       assert_equal :call, result[:type]
+      assert_equal :name, result[:target_kind]
       assert_equal true, result[:has_name]
       assert_equal 'name', result[:name]
+      assert_equal nil, result[:capture_num]
 
       result = parse(%q{\g'name'})
       assert_equal :call, result[:type]
+      assert_equal :name, result[:target_kind]
       assert_equal true, result[:has_name]
       assert_equal 'name', result[:name]
+      assert_equal nil, result[:capture_num]
 
       # Relative call
       result = parse('()\g<-1>')
       assert_equal :concat, result[:type]
       assert_equal 2, result[:children].length
       assert_equal :call, result[:children][1][:type]
-      assert_equal 1, result[:children][1][:group_num]
+      assert_equal :capture_num, result[:children][1][:target_kind]
+      assert_equal 1, result[:children][1][:capture_num]
     end
 
     def test_subexp_call_literal

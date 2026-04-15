@@ -36,8 +36,8 @@ def gen_ascii(case_map)
   puts
 
   puts 'size_t nk_enc_ascii_get_case_fold('
-  puts '    const nk_encoding_t* enc ARG_UNUSED,'
-  puts '    nk_fold_flag_t flags ARG_UNUSED,'
+  puts '    const nk_encoding_t* enc NARAKU_ARG_UNUSED,'
+  puts '    nk_fold_flag_t flags NARAKU_ARG_UNUSED,'
   puts '    uint32_t code,'
   puts '    uint32_t* folded_codes'
   puts ') {'
@@ -49,10 +49,10 @@ def gen_ascii(case_map)
   puts
 
   puts 'size_t nk_enc_ascii_expand_case_unfold('
-  puts '    const nk_encoding_t* enc ARG_UNUSED,'
-  puts '    nk_fold_flag_t flags ARG_UNUSED,'
+  puts '    const nk_encoding_t* enc NARAKU_ARG_UNUSED,'
+  puts '    nk_fold_flag_t flags NARAKU_ARG_UNUSED,'
   puts '    const uint32_t* folded_codes,'
-  puts '    size_t folded_codes_len ARG_UNUSED,'
+  puts '    size_t folded_codes_len NARAKU_ARG_UNUSED,'
   puts '    nk_unfold_item_t* unfold_items'
   puts ') {'
   puts '  uint32_t code = folded_codes[0];'
@@ -78,8 +78,8 @@ def gen_ascii(case_map)
   puts
 
   puts 'nk_error_t nk_enc_ascii_iterate_case_fold('
-  puts '    const nk_encoding_t* enc ARG_UNUSED,'
-  puts '    nk_fold_flag_t flags ARG_UNUSED,'
+  puts '    const nk_encoding_t* enc NARAKU_ARG_UNUSED,'
+  puts '    nk_fold_flag_t flags NARAKU_ARG_UNUSED,'
   puts '    nk_case_fold_callback_t callback,'
   puts '    void* user_data'
   puts ') {'
@@ -224,7 +224,7 @@ def gen_unicode(case_map)
     io.close_write
 
     io.read
-      .gsub(%r{/\*FALLTHROUGH\*/}, '__attribute__((fallthrough));')
+      .gsub(%r{/\*FALLTHROUGH\*/}, 'NARAKU_FALLTHROUGH;')
       .gsub('{-1}', '{-1, 0}')
       .gsub('offsetof', '(uint16_t)offsetof')
   end
@@ -247,7 +247,7 @@ def gen_unicode(case_map)
     io.close_write
 
     io.read
-      .gsub(%r{/\*FALLTHROUGH\*/}, '__attribute__((fallthrough));')
+      .gsub(%r{/\*FALLTHROUGH\*/}, 'NARAKU_FALLTHROUGH;')
       .gsub('{-1}', '{-1, 0}')
       .gsub('offsetof', '(uint16_t)offsetof')
   end
@@ -303,7 +303,7 @@ def gen_unicode(case_map)
       io.close_write
 
       io.read
-        .gsub(%r{/\*FALLTHROUGH\*/}, '__attribute__((fallthrough));')
+        .gsub(%r{/\*FALLTHROUGH\*/}, 'NARAKU_FALLTHROUGH;')
         .gsub('{-1}', '{-1, 0}')
         .gsub('offsetof', '(uint16_t)offsetof')
     end
@@ -365,7 +365,7 @@ def gen_sb(case_map, enc, prefix)
 
   has_sharp_s = rev_map.key?(0x00DF)
   puts "size_t #{prefix}_get_case_fold("
-  puts '    const nk_encoding_t* enc ARG_UNUSED,'
+  puts '    const nk_encoding_t* enc NARAKU_ARG_UNUSED,'
   puts '    nk_fold_flag_t flags,'
   puts '    uint32_t code,'
   puts '    uint32_t* folded_codes'
@@ -390,10 +390,10 @@ def gen_sb(case_map, enc, prefix)
   puts
 
   puts "size_t #{prefix}_expand_case_unfold("
-  puts '    const nk_encoding_t* enc ARG_UNUSED,'
+  puts '    const nk_encoding_t* enc NARAKU_ARG_UNUSED,'
   puts '    nk_fold_flag_t flags,'
   puts '    const uint32_t* folded_codes,'
-  puts '    size_t folded_codes_len ARG_UNUSED,'
+  puts '    size_t folded_codes_len NARAKU_ARG_UNUSED,'
   puts '    nk_unfold_item_t* unfold_items'
   puts ') {'
   puts '  size_t unfold_count = nk_enc_ascii_expand_case_unfold(enc, flags, folded_codes, folded_codes_len, unfold_items);'
@@ -428,7 +428,7 @@ def gen_sb(case_map, enc, prefix)
   puts
 
   puts "nk_error_t #{prefix}_iterate_case_fold("
-  puts '    const nk_encoding_t* enc ARG_UNUSED,'
+  puts '    const nk_encoding_t* enc NARAKU_ARG_UNUSED,'
   puts '    nk_fold_flag_t flags,'
   puts '    nk_case_fold_callback_t callback,'
   puts '    void* user_data'
@@ -501,7 +501,7 @@ def gen_mb2(case_map, enc, prefix)
   has_sharp_s = rev_map.key?(0x00DF)
 
   puts "size_t #{prefix}_get_case_fold("
-  puts '    const nk_encoding_t* enc ARG_UNUSED,'
+  puts '    const nk_encoding_t* enc NARAKU_ARG_UNUSED,'
   puts '    nk_fold_flag_t flags,'
   puts '    uint32_t code,'
   puts '    uint32_t* folded_codes'
@@ -542,10 +542,10 @@ def gen_mb2(case_map, enc, prefix)
   puts
 
   puts "size_t #{prefix}_expand_case_unfold("
-  puts '    const nk_encoding_t* enc ARG_UNUSED,'
+  puts '    const nk_encoding_t* enc NARAKU_ARG_UNUSED,'
   puts '    nk_fold_flag_t flags,'
   puts '    const uint32_t* folded_codes,'
-  puts '    size_t folded_codes_len ARG_UNUSED,'
+  puts '    size_t folded_codes_len NARAKU_ARG_UNUSED,'
   puts '    nk_unfold_item_t* unfold_items'
   puts ') {'
   puts '  size_t unfold_count = nk_enc_ascii_expand_case_unfold(enc, flags, folded_codes, folded_codes_len, unfold_items);'
@@ -580,7 +580,7 @@ def gen_mb2(case_map, enc, prefix)
   puts
 
   puts "nk_error_t #{prefix}_iterate_case_fold("
-  puts '    const nk_encoding_t* enc ARG_UNUSED,'
+  puts '    const nk_encoding_t* enc NARAKU_ARG_UNUSED,'
   puts '    nk_fold_flag_t flags,'
   puts '    nk_case_fold_callback_t callback,'
   puts '    void* user_data'

@@ -151,12 +151,12 @@ void nk_node_free(nk_node_t* node) {
     case NK_NODE_TYPE_KEEP:
       break;
     case NK_NODE_TYPE_BACK_REF:
-      if (node->back_ref.has_name) {
+      if (node->back_ref.target_kind == NK_REF_TARGET_KIND_NAME) {
         nk_pbuf_free(&node->back_ref.name_buf);
       }
       break;
     case NK_NODE_TYPE_CALL:
-      if (node->call.has_name) {
+      if (node->call.target_kind == NK_CALL_TARGET_KIND_NAME) {
         nk_pbuf_free(&node->call.name_buf);
       }
       break;
@@ -172,10 +172,16 @@ void nk_node_free(nk_node_t* node) {
         node->quantifier.child = NULL;
       }
       break;
-    case NK_NODE_TYPE_GROUP:
-      if (node->group.has_name) {
-        nk_pbuf_free(&node->group.name_buf);
+    case NK_NODE_TYPE_CAPTURE:
+      if (node->capture.has_name) {
+        nk_pbuf_free(&node->capture.name_buf);
       }
+      if (node->capture.child != NULL) {
+        nk_node_free(node->capture.child);
+        node->capture.child = NULL;
+      }
+      break;
+    case NK_NODE_TYPE_GROUP:
       if (node->group.child != NULL) {
         nk_node_free(node->group.child);
         node->group.child = NULL;
@@ -194,7 +200,7 @@ void nk_node_free(nk_node_t* node) {
       }
       break;
     case NK_NODE_TYPE_CONDITIONAL:
-      if (node->conditional.has_name) {
+      if (node->conditional.target_kind == NK_REF_TARGET_KIND_NAME) {
         nk_pbuf_free(&node->conditional.name_buf);
       }
       if (node->conditional.yes_child != NULL) {
@@ -284,7 +290,7 @@ nk_error_t nk_node_to_owned(nk_node_t* node) {
       }
       break;
     case NK_NODE_TYPE_BACK_REF:
-      if (node->back_ref.has_name) {
+      if (node->back_ref.target_kind == NK_REF_TARGET_KIND_NAME) {
         err = nk_pbuf_to_owned(&node->back_ref.name_buf);
         if (err != NK_SUCCESS) {
           return err;
@@ -292,7 +298,7 @@ nk_error_t nk_node_to_owned(nk_node_t* node) {
       }
       break;
     case NK_NODE_TYPE_CALL:
-      if (node->call.has_name) {
+      if (node->call.target_kind == NK_CALL_TARGET_KIND_NAME) {
         err = nk_pbuf_to_owned(&node->call.name_buf);
         if (err != NK_SUCCESS) {
           return err;
@@ -311,13 +317,19 @@ nk_error_t nk_node_to_owned(nk_node_t* node) {
         return err;
       }
       break;
-    case NK_NODE_TYPE_GROUP:
-      if (node->group.has_name) {
-        err = nk_pbuf_to_owned(&node->group.name_buf);
+    case NK_NODE_TYPE_CAPTURE:
+      if (node->capture.has_name) {
+        err = nk_pbuf_to_owned(&node->capture.name_buf);
         if (err != NK_SUCCESS) {
           return err;
         }
       }
+      err = nk_node_to_owned(node->capture.child);
+      if (err != NK_SUCCESS) {
+        return err;
+      }
+      break;
+    case NK_NODE_TYPE_GROUP:
       err = nk_node_to_owned(node->group.child);
       if (err != NK_SUCCESS) {
         return err;
@@ -336,7 +348,7 @@ nk_error_t nk_node_to_owned(nk_node_t* node) {
       }
       break;
     case NK_NODE_TYPE_CONDITIONAL:
-      if (node->conditional.has_name) {
+      if (node->conditional.target_kind == NK_REF_TARGET_KIND_NAME) {
         err = nk_pbuf_to_owned(&node->conditional.name_buf);
         if (err != NK_SUCCESS) {
           return err;

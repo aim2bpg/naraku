@@ -65,6 +65,7 @@ typedef struct nk_back_ref_node nk_back_ref_node_t;
 typedef struct nk_call_node nk_call_node_t;
 typedef struct nk_assertion_node nk_assertion_node_t;
 typedef struct nk_quantifier_node nk_quantifier_node_t;
+typedef struct nk_capture_node nk_capture_node_t;
 typedef struct nk_group_node nk_group_node_t;
 typedef struct nk_atomic_node nk_atomic_node_t;
 typedef struct nk_absence_node nk_absence_node_t;
@@ -93,6 +94,7 @@ typedef enum {
   NK_NODE_TYPE_CALL,
   NK_NODE_TYPE_ASSERTION,
   NK_NODE_TYPE_QUANTIFIER,
+  NK_NODE_TYPE_CAPTURE,
   NK_NODE_TYPE_GROUP,
   NK_NODE_TYPE_ATOMIC,
   NK_NODE_TYPE_ABSENCE,
@@ -281,6 +283,15 @@ struct nk_keep_node {
 };
 
 /**
+ * Enumeration of reference target kinds used by back references and
+ * conditionals.
+ */
+typedef enum {
+  NK_REF_TARGET_KIND_CAPTURE_NUM = 0,  // numeric target (e.g., `\1`, `(?(1)...)`)
+  NK_REF_TARGET_KIND_NAME,             // named target (e.g., `\k<name>`, `(?(<name>)...)`)
+} nk_ref_target_kind_t;
+
+/**
  * Structure representing a back reference node in the regex AST (e.g., `\1`,
  * `\k<name>`).
  */
@@ -288,11 +299,13 @@ struct nk_back_ref_node {
   nk_node_base_t base;
   bool is_ignore_case;
   nk_fold_flag_t fold_flags;
-  bool has_name;
-  nk_pbuf_t name_buf;
-  uint32_t group_num;
+  nk_ref_target_kind_t target_kind;
+  nk_pbuf_t name_buf;    // valid when `target_kind == NK_REF_TARGET_KIND_NAME`
+  uint32_t capture_num;  // valid (`capture_num > 0`) when `target_kind == NK_REF_TARGET_KIND_CAPTURE_NUM`
+  size_t resolved_capture_name_map_entry_index;
+  size_t resolved_capture_num_count;
   bool has_depth;
-  int32_t depth;
+  int32_t depth;  // valid when `has_depth == true`
 };
 
 /**
@@ -303,11 +316,18 @@ struct nk_back_ref_node {
 /**
  * Structure representing a call node in the regex AST (e.g., `\g<name>`).
  */
+typedef enum {
+  NK_CALL_TARGET_KIND_ROOT = 0,     // `\g<0>`
+  NK_CALL_TARGET_KIND_CAPTURE_NUM,  // `\g<1>`
+  NK_CALL_TARGET_KIND_NAME,         // `\g<name>`
+} nk_call_target_kind_t;
+
 struct nk_call_node {
   nk_node_base_t base;
-  bool has_name;
-  nk_pbuf_t name_buf;
-  uint32_t group_num;
+  nk_call_target_kind_t target_kind;
+  nk_pbuf_t name_buf;             // valid when `target_kind == NK_CALL_TARGET_KIND_NAME`
+  uint32_t capture_num;           // valid (`capture_num > 0`) when `target_kind == NK_CALL_TARGET_KIND_CAPTURE_NUM`
+  uint32_t resolved_capture_num;  // resolved target; `0` means root (`target_kind == NK_CALL_TARGET_KIND_ROOT`)
 };
 
 /**
@@ -355,19 +375,29 @@ struct nk_quantifier_node {
   nk_node_base_t base;
   nk_node_t* child;
   uint32_t min;
-  uint32_t max;  // `UINT32_MAX` means no upper limit (i.e., `{min,}`)
+  bool has_max;
+  uint32_t max;  // only meaningful when `has_max == true`
   nk_quantifier_type_t type;
 };
 
 /**
- * Structure representing a group node in the regex AST
- * (e.g., `(abc)`, `(?<name>abc)`, `(?:abc)`).
+ * Structure representing a capturing group node in the regex AST
+ * (e.g., `(abc)`, `(?<name>abc)`).
+ */
+struct nk_capture_node {
+  nk_node_base_t base;
+  bool has_name;
+  nk_pbuf_t name_buf;    // valid when `has_name == true`
+  uint32_t capture_num;  // capture number (`capture_num > 0`) for numbered captures; otherwise 0
+  nk_node_t* child;
+};
+
+/**
+ * Structure representing a non-capturing group node in the regex AST
+ * (e.g., `(?:abc)`, `(?imx:abc)`, `(?imx)abc`).
  */
 struct nk_group_node {
   nk_node_base_t base;
-  bool has_name;
-  nk_pbuf_t name_buf;
-  uint32_t group_num;
   nk_node_t* child;
 };
 
@@ -394,11 +424,13 @@ struct nk_absence_node {
  */
 struct nk_conditional_node {
   nk_node_base_t base;
-  bool has_name;
-  nk_pbuf_t name_buf;
-  uint32_t group_num;
+  nk_ref_target_kind_t target_kind;
+  nk_pbuf_t name_buf;    // valid when `target_kind == NK_REF_TARGET_KIND_NAME`
+  uint32_t capture_num;  // valid (`capture_num > 0`) when `target_kind == NK_REF_TARGET_KIND_CAPTURE_NUM`
+  size_t resolved_capture_name_map_entry_index;
+  size_t resolved_capture_num_count;
   bool has_depth;
-  int32_t depth;
+  int32_t depth;  // valid when `has_depth == true`
   nk_node_t* yes_child;
   nk_node_t* no_child;  // nullable
 };
@@ -438,6 +470,7 @@ union nk_node {
   nk_call_node_t call;
   nk_assertion_node_t assertion;
   nk_quantifier_node_t quantifier;
+  nk_capture_node_t capture;
   nk_group_node_t group;
   nk_atomic_node_t atomic;
   nk_absence_node_t absence;
@@ -501,9 +534,25 @@ typedef struct nk_parser nk_parser_t;
  */
 typedef void (*nk_warning_func_t)(const nk_parser_t* parser, nk_warning_t warning, size_t offset, size_t length);
 
+typedef struct {
+  bool has_name;
+  nk_pbuf_t name_buf;
+  uint32_t* capture_nums;
+  size_t capture_nums_len;
+  size_t capture_nums_cap;
+} nk_capture_name_map_entry_t;
+
+typedef struct {
+  nk_capture_name_map_entry_t* entries;
+  size_t entries_len;
+  size_t entries_cap;
+} nk_capture_name_map_t;
+
+#define NK_CAPTURE_NAME_MAP_ENTRY_INDEX_UNRESOLVED SIZE_MAX
+
 #define NK_DEFAULT_RANGE_QUANTIFIER_MAX_REPETITION 1000000u
 #define NK_DEFAULT_BARE_BACK_REF_MAX_NUM 10000u
-#define NK_DEFAULT_MAX_GROUP_NUM 10000000u
+#define NK_DEFAULT_MAX_CAPTURE_NUM 10000000u
 #define NK_DEFAULT_BACK_REF_MAX_NUM 10000000u
 #define NK_DEFAULT_MAX_CAPTURE_DEPTH 1000u
 #define NK_DEFAULT_MAX_PARSE_DEPTH 1000u
@@ -528,12 +577,12 @@ struct nk_parser {
   nk_fold_flag_t fold_flags;
 
   // Limits:
-  uint32_t range_quantifier_max_repetition;
-  uint32_t bare_back_ref_max_num;
-  uint32_t max_group_num;
-  uint32_t back_ref_max_num;
-  uint32_t max_capture_depth;
-  uint32_t max_parse_depth;
+  uint32_t range_quantifier_max_repetition_limit;
+  uint32_t bare_back_ref_max_num_limit;
+  uint32_t max_capture_num_limit;
+  uint32_t back_ref_max_num_limit;
+  uint32_t max_capture_depth_limit;
+  uint32_t max_parse_depth_limit;
 
   // Internal states:
   bool in_unicode_escape_brace;
@@ -541,7 +590,12 @@ struct nk_parser {
   uint32_t parse_depth;
 
   // Statistics:
-  bool has_named_groups;
+  bool has_named_captures;
+  nk_node_t** capture_nodes_by_num;
+  size_t capture_nodes_by_num_len;
+  size_t* capture_entry_index_by_num;
+  size_t capture_entry_index_by_num_len;
+  nk_capture_name_map_t capture_name_map;
 
   // Error reporting:
   const uint8_t* error_bytes;
@@ -561,12 +615,12 @@ typedef struct {
   nk_fold_flag_t fold_flags;            // corresponds to `S`, `F`, `T`, `A`
 
   // Limits:
-  uint32_t range_quantifier_max_repetition;
-  uint32_t bare_back_ref_max_num;
-  uint32_t max_group_num;
-  uint32_t back_ref_max_num;
-  uint32_t max_capture_depth;
-  uint32_t max_parse_depth;
+  uint32_t range_quantifier_max_repetition_limit;
+  uint32_t bare_back_ref_max_num_limit;
+  uint32_t max_capture_num_limit;
+  uint32_t back_ref_max_num_limit;
+  uint32_t max_capture_depth_limit;
+  uint32_t max_parse_depth_limit;
 
   nk_warning_func_t warning_func;
   void* user_data;
@@ -581,12 +635,12 @@ static inline nk_parser_options_t nk_parser_options_default(void) {
     .char_type_is_ascii_only = true,
     .posix_char_class_is_ascii_only = false,
     .fold_flags = NK_FOLD_DEFAULT,
-    .range_quantifier_max_repetition = NK_DEFAULT_RANGE_QUANTIFIER_MAX_REPETITION,
-    .bare_back_ref_max_num = NK_DEFAULT_BARE_BACK_REF_MAX_NUM,
-    .max_group_num = NK_DEFAULT_MAX_GROUP_NUM,
-    .back_ref_max_num = NK_DEFAULT_BACK_REF_MAX_NUM,
-    .max_capture_depth = NK_DEFAULT_MAX_CAPTURE_DEPTH,
-    .max_parse_depth = NK_DEFAULT_MAX_PARSE_DEPTH,
+    .range_quantifier_max_repetition_limit = NK_DEFAULT_RANGE_QUANTIFIER_MAX_REPETITION,
+    .bare_back_ref_max_num_limit = NK_DEFAULT_BARE_BACK_REF_MAX_NUM,
+    .max_capture_num_limit = NK_DEFAULT_MAX_CAPTURE_NUM,
+    .back_ref_max_num_limit = NK_DEFAULT_BACK_REF_MAX_NUM,
+    .max_capture_depth_limit = NK_DEFAULT_MAX_CAPTURE_DEPTH,
+    .max_parse_depth_limit = NK_DEFAULT_MAX_PARSE_DEPTH,
     .warning_func = (nk_warning_func_t)0,
     .user_data = (void*)0,
   };
@@ -609,6 +663,20 @@ nk_error_t nk_parser_init(
  */
 NARAKU_EXPORTED_FUNCTION
 nk_error_t nk_parser_parse(nk_parser_t* parser, nk_node_t** out_node_ptr);
+
+/**
+ * Post-processes the parsed AST.
+ */
+NARAKU_EXPORTED_FUNCTION
+nk_error_t nk_parser_postprocess(nk_parser_t* parser, nk_node_t* root_node);
+
+/**
+ * Copies resolved capture numbers for a resolved reference node
+ * (`back_ref`, `conditional`) into `out_capture_nums`.
+ */
+NARAKU_EXPORTED_FUNCTION
+nk_error_t
+nk_node_get_resolved_capture_nums(const nk_parser_t* parser, const nk_node_t* node, uint32_t* out_capture_nums);
 
 /**
  * Releases the memory allocated for the regex parser.

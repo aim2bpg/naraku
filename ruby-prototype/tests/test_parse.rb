@@ -22,7 +22,7 @@ class TestParse < Minitest::Test
 
   def test_keeps_non_enum_values_as_is
     result = NarakuRuby.parse('(?<foo>a)\k<foo>')
-    group = first_node(result[:node]) { |n| n[:type] == :group }
+    group = first_node(result[:node]) { |n| n[:type] == :capture }
     back_ref = first_node(result[:node]) { |n| n[:type] == :back_ref }
 
     assert_instance_of String, group[:name]

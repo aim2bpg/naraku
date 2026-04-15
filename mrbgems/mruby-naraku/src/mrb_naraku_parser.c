@@ -48,7 +48,7 @@ static void mrb_naraku_parser_free(mrb_state* mrb, void* ptr) {
 }
 struct mrb_data_type mrb_naraku_parser_type = {"Parser", mrb_naraku_parser_free};
 
-static nk_parser_t* mrb_naraku_parser_get_ptr(mrb_state* mrb, mrb_value self) {
+nk_parser_t* mrb_naraku_parser_get_ptr(mrb_state* mrb, mrb_value self) {
   return (nk_parser_t*)mrb_data_get_ptr(mrb, self, &mrb_naraku_parser_type);
 }
 
@@ -65,12 +65,12 @@ static mrb_value mrb_naraku_parser_new(mrb_state* mrb, mrb_value self) {
   mrb_bool char_type_is_ascii_only;
   mrb_bool posix_char_class_is_ascii_only;
   mrb_int fold_flags;
-  mrb_int range_quantifier_max_repetition;
-  mrb_int bare_back_ref_max_num;
-  mrb_int max_group_num;
-  mrb_int back_ref_max_num;
-  mrb_int max_capture_depth;
-  mrb_int max_parse_depth;
+  mrb_int range_quantifier_max_repetition_limit;
+  mrb_int bare_back_ref_max_num_limit;
+  mrb_int max_capture_num_limit;
+  mrb_int back_ref_max_num_limit;
+  mrb_int max_capture_depth_limit;
+  mrb_int max_parse_depth_limit;
   mrb_value warning_func;
 
   mrb_get_args(
@@ -87,12 +87,12 @@ static mrb_value mrb_naraku_parser_new(mrb_state* mrb, mrb_value self) {
     &char_type_is_ascii_only,
     &posix_char_class_is_ascii_only,
     &fold_flags,
-    &range_quantifier_max_repetition,
-    &bare_back_ref_max_num,
-    &max_group_num,
-    &back_ref_max_num,
-    &max_capture_depth,
-    &max_parse_depth,
+    &range_quantifier_max_repetition_limit,
+    &bare_back_ref_max_num_limit,
+    &max_capture_num_limit,
+    &back_ref_max_num_limit,
+    &max_capture_depth_limit,
+    &max_parse_depth_limit,
     &warning_func
   );
 
@@ -118,12 +118,12 @@ static mrb_value mrb_naraku_parser_new(mrb_state* mrb, mrb_value self) {
     .char_type_is_ascii_only = char_type_is_ascii_only ? true : false,
     .posix_char_class_is_ascii_only = posix_char_class_is_ascii_only ? true : false,
     .fold_flags = (nk_fold_flag_t)fold_flags,
-    .range_quantifier_max_repetition = (uint32_t)range_quantifier_max_repetition,
-    .bare_back_ref_max_num = (uint32_t)bare_back_ref_max_num,
-    .max_group_num = (uint32_t)max_group_num,
-    .back_ref_max_num = (uint32_t)back_ref_max_num,
-    .max_capture_depth = (uint32_t)max_capture_depth,
-    .max_parse_depth = (uint32_t)max_parse_depth,
+    .range_quantifier_max_repetition_limit = (uint32_t)range_quantifier_max_repetition_limit,
+    .bare_back_ref_max_num_limit = (uint32_t)bare_back_ref_max_num_limit,
+    .max_capture_num_limit = (uint32_t)max_capture_num_limit,
+    .back_ref_max_num_limit = (uint32_t)back_ref_max_num_limit,
+    .max_capture_depth_limit = (uint32_t)max_capture_depth_limit,
+    .max_parse_depth_limit = (uint32_t)max_parse_depth_limit,
     .warning_func = warning_callback,
     .user_data = warning_context,
   };
@@ -175,7 +175,55 @@ static mrb_value mrb_naraku_parser_parse(mrb_state* mrb, mrb_value self) {
     return mrb_nil_value();
   }
 
-  return mrb_naraku_node_create_root(mrb, node);
+  mrb_value node_obj = mrb_naraku_node_create_root(mrb, node);
+  mrb_value root_ref = mrb_iv_get(mrb, node_obj, mrb_intern_lit(mrb, "_root"));
+  mrb_iv_set(mrb, root_ref, mrb_intern_lit(mrb, "_parser"), self);
+  mrb_iv_set(mrb, node_obj, mrb_intern_lit(mrb, "_parser"), self);
+  return node_obj;
+}
+
+static mrb_value mrb_naraku_parser_postprocess(mrb_state* mrb, mrb_value self) {
+  nk_parser_t* parser = mrb_naraku_parser_get_ptr(mrb, self);
+
+  mrb_value root_node_obj;
+  mrb_get_args(mrb, "o", &root_node_obj);
+  nk_node_t* root_node = mrb_naraku_node_get_ptr(mrb, root_node_obj);
+
+  nk_error_t err = nk_parser_postprocess(parser, root_node);
+  if (err != NK_SUCCESS) {
+    struct RClass* naraku_module = mrb_module_get(mrb, "Naraku");
+    struct RClass* parse_error_class = mrb_class_get_under(mrb, naraku_module, "ParseError");
+    mrb_value args[4];
+    args[0] = self;
+    args[1] = mrb_fixnum_value(err);
+    mrb_int offset = 0;
+    mrb_int length = 0;
+    if (parser->error_bytes != NULL && parser->error_bytes >= parser->pattern_bytes_begin) {
+      offset = (mrb_int)(parser->error_bytes - parser->pattern_bytes_begin);
+      if (parser->error_bytes_end != NULL && parser->error_bytes_end >= parser->error_bytes) {
+        length = (mrb_int)(parser->error_bytes_end - parser->error_bytes);
+      }
+    }
+    args[2] = mrb_fixnum_value(offset);
+    args[3] = mrb_fixnum_value(length);
+    mrb_value exc = mrb_obj_new(mrb, parse_error_class, 4, args);
+    mrb_exc_raise(mrb, exc);
+  }
+
+  mrb_value root_ref = mrb_iv_get(mrb, root_node_obj, mrb_intern_lit(mrb, "_root"));
+  mrb_iv_set(mrb, root_ref, mrb_intern_lit(mrb, "_parser"), self);
+  mrb_iv_set(mrb, root_node_obj, mrb_intern_lit(mrb, "_parser"), self);
+  return root_node_obj;
+}
+
+static mrb_value mrb_naraku_parser_num_capture_groups(mrb_state* mrb, mrb_value self) {
+  nk_parser_t* parser = mrb_naraku_parser_get_ptr(mrb, self);
+  return mrb_fixnum_value((mrb_int)parser->num_capture_groups);
+}
+
+static mrb_value mrb_naraku_parser_has_named_captures(mrb_state* mrb, mrb_value self) {
+  nk_parser_t* parser = mrb_naraku_parser_get_ptr(mrb, self);
+  return mrb_bool_value(parser->has_named_captures);
 }
 
 // ============================================================================
@@ -203,11 +251,14 @@ void mrb_naraku_parser_gem_init(mrb_state* mrb, struct RClass* naraku_module) {
     "DEFAULT_BARE_BACK_REF_MAX_NUM",
     mrb_fixnum_value(NK_DEFAULT_BARE_BACK_REF_MAX_NUM)
   );
-  mrb_define_const(mrb, parser_class, "DEFAULT_MAX_GROUP_NUM", mrb_fixnum_value(NK_DEFAULT_MAX_GROUP_NUM));
+  mrb_define_const(mrb, parser_class, "DEFAULT_MAX_CAPTURE_NUM", mrb_fixnum_value(NK_DEFAULT_MAX_CAPTURE_NUM));
   mrb_define_const(mrb, parser_class, "DEFAULT_BACK_REF_MAX_NUM", mrb_fixnum_value(NK_DEFAULT_BACK_REF_MAX_NUM));
   mrb_define_const(mrb, parser_class, "DEFAULT_MAX_CAPTURE_DEPTH", mrb_fixnum_value(NK_DEFAULT_MAX_CAPTURE_DEPTH));
   mrb_define_const(mrb, parser_class, "DEFAULT_MAX_PARSE_DEPTH", mrb_fixnum_value(NK_DEFAULT_MAX_PARSE_DEPTH));
 
   mrb_define_class_method(mrb, parser_class, "_new", mrb_naraku_parser_new, MRB_ARGS_REQ(16));
   mrb_define_method(mrb, parser_class, "parse", mrb_naraku_parser_parse, MRB_ARGS_NONE());
+  mrb_define_method(mrb, parser_class, "postprocess", mrb_naraku_parser_postprocess, MRB_ARGS_REQ(1));
+  mrb_define_method(mrb, parser_class, "num_capture_groups", mrb_naraku_parser_num_capture_groups, MRB_ARGS_NONE());
+  mrb_define_method(mrb, parser_class, "has_named_captures", mrb_naraku_parser_has_named_captures, MRB_ARGS_NONE());
 }

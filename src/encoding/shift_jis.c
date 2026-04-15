@@ -1,12 +1,6 @@
 #include <naraku_encoding.h>
 #include <naraku_encoding_internal.h>
 
-#if defined(__GNUC__)
-#define ARG_UNUSED __attribute__((unused))
-#else
-#define ARG_UNUSED
-#endif
-
 #include ".gen/cprop_range_shift_jis.gen.h"
 #include ".gen/case_map_shift_jis.gen.h"
 
@@ -31,9 +25,9 @@ static const int8_t SHIFT_JIS_SECOND_BYTE_TABLE[] = {
 };
 
 static int8_t shift_jis_scan_mbc_width(
-  const nk_encoding_t* enc ARG_UNUSED,
+  const nk_encoding_t* enc NARAKU_ARG_UNUSED,
   const uint8_t* bytes,
-  const uint8_t* bytes_end ARG_UNUSED
+  const uint8_t* bytes_end NARAKU_ARG_UNUSED
 ) {
   int8_t first_byte_width = SHIFT_JIS_FIRST_BYTE_TABLE[*bytes++];
   if (first_byte_width <= 1) return first_byte_width;
@@ -47,7 +41,7 @@ static int8_t shift_jis_scan_mbc_width(
 }
 
 static nk_error_t
-shift_jis_encode_mbc(const nk_encoding_t* enc ARG_UNUSED, uint32_t code, size_t* out_width, uint8_t* out_bytes) {
+shift_jis_encode_mbc(const nk_encoding_t* enc NARAKU_ARG_UNUSED, uint32_t code, size_t* out_width, uint8_t* out_bytes) {
   if (code > 0xFFFF) {
     return NK_ERR_CODE_POINT_OUT_OF_RANGE;
   }
@@ -80,8 +74,11 @@ shift_jis_encode_mbc(const nk_encoding_t* enc ARG_UNUSED, uint32_t code, size_t*
   return NK_SUCCESS;
 }
 
-static uint32_t
-shift_jis_decode_mbc(const nk_encoding_t* enc ARG_UNUSED, const uint8_t* bytes, const uint8_t* bytes_end ARG_UNUSED) {
+static uint32_t shift_jis_decode_mbc(
+  const nk_encoding_t* enc NARAKU_ARG_UNUSED,
+  const uint8_t* bytes,
+  const uint8_t* bytes_end NARAKU_ARG_UNUSED
+) {
   uint8_t first_byte = bytes[0];
   int8_t width = SHIFT_JIS_FIRST_BYTE_TABLE[first_byte];
   if (width <= 1) {
@@ -98,7 +95,7 @@ shift_jis_decode_mbc(const nk_encoding_t* enc ARG_UNUSED, const uint8_t* bytes, 
 }
 
 nk_error_t shift_jis_adjust_mbc_head(
-  const nk_encoding_t* enc ARG_UNUSED,
+  const nk_encoding_t* enc NARAKU_ARG_UNUSED,
   const uint8_t** bytes_to_adjust,
   nk_adjust_mbc_head_context_t* context
 ) {
@@ -144,9 +141,9 @@ nk_error_t shift_jis_adjust_mbc_head(
 }
 
 bool shift_jis_is_self_sync_string(
-  const nk_encoding_t* enc ARG_UNUSED,
+  const nk_encoding_t* enc NARAKU_ARG_UNUSED,
   const uint8_t* bytes,
-  const uint8_t* bytes_end ARG_UNUSED
+  const uint8_t* bytes_end NARAKU_ARG_UNUSED
 ) {
   return SHIFT_JIS_SECOND_BYTE_TABLE[*bytes] != 2;
 }

@@ -16,4 +16,20 @@
 #endif
 #endif
 
+#if !defined(NARAKU_ARG_UNUSED)
+#if defined(__GNUC__) || defined(__clang__)
+#define NARAKU_ARG_UNUSED __attribute__((unused))
+#else
+#define NARAKU_ARG_UNUSED
+#endif
+#endif
+
+#if !defined(NARAKU_FALLTHROUGH)
+#if defined(__GNUC__) || defined(__clang__)
+#define NARAKU_FALLTHROUGH __attribute__((fallthrough))
+#else
+#define NARAKU_FALLTHROUGH
+#endif
+#endif
+
 #endif  // NARAKU_COMMON_H

@@ -111,9 +111,9 @@ typedef struct {
       nk_cprop_t cprop;
     } char_prop;
     struct {
-      bool has_name;
+      nk_ref_target_kind_t target_kind;
       nk_pbuf_t name_buf;
-      uint32_t group_num;
+      uint32_t capture_num;
       bool has_depth;
       int32_t depth;
     } back_ref;
@@ -122,6 +122,7 @@ typedef struct {
     } assertion;
     struct {
       uint32_t min;
+      bool has_max;
       uint32_t max;
       nk_quantifier_type_t type;
     } quantifier;
@@ -138,9 +139,9 @@ typedef struct {
       nk_pbuf_t name_buf;
     } named_group;
     struct {
-      bool has_name;
+      nk_call_target_kind_t target_kind;
       nk_pbuf_t name_buf;
-      uint32_t group_num;
+      uint32_t capture_num;
     } call;
     struct {
       bool is_first;

@@ -1,15 +1,9 @@
 #include <naraku_encoding.h>
 
-#if defined(__GNUC__)
-#define ARG_UNUSED __attribute__((unused))
-#else
-#define ARG_UNUSED
-#endif
-
 static int8_t us_ascii_scan_mbc_width(
-  const nk_encoding_t* enc ARG_UNUSED,
+  const nk_encoding_t* enc NARAKU_ARG_UNUSED,
   const uint8_t* bytes,
-  const uint8_t* bytes_end ARG_UNUSED
+  const uint8_t* bytes_end NARAKU_ARG_UNUSED
 ) {
   if (*bytes < 128) {
     return 1;
@@ -19,7 +13,7 @@ static int8_t us_ascii_scan_mbc_width(
 }
 
 static nk_error_t
-us_ascii_encode_mbc(const nk_encoding_t* enc ARG_UNUSED, uint32_t code, size_t* out_width, uint8_t* out_bytes) {
+us_ascii_encode_mbc(const nk_encoding_t* enc NARAKU_ARG_UNUSED, uint32_t code, size_t* out_width, uint8_t* out_bytes) {
   if (code < 128) {
     *out_width = 1;
     if (out_bytes != NULL) {

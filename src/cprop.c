@@ -1,11 +1,5 @@
 #include <naraku_encoding.h>
 
-#if defined(__GNUC__)
-#define ARG_UNUSED __attribute__((unused))
-#else
-#define ARG_UNUSED
-#endif
-
 #include ".gen/name2cprop.gen.h"
 
 nk_error_t nk_name_to_cprop(

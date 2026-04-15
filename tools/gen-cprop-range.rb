@@ -32,7 +32,7 @@ def gen_ascii(cat)
   puts
 
   puts 'bool nk_enc_ascii_code_is_cprop('
-  puts '    const nk_encoding_t* enc ARG_UNUSED,'
+  puts '    const nk_encoding_t* enc NARAKU_ARG_UNUSED,'
   puts '    uint32_t code,'
   puts '    nk_cprop_t cprop'
   puts ') {'
@@ -148,7 +148,7 @@ def gen_sb(cat, enc, prefix)
   puts
 
   puts "bool #{prefix}_code_is_cprop("
-  puts '    const nk_encoding_t* enc ARG_UNUSED,'
+  puts '    const nk_encoding_t* enc NARAKU_ARG_UNUSED,'
   puts '    uint32_t code,'
   puts '    nk_cprop_t cprop'
   puts ') {'
@@ -233,7 +233,7 @@ def gen_mb2(cat, enc, prefix)
   end
 
   puts "bool #{prefix}_code_is_cprop("
-  puts '    const nk_encoding_t* enc ARG_UNUSED,'
+  puts '    const nk_encoding_t* enc NARAKU_ARG_UNUSED,'
   puts '    uint32_t code,'
   puts '    nk_cprop_t cprop'
   puts ') {'
@@ -258,7 +258,7 @@ def gen_mb2(cat, enc, prefix)
   puts
 
   puts "nk_error_t #{prefix}_get_cprop_code_range("
-  puts '    const nk_encoding_t* enc ARG_UNUSED,'
+  puts '    const nk_encoding_t* enc NARAKU_ARG_UNUSED,'
   puts '    nk_cprop_t cprop,'
   puts '    nk_code_range_delegation_t* out_delegation,'
   puts '    nk_static_code_range_t* out_code_range'
@@ -322,7 +322,7 @@ def gen_mb_full(cat, enc, prefix)
   end
 
   puts "bool #{prefix}_code_is_cprop("
-  puts '    const nk_encoding_t* enc ARG_UNUSED,'
+  puts '    const nk_encoding_t* enc NARAKU_ARG_UNUSED,'
   puts '    uint32_t code,'
   puts '    nk_cprop_t cprop'
   puts ') {'
@@ -347,7 +347,7 @@ def gen_mb_full(cat, enc, prefix)
   puts
 
   puts "nk_error_t #{prefix}_get_cprop_code_range("
-  puts '    const nk_encoding_t* enc ARG_UNUSED,'
+  puts '    const nk_encoding_t* enc NARAKU_ARG_UNUSED,'
   puts '    nk_cprop_t cprop,'
   puts '    nk_code_range_delegation_t* out_delegation,'
   puts '    nk_static_code_range_t* out_code_range,'

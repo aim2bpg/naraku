@@ -1,13 +1,13 @@
 require_relative 'naraku_ruby/mruby_bridge'
-require_relative 'naraku_ruby/errors'
 
 module NarakuRuby
-  ENUM_VALUE_KEYS = %i[type assertion_type quantifier_type char_type posix_char_class].freeze
+  ENUM_VALUE_KEYS = %i[type target_kind assertion_type quantifier_type char_type posix_char_class].freeze
 
-  def self.parse(pattern, **options)
+  def self.parse(pattern, postprocess:, **options)
     bridge = MRubyBridge.new(script_path: File.expand_path('./mruby-scripts/parse.rb', __dir__))
     request = {
       pattern:,
+      postprocess:,
       options:,
     }
     context = bridge.execute(request)

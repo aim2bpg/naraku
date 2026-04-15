@@ -3,14 +3,7 @@
 
 #include <stdlib.h>  // for malloc, free
 #include <string.h>  // for memcpy
-
-#if defined(__GNUC__)
-#define ARG_UNUSED __attribute__((unused))
-#define FALLTHROUGH __attribute__((fallthrough))
-#else
-#define ARG_UNUSED
-#define FALLTHROUGH
-#endif
+#include <stdint.h>  // for SIZE_MAX
 
 nk_error_t nk_parser_init(
   const nk_encoding_t* enc,
@@ -25,12 +18,12 @@ nk_error_t nk_parser_init(
   out_parser->warning_func = options.warning_func;
   out_parser->user_data = options.user_data;
 
-  out_parser->range_quantifier_max_repetition = options.range_quantifier_max_repetition;
-  out_parser->bare_back_ref_max_num = options.bare_back_ref_max_num;
-  out_parser->max_group_num = options.max_group_num;
-  out_parser->back_ref_max_num = options.back_ref_max_num;
-  out_parser->max_capture_depth = options.max_capture_depth;
-  out_parser->max_parse_depth = options.max_parse_depth;
+  out_parser->range_quantifier_max_repetition_limit = options.range_quantifier_max_repetition_limit;
+  out_parser->bare_back_ref_max_num_limit = options.bare_back_ref_max_num_limit;
+  out_parser->max_capture_num_limit = options.max_capture_num_limit;
+  out_parser->back_ref_max_num_limit = options.back_ref_max_num_limit;
+  out_parser->max_capture_depth_limit = options.max_capture_depth_limit;
+  out_parser->max_parse_depth_limit = options.max_parse_depth_limit;
 
   out_parser->pattern_bytes = pattern_bytes;
 
@@ -45,7 +38,14 @@ nk_error_t nk_parser_init(
   out_parser->in_unicode_escape_brace = false;
   out_parser->num_capture_groups = 0;
   out_parser->parse_depth = 0;
-  out_parser->has_named_groups = false;
+  out_parser->has_named_captures = false;
+  out_parser->capture_nodes_by_num = NULL;
+  out_parser->capture_nodes_by_num_len = 0;
+  out_parser->capture_entry_index_by_num = NULL;
+  out_parser->capture_entry_index_by_num_len = 0;
+  out_parser->capture_name_map.entries = NULL;
+  out_parser->capture_name_map.entries_len = 0;
+  out_parser->capture_name_map.entries_cap = 0;
 
   out_parser->error_bytes = NULL;
   out_parser->error_bytes_end = NULL;
@@ -53,7 +53,34 @@ nk_error_t nk_parser_init(
   return NK_SUCCESS;
 }
 
-void nk_parser_free(nk_parser_t* parser ARG_UNUSED) {
+void nk_parser_free(nk_parser_t* parser) {
+  if (parser->capture_nodes_by_num != NULL) {
+    free(parser->capture_nodes_by_num);
+    parser->capture_nodes_by_num = NULL;
+    parser->capture_nodes_by_num_len = 0;
+  }
+  if (parser->capture_entry_index_by_num != NULL) {
+    free(parser->capture_entry_index_by_num);
+    parser->capture_entry_index_by_num = NULL;
+    parser->capture_entry_index_by_num_len = 0;
+  }
+
+  if (parser->capture_name_map.entries != NULL) {
+    for (size_t i = 0; i < parser->capture_name_map.entries_len; i++) {
+      nk_capture_name_map_entry_t* entry = &parser->capture_name_map.entries[i];
+      if (entry->has_name) {
+        nk_pbuf_free(&entry->name_buf);
+      }
+      free(entry->capture_nums);
+      entry->capture_nums = NULL;
+      entry->capture_nums_len = 0;
+      entry->capture_nums_cap = 0;
+    }
+    free(parser->capture_name_map.entries);
+    parser->capture_name_map.entries = NULL;
+    parser->capture_name_map.entries_len = 0;
+    parser->capture_name_map.entries_cap = 0;
+  }
 }
 
 // ==========================================================================
@@ -196,11 +223,13 @@ static nk_error_t lex_bounded_quantifier(
   nk_parser_t* parser,
   const uint8_t* quantifier_begin,
   uint32_t* out_min,
+  bool* out_has_max,
   uint32_t* out_max,
   bool* out_is_incomplete,
   bool* out_allows_reluctant
 ) {
   *out_min = *out_max = 0;
+  *out_has_max = false;
   *out_is_incomplete = *out_allows_reluctant = true;
 
   if (parser->pattern_bytes >= parser->pattern_bytes_end) {
@@ -219,7 +248,7 @@ static nk_error_t lex_bounded_quantifier(
     nk_error_t err = lex_decimal_number(
       parser,
       out_min,
-      parser->range_quantifier_max_repetition,
+      parser->range_quantifier_max_repetition_limit,
       NK_ERR_TOO_LARGE_NUMBER_IN_QUANTIFIER
     );
     if (err != NK_SUCCESS) {
@@ -257,12 +286,13 @@ static nk_error_t lex_bounded_quantifier(
       nk_error_t err = lex_decimal_number(
         parser,
         out_max,
-        parser->range_quantifier_max_repetition,
+        parser->range_quantifier_max_repetition_limit,
         NK_ERR_TOO_LARGE_NUMBER_IN_QUANTIFIER
       );
       if (err != NK_SUCCESS) {
         return err;
       }
+      *out_has_max = true;
 
       if (parser->pattern_bytes >= parser->pattern_bytes_end) {
         return NK_SUCCESS;  // incomplete quantifier
@@ -276,17 +306,18 @@ static nk_error_t lex_bounded_quantifier(
       if (!has_explicit_min) {
         return NK_SUCCESS;  // incomplete_quantifier
       }
-      *out_max = UINT32_MAX;
+      *out_has_max = false;
     }
   } else {  // `{n}`
     if (!has_explicit_min) {
       return NK_SUCCESS;  // incomplete quantifier
     }
     *out_allows_reluctant = false;
+    *out_has_max = true;
     *out_max = *out_min;
   }
 
-  if (*out_min > *out_max) {
+  if (*out_has_max && *out_min > *out_max) {
     set_error_span_to_current(parser, quantifier_begin);
     return NK_ERR_NUMBERS_OUT_OF_ORDER_IN_QUANTIFIER;
   }
@@ -792,7 +823,7 @@ static nk_error_t lex_escape_single_byte(nk_parser_t* parser, const uint8_t* esc
             code = '\n';
           }
         }
-        FALLTHROUGH;
+        NARAKU_FALLTHROUGH;
       }
 
       default:
@@ -984,7 +1015,7 @@ static nk_error_t lex_name(
   return unterminated_error;
 }
 
-static nk_error_t lex_group_num_or_name(
+static nk_error_t lex_capture_num_or_name(
   nk_parser_t* parser,
   uint32_t terminator,
   bool with_depth,
@@ -1043,7 +1074,7 @@ static nk_error_t lex_group_num_or_name(
   }
 
   uint32_t num;
-  err = lex_decimal_number(parser, &num, parser->back_ref_max_num, NK_ERR_TOO_LARGE_GROUP_NUMBER);
+  err = lex_decimal_number(parser, &num, parser->back_ref_max_num_limit, NK_ERR_TOO_LARGE_CAPTURE_NUMBER);
   if (err != NK_SUCCESS) {
     return err;
   }
@@ -1054,7 +1085,7 @@ static nk_error_t lex_group_num_or_name(
   } else {
     if ((int64_t)parser->num_capture_groups + 1 + num_or_relative_num <= 0) {
       set_error_span_to_current(parser, num_begin);
-      return NK_ERR_GROUP_NUMBER_OUT_OF_RANGE;
+      return NK_ERR_CAPTURE_NUMBER_OUT_OF_RANGE;
     }
 
     *out_num = (uint32_t)((int32_t)parser->num_capture_groups + 1 + num_or_relative_num);
@@ -1063,7 +1094,7 @@ static nk_error_t lex_group_num_or_name(
   return NK_SUCCESS;
 }
 
-static nk_error_t lex_group_num_or_name_with_depth(
+static nk_error_t lex_capture_num_or_name_with_depth(
   nk_parser_t* parser,
   uint32_t terminator,
   uint32_t* out_num,
@@ -1076,7 +1107,7 @@ static nk_error_t lex_group_num_or_name_with_depth(
   *out_has_depth = false;
 
   nk_error_t err =
-    lex_group_num_or_name(parser, terminator, true, out_num, out_has_name, out_name_buf, unterminated_error);
+    lex_capture_num_or_name(parser, terminator, true, out_num, out_has_name, out_name_buf, unterminated_error);
   if (err != NK_SUCCESS) {
     return err;
   }
@@ -1114,7 +1145,7 @@ static nk_error_t lex_group_num_or_name_with_depth(
     }
 
     uint32_t depth;
-    err = lex_decimal_number(parser, &depth, parser->max_capture_depth, NK_ERR_TOO_LARGE_CAPTURE_DEPTH);
+    err = lex_decimal_number(parser, &depth, parser->max_capture_depth_limit, NK_ERR_TOO_LARGE_CAPTURE_DEPTH);
     if (err != NK_SUCCESS) {
       if (*out_has_name) {
         nk_pbuf_free(out_name_buf);
@@ -1292,6 +1323,12 @@ static nk_error_t lex_char_prop_escape(nk_parser_t* parser, uint32_t code, token
 
 static inline void free_name_buf_if_present(bool has_name, nk_pbuf_t* name_buf) {
   if (has_name) {
+    nk_pbuf_free(name_buf);
+  }
+}
+
+static inline void free_name_buf_if_ref_target_kind(nk_ref_target_kind_t target_kind, nk_pbuf_t* name_buf) {
+  if (target_kind == NK_REF_TARGET_KIND_NAME) {
     nk_pbuf_free(name_buf);
   }
 }
@@ -1527,7 +1564,8 @@ static nk_error_t lex_impl(nk_parser_t* parser, token_t* out_token) {
       {
         out_token->type = TK_QUANTIFIER;
         out_token->data.quantifier.min = 0;
-        out_token->data.quantifier.max = UINT32_MAX;
+        out_token->data.quantifier.has_max = false;
+        out_token->data.quantifier.max = 0;
         nk_error_t err = lex_quantifier_type(parser, &out_token->data.quantifier.type, true);
         if (err != NK_SUCCESS) {
           return err;
@@ -1539,7 +1577,8 @@ static nk_error_t lex_impl(nk_parser_t* parser, token_t* out_token) {
       {
         out_token->type = TK_QUANTIFIER;
         out_token->data.quantifier.min = 1;
-        out_token->data.quantifier.max = UINT32_MAX;
+        out_token->data.quantifier.has_max = false;
+        out_token->data.quantifier.max = 0;
         nk_error_t err = lex_quantifier_type(parser, &out_token->data.quantifier.type, true);
         if (err != NK_SUCCESS) {
           return err;
@@ -1551,6 +1590,7 @@ static nk_error_t lex_impl(nk_parser_t* parser, token_t* out_token) {
       {
         out_token->type = TK_QUANTIFIER;
         out_token->data.quantifier.min = 0;
+        out_token->data.quantifier.has_max = true;
         out_token->data.quantifier.max = 1;
         nk_error_t err = lex_quantifier_type(parser, &out_token->data.quantifier.type, true);
         if (err != NK_SUCCESS) {
@@ -1571,6 +1611,7 @@ static nk_error_t lex_impl(nk_parser_t* parser, token_t* out_token) {
           parser,
           out_token->span_bytes,
           &out_token->data.quantifier.min,
+          &out_token->data.quantifier.has_max,
           &out_token->data.quantifier.max,
           &is_incomplete,
           &allows_reluctant
@@ -1684,7 +1725,7 @@ static nk_error_t lex_impl(nk_parser_t* parser, token_t* out_token) {
                 }
 
                 parser->pattern_bytes -= width;  // put back `<`
-                FALLTHROUGH;
+                NARAKU_FALLTHROUGH;
               }
 
               case '\'':
@@ -1693,14 +1734,14 @@ static nk_error_t lex_impl(nk_parser_t* parser, token_t* out_token) {
                 const uint8_t* group_name_begin = parser->pattern_bytes;
 
                 uint32_t name_terminator = code == '\'' ? '\'' : '>';
-                uint32_t group_num;
+                uint32_t capture_num;
                 bool has_name;
                 nk_pbuf_t name_buf;
-                nk_error_t err = lex_group_num_or_name(
+                nk_error_t err = lex_capture_num_or_name(
                   parser,
                   name_terminator,
                   false,
-                  &group_num,
+                  &capture_num,
                   &has_name,
                   &name_buf,
                   NK_ERR_INCOMPLETE_GROUP_SPECIFIER
@@ -1752,17 +1793,17 @@ static nk_error_t lex_impl(nk_parser_t* parser, token_t* out_token) {
                 const uint8_t* name_bytes_for_error_report = parser->pattern_bytes;
                 const uint8_t* name_bytes_end_for_error_report = parser->pattern_bytes;
 
-                uint32_t group_num;
+                uint32_t capture_num;
                 bool has_name;
                 nk_pbuf_t name_buf;
                 bool has_depth;
                 int32_t depth;
 
                 if (is_decimal_digit(code) || code == '-') {
-                  nk_error_t err = lex_group_num_or_name_with_depth(
+                  nk_error_t err = lex_capture_num_or_name_with_depth(
                     parser,
                     ')',
-                    &group_num,
+                    &capture_num,
                     &has_name,
                     &name_buf,
                     &has_depth,
@@ -1781,10 +1822,10 @@ static nk_error_t lex_impl(nk_parser_t* parser, token_t* out_token) {
                   name_bytes_for_error_report = parser->pattern_bytes;
 
                   uint32_t name_terminator = code == '\'' ? '\'' : '>';
-                  nk_error_t err = lex_group_num_or_name_with_depth(
+                  nk_error_t err = lex_capture_num_or_name_with_depth(
                     parser,
                     name_terminator,
-                    &group_num,
+                    &capture_num,
                     &has_name,
                     &name_buf,
                     &has_depth,
@@ -1823,10 +1864,10 @@ static nk_error_t lex_impl(nk_parser_t* parser, token_t* out_token) {
                   return NK_ERR_INCOMPLETE_GROUP_SPECIFIER;
                 }
 
-                if (!has_name && group_num == 0) {
+                if (!has_name && capture_num == 0) {
                   parser->error_bytes = name_bytes_for_error_report;
                   parser->error_bytes_end = name_bytes_end_for_error_report;
-                  return NK_ERR_INVALID_CONDITIONAL_GROUP_NUMBER;
+                  return NK_ERR_INVALID_CONDITIONAL_CAPTURE_NUMBER;
                 }
 
                 if (has_name && name_buf.bytes >= name_buf.bytes_end) {
@@ -1856,10 +1897,13 @@ static nk_error_t lex_impl(nk_parser_t* parser, token_t* out_token) {
                 parser->pattern_bytes += width;  // consume `)`
 
                 out_token->type = TK_CONDITIONAL_OPEN;
-                out_token->data.back_ref.group_num = has_name ? 0 : group_num;
-                out_token->data.back_ref.has_name = has_name;
                 if (has_name) {
+                  out_token->data.back_ref.target_kind = NK_REF_TARGET_KIND_NAME;
                   out_token->data.back_ref.name_buf = name_buf;
+                  out_token->data.back_ref.capture_num = 0;
+                } else {
+                  out_token->data.back_ref.target_kind = NK_REF_TARGET_KIND_CAPTURE_NUM;
+                  out_token->data.back_ref.capture_num = capture_num;
                 }
                 out_token->data.back_ref.has_depth = has_depth;
                 out_token->data.back_ref.depth = has_depth ? depth : 0;
@@ -2120,13 +2164,13 @@ static nk_error_t lex_impl(nk_parser_t* parser, token_t* out_token) {
             uint32_t name_terminator = next_code == '\'' ? '\'' : '>';
             bool has_name = true;
             nk_pbuf_t name_buf;
-            uint32_t group_num;
+            uint32_t capture_num;
             bool has_depth;
             int32_t depth;
-            err = lex_group_num_or_name_with_depth(
+            err = lex_capture_num_or_name_with_depth(
               parser,
               name_terminator,
-              &group_num,
+              &capture_num,
               &has_name,
               &name_buf,
               &has_depth,
@@ -2153,7 +2197,7 @@ static nk_error_t lex_impl(nk_parser_t* parser, token_t* out_token) {
               return NK_ERR_EMPTY_GROUP_NAME;
             }
 
-            if (!has_name && group_num == 0) {
+            if (!has_name && capture_num == 0) {
               parser->error_bytes = name_bytes_for_error_report;
               parser->error_bytes_end = parser->pattern_bytes;
               return NK_ERR_INVALID_BACK_REF;
@@ -2172,11 +2216,14 @@ static nk_error_t lex_impl(nk_parser_t* parser, token_t* out_token) {
             }
 
             out_token->type = TK_BACK_REF;
-            out_token->data.back_ref.has_name = has_name;
             if (has_name) {
+              out_token->data.back_ref.target_kind = NK_REF_TARGET_KIND_NAME;
               out_token->data.back_ref.name_buf = name_buf;
+              out_token->data.back_ref.capture_num = 0;
+            } else {
+              out_token->data.back_ref.target_kind = NK_REF_TARGET_KIND_CAPTURE_NUM;
+              out_token->data.back_ref.capture_num = capture_num;
             }
-            out_token->data.back_ref.group_num = has_name ? 0 : group_num;
             out_token->data.back_ref.has_depth = has_depth;
             out_token->data.back_ref.depth = has_depth ? depth : 0;
 
@@ -2216,14 +2263,14 @@ static nk_error_t lex_impl(nk_parser_t* parser, token_t* out_token) {
             const uint8_t* name_bytes_for_error_report = parser->pattern_bytes;
 
             uint32_t name_terminator = next_code == '\'' ? '\'' : '>';
-            uint32_t group_num;
+            uint32_t capture_num;
             bool has_name;
             nk_pbuf_t name_buf;
-            err = lex_group_num_or_name(
+            err = lex_capture_num_or_name(
               parser,
               name_terminator,
               false,
-              &group_num,
+              &capture_num,
               &has_name,
               &name_buf,
               NK_ERR_INCOMPLETE_SUBEXP_CALL
@@ -2261,10 +2308,16 @@ static nk_error_t lex_impl(nk_parser_t* parser, token_t* out_token) {
             }
 
             out_token->type = TK_CALL;
-            out_token->data.call.has_name = has_name;
-            out_token->data.call.group_num = has_name ? 0 : group_num;
             if (has_name) {
+              out_token->data.call.target_kind = NK_CALL_TARGET_KIND_NAME;
+              out_token->data.call.capture_num = 0;
               out_token->data.call.name_buf = name_buf;
+            } else if (capture_num == 0) {
+              out_token->data.call.target_kind = NK_CALL_TARGET_KIND_ROOT;
+              out_token->data.call.capture_num = 0;
+            } else {
+              out_token->data.call.target_kind = NK_CALL_TARGET_KIND_CAPTURE_NUM;
+              out_token->data.call.capture_num = capture_num;
             }
 
             return NK_SUCCESS;
@@ -2285,22 +2338,23 @@ static nk_error_t lex_impl(nk_parser_t* parser, token_t* out_token) {
             parser->pattern_bytes -= width;  // put back the digit for lexing the back-reference number
 
             uint32_t num;
-            nk_error_t err = lex_decimal_number(parser, &num, parser->bare_back_ref_max_num, NK_ERR_INTERNAL_ERROR);
+            nk_error_t err =
+              lex_decimal_number(parser, &num, parser->bare_back_ref_max_num_limit, NK_ERR_INTERNAL_ERROR);
             if (err != NK_SUCCESS && err != NK_ERR_INTERNAL_ERROR) {
               return err;
             }
 
             if (err == NK_SUCCESS && (num <= 9 || num <= parser->num_capture_groups)) {
               out_token->type = TK_BACK_REF;
-              out_token->data.back_ref.group_num = num;
-              out_token->data.back_ref.has_name = false;
+              out_token->data.back_ref.target_kind = NK_REF_TARGET_KIND_CAPTURE_NUM;
+              out_token->data.back_ref.capture_num = num;
               out_token->data.back_ref.has_depth = false;
               out_token->data.back_ref.depth = 0;
               return NK_SUCCESS;
             }
 
             parser->pattern_bytes = pattern_bytes_backup;
-            FALLTHROUGH;
+            NARAKU_FALLTHROUGH;
           }
 
           // Other case: treat the escaped character as a code itself.
@@ -2871,7 +2925,7 @@ char_class_unions_ensure_capacity(nk_char_class_union_t*** unions_ptr, size_t* u
 
 static inline nk_error_t enter_parse_depth(nk_parser_t* parser) {
   parser->parse_depth++;
-  if (parser->parse_depth > parser->max_parse_depth) {
+  if (parser->parse_depth > parser->max_parse_depth_limit) {
     set_error_span(parser, parser->pattern_bytes, parser->pattern_bytes);
     parser->parse_depth--;
     return NK_ERR_PARSE_DEPTH_LIMIT_EXCEEDED;
@@ -2924,7 +2978,7 @@ parse_char_class_item_impl(nk_parser_t* parser, const token_t* tok, nk_char_clas
         set_error_span(parser, tok->data.code.code_bytes, tok->data.code.code_bytes_end);
         return err;
       }
-      FALLTHROUGH;
+      NARAKU_FALLTHROUGH;
     }
     case TK_CHAR_CLASS_LITERAL_CODE:
     {
@@ -3631,11 +3685,13 @@ static nk_error_t parse_atom_impl(nk_parser_t* parser, token_t* tok, nk_node_t**
 
       back_ref_node->back_ref.is_ignore_case = parser->is_ignore_case;
       back_ref_node->back_ref.fold_flags = parser->fold_flags;
-      back_ref_node->back_ref.has_name = tok->data.back_ref.has_name;
-      if (tok->data.back_ref.has_name) {
+      back_ref_node->back_ref.target_kind = tok->data.back_ref.target_kind;
+      if (tok->data.back_ref.target_kind == NK_REF_TARGET_KIND_NAME) {
         back_ref_node->back_ref.name_buf = tok->data.back_ref.name_buf;
       }
-      back_ref_node->back_ref.group_num = tok->data.back_ref.group_num;
+      back_ref_node->back_ref.capture_num = tok->data.back_ref.capture_num;
+      back_ref_node->back_ref.resolved_capture_name_map_entry_index = SIZE_MAX;
+      back_ref_node->back_ref.resolved_capture_num_count = 0;
       back_ref_node->back_ref.has_depth = tok->data.back_ref.has_depth;
       back_ref_node->back_ref.depth = tok->data.back_ref.depth;
 
@@ -3649,11 +3705,12 @@ static nk_error_t parse_atom_impl(nk_parser_t* parser, token_t* tok, nk_node_t**
       if (err != NK_SUCCESS) {
         return err;
       }
-      call_node->call.has_name = tok->data.call.has_name;
-      if (tok->data.call.has_name) {
+      call_node->call.target_kind = tok->data.call.target_kind;
+      if (tok->data.call.target_kind == NK_CALL_TARGET_KIND_NAME) {
         call_node->call.name_buf = tok->data.call.name_buf;
       }
-      call_node->call.group_num = tok->data.call.group_num;
+      call_node->call.capture_num = tok->data.call.capture_num;
+      call_node->call.resolved_capture_num = 0;
 
       *out_node_ptr = call_node;
       break;
@@ -3661,11 +3718,11 @@ static nk_error_t parse_atom_impl(nk_parser_t* parser, token_t* tok, nk_node_t**
     case TK_GROUP_OPEN:
     {
       parser->num_capture_groups++;
-      if (parser->num_capture_groups > parser->max_group_num) {
+      if (parser->num_capture_groups > parser->max_capture_num_limit) {
         return NK_ERR_TOO_MANY_CAPTURE_GROUPS;
       }
 
-      uint32_t group_num = parser->num_capture_groups;
+      uint32_t capture_num = parser->num_capture_groups;
 
       nk_node_t* child_node = NULL;
       nk_error_t err = parse_group_alt_body(parser, tok, &child_node);
@@ -3673,25 +3730,25 @@ static nk_error_t parse_atom_impl(nk_parser_t* parser, token_t* tok, nk_node_t**
         return err;
       }
 
-      nk_node_t* group_node = NULL;
-      err = alloc_node_from_bytes(parser, NK_NODE_TYPE_GROUP, atom_span_bytes, tok->span_bytes_end, &group_node);
+      nk_node_t* capture_node = NULL;
+      err = alloc_node_from_bytes(parser, NK_NODE_TYPE_CAPTURE, atom_span_bytes, tok->span_bytes_end, &capture_node);
       if (err != NK_SUCCESS) {
         nk_node_free(child_node);
         return err;
       }
 
-      group_node->group.child = child_node;
-      group_node->group.has_name = false;
-      group_node->group.group_num = group_num;
+      capture_node->capture.child = child_node;
+      capture_node->capture.has_name = false;
+      capture_node->capture.capture_num = capture_num;
 
-      *out_node_ptr = group_node;
+      *out_node_ptr = capture_node;
       break;
     }
     case TK_NAMED_GROUP_OPEN:
     {
-      parser->has_named_groups = true;
+      parser->has_named_captures = true;
       parser->num_capture_groups++;
-      if (parser->num_capture_groups > parser->max_group_num) {
+      if (parser->num_capture_groups > parser->max_capture_num_limit) {
         return NK_ERR_TOO_MANY_CAPTURE_GROUPS;
       }
 
@@ -3704,20 +3761,20 @@ static nk_error_t parse_atom_impl(nk_parser_t* parser, token_t* tok, nk_node_t**
         return err;
       }
 
-      nk_node_t* group_node = NULL;
-      err = alloc_node_from_bytes(parser, NK_NODE_TYPE_GROUP, atom_span_bytes, tok->span_bytes_end, &group_node);
+      nk_node_t* capture_node = NULL;
+      err = alloc_node_from_bytes(parser, NK_NODE_TYPE_CAPTURE, atom_span_bytes, tok->span_bytes_end, &capture_node);
       if (err != NK_SUCCESS) {
         nk_node_free(child_node);
         nk_pbuf_free(&name_buf);
         return err;
       }
 
-      group_node->group.child = child_node;
-      group_node->group.has_name = true;
-      group_node->group.name_buf = name_buf;
-      group_node->group.group_num = 0;
+      capture_node->capture.child = child_node;
+      capture_node->capture.has_name = true;
+      capture_node->capture.name_buf = name_buf;
+      capture_node->capture.capture_num = 0;
 
-      *out_node_ptr = group_node;
+      *out_node_ptr = capture_node;
       break;
     }
     case TK_LOOKAROUND_OPEN:
@@ -3807,8 +3864,6 @@ static nk_error_t parse_atom_impl(nk_parser_t* parser, token_t* tok, nk_node_t**
       parser_state_restore(parser, &saved_state);
 
       group_node->group.child = child_node;
-      group_node->group.has_name = false;
-      group_node->group.group_num = 0;
 
       *out_node_ptr = group_node;
       break;
@@ -3849,8 +3904,6 @@ static nk_error_t parse_atom_impl(nk_parser_t* parser, token_t* tok, nk_node_t**
       parser_state_restore(parser, &saved_state);
 
       group_node->group.child = child_node;
-      group_node->group.has_name = false;
-      group_node->group.group_num = 0;
 
       *out_node_ptr = group_node;
 
@@ -3860,22 +3913,22 @@ static nk_error_t parse_atom_impl(nk_parser_t* parser, token_t* tok, nk_node_t**
     }
     case TK_CONDITIONAL_OPEN:
     {
-      uint32_t group_num = tok->data.back_ref.group_num;
-      bool has_name = tok->data.back_ref.has_name;
+      uint32_t capture_num = tok->data.back_ref.capture_num;
+      nk_ref_target_kind_t target_kind = tok->data.back_ref.target_kind;
       nk_pbuf_t name_buf = tok->data.back_ref.name_buf;
       bool has_depth = tok->data.back_ref.has_depth;
       int32_t depth = tok->data.back_ref.depth;
 
       nk_error_t err = lex(parser, tok);
       if (err != NK_SUCCESS) {
-        free_name_buf_if_present(has_name, &name_buf);
+        free_name_buf_if_ref_target_kind(target_kind, &name_buf);
         return err;
       }
 
       nk_node_t* yes_node;
       err = parse_concat(parser, tok, &yes_node);
       if (err != NK_SUCCESS) {
-        free_name_buf_if_present(has_name, &name_buf);
+        free_name_buf_if_ref_target_kind(target_kind, &name_buf);
         return err;
       }
 
@@ -3884,14 +3937,14 @@ static nk_error_t parse_atom_impl(nk_parser_t* parser, token_t* tok, nk_node_t**
         nk_error_t err = lex(parser, tok);
         if (err != NK_SUCCESS) {
           nk_node_free(yes_node);
-          free_name_buf_if_present(has_name, &name_buf);
+          free_name_buf_if_ref_target_kind(target_kind, &name_buf);
           return err;
         }
 
         err = parse_concat(parser, tok, &no_node);
         if (err != NK_SUCCESS) {
           nk_node_free(yes_node);
-          free_name_buf_if_present(has_name, &name_buf);
+          free_name_buf_if_ref_target_kind(target_kind, &name_buf);
           return err;
         }
       }
@@ -3899,7 +3952,7 @@ static nk_error_t parse_atom_impl(nk_parser_t* parser, token_t* tok, nk_node_t**
       if (tok->type != TK_GROUP_CLOSE) {
         nk_node_free(yes_node);
         nk_node_free(no_node);
-        free_name_buf_if_present(has_name, &name_buf);
+        free_name_buf_if_ref_target_kind(target_kind, &name_buf);
         set_error_span(parser, tok->span_bytes, tok->span_bytes);
         return NK_ERR_INVALID_CONDITIONAL_GROUP;
       }
@@ -3915,15 +3968,17 @@ static nk_error_t parse_atom_impl(nk_parser_t* parser, token_t* tok, nk_node_t**
       if (err != NK_SUCCESS) {
         nk_node_free(yes_node);
         nk_node_free(no_node);
-        free_name_buf_if_present(has_name, &name_buf);
+        free_name_buf_if_ref_target_kind(target_kind, &name_buf);
         return err;
       }
 
-      conditional_node->conditional.has_name = has_name;
-      if (has_name) {
+      conditional_node->conditional.target_kind = target_kind;
+      if (target_kind == NK_REF_TARGET_KIND_NAME) {
         conditional_node->conditional.name_buf = name_buf;
       }
-      conditional_node->conditional.group_num = group_num;
+      conditional_node->conditional.capture_num = capture_num;
+      conditional_node->conditional.resolved_capture_name_map_entry_index = SIZE_MAX;
+      conditional_node->conditional.resolved_capture_num_count = 0;
       conditional_node->conditional.has_depth = has_depth;
       conditional_node->conditional.depth = depth;
       conditional_node->conditional.yes_child = yes_node;
@@ -3973,6 +4028,7 @@ static nk_error_t parse_quantifier_impl(nk_parser_t* parser, token_t* tok, nk_no
 
     quantifier_node->quantifier.child = *out_node_ptr;
     quantifier_node->quantifier.min = tok->data.quantifier.min;
+    quantifier_node->quantifier.has_max = tok->data.quantifier.has_max;
     quantifier_node->quantifier.max = tok->data.quantifier.max;
     quantifier_node->quantifier.type = tok->data.quantifier.type;
 

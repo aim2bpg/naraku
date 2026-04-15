@@ -1,4 +1,5 @@
 AllCops:
+  SuggestExtensions: false
   TargetRubyVersion: 4.0
   NewCops: enable
   Include:
