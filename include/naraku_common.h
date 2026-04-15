@@ -1,5 +1,5 @@
-#ifndef NARAKY_COMMON_H
-#define NARAKY_COMMON_H
+#ifndef NARAKU_COMMON_H
+#define NARAKU_COMMON_H
 
 #if !defined(NARAKU_EXPORTED_FUNCTION) && !defined(NARAKU_EXPORTED_DATA)
 #ifdef NARAKU_EXPORT_SYMBOLS
@@ -16,4 +16,4 @@
 #endif
 #endif
 
-#endif  // NARAKY_COMMON_H
+#endif  // NARAKU_COMMON_H

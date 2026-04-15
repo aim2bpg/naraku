@@ -39,7 +39,7 @@ nk_error_t adjust_mbc_head_context_cache_ensure(
   if (
     context->cache_start_offset == NK_DONT_USE_CACHE_FOR_ADJUST_MBC_HEAD || target_offset_start >= target_offset_end
   ) {
-    return 0;
+    return NK_SUCCESS;
   }
 
   bool needs_expansion = false;
@@ -74,7 +74,7 @@ nk_error_t adjust_mbc_head_context_cache_ensure(
   }
 
   if (!needs_expansion) {
-    return 0;
+    return NK_SUCCESS;
   }
 
   size_t new_capacity = new_end - new_start;
@@ -112,5 +112,5 @@ nk_error_t adjust_mbc_head_context_cache_ensure(
   context->cache_start_offset = new_start;
   context->head_bits_capacity = new_words;
 
-  return 0;
+  return NK_SUCCESS;
 }

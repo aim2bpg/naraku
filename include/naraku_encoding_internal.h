@@ -105,6 +105,12 @@ static inline void adjust_mbc_head_context_cache_fill_step2(
 //
 // ==========================================================================
 
+/**
+ * Returns whether `code` is included in sorted closed intervals:
+ * `[range_intervals[0], range_intervals[1]], ...`.
+ *
+ * Precondition: `range_count >= 1` (i.e., this function is never called with an empty range set).
+ */
 bool code_in_code_range(uint32_t code, size_t range_count, const uint32_t* range_intervals);
 
 #endif  // NARAKU_ENCODING_INTERNAL_H

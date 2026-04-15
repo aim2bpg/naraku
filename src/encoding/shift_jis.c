@@ -133,14 +133,14 @@ nk_error_t shift_jis_adjust_mbc_head(
 
   if (bytes + (size_t)width > target) {
     *bytes_to_adjust = bytes;
-    return 0;
+    return NK_SUCCESS;
   }
 
   bytes += width;
   adjust_mbc_head_context_cache_fill_step2(context, target_offset + (size_t)width, target_offset_end);
 
   *bytes_to_adjust = bytes + ((size_t)(target - bytes) & (size_t)~1);
-  return 0;
+  return NK_SUCCESS;
 }
 
 bool shift_jis_is_self_sync_string(

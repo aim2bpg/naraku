@@ -8,8 +8,6 @@
 
 #include ".gen/name2cprop.gen.h"
 
-#include <stdio.h>
-
 nk_error_t nk_name_to_cprop(
   const nk_encoding_t* enc,
   const uint8_t* name_bytes,

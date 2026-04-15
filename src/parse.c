@@ -4,8 +4,6 @@
 #include <stdlib.h>  // for malloc, free
 #include <string.h>  // for memcpy
 
-#include <stdio.h>
-
 #if defined(__GNUC__)
 #define ARG_UNUSED __attribute__((unused))
 #define FALLTHROUGH __attribute__((fallthrough))
@@ -1292,6 +1290,12 @@ static nk_error_t lex_char_prop_escape(nk_parser_t* parser, uint32_t code, token
   return NK_SUCCESS;
 }
 
+static inline void free_name_buf_if_present(bool has_name, nk_pbuf_t* name_buf) {
+  if (has_name) {
+    nk_pbuf_free(name_buf);
+  }
+}
+
 static nk_error_t lex_common_escape(
   nk_parser_t* parser,
   const uint8_t* escape_bytes,
@@ -1397,6 +1401,40 @@ static nk_error_t lex_common_escape(
     default:
       return NK_SUCCESS;
   }
+}
+
+static nk_error_t lex_escaped_token_common(
+  nk_parser_t* parser,
+  const uint8_t* escape_bytes,
+  int8_t width,
+  uint32_t code,
+  bool* out_retry,
+  token_t* out_token
+) {
+  *out_retry = false;
+
+  if (lex_escaped_char_type(code, out_token)) {
+    return NK_SUCCESS;
+  }
+
+  if (code == 'p' || code == 'P') {
+    return lex_char_prop_escape(parser, code, out_token);
+  }
+
+  bool is_handled = false;
+  nk_error_t err = lex_common_escape(parser, escape_bytes, width, code, out_retry, &is_handled, out_token);
+  if (err != NK_SUCCESS) {
+    return err;
+  }
+  if (is_handled) {
+    return NK_SUCCESS;
+  }
+
+  out_token->type = TK_CODE;
+  out_token->data.code.value = code;
+  out_token->data.code.code_bytes = out_token->span_bytes;
+  out_token->data.code.code_bytes_end = parser->pattern_bytes;
+  return NK_SUCCESS;
 }
 
 static nk_error_t lex_impl(nk_parser_t* parser, token_t* out_token) {
@@ -1761,9 +1799,7 @@ static nk_error_t lex_impl(nk_parser_t* parser, token_t* out_token) {
                   }
 
                   if (parser->pattern_bytes >= parser->pattern_bytes_end) {
-                    if (has_name) {
-                      nk_pbuf_free(&name_buf);
-                    }
+                    free_name_buf_if_present(has_name, &name_buf);
                     set_error_span_to_current(parser, group_specifier_begin);
                     return NK_ERR_INCOMPLETE_GROUP_SPECIFIER;
                   }
@@ -1771,16 +1807,12 @@ static nk_error_t lex_impl(nk_parser_t* parser, token_t* out_token) {
 
                   err = peek(parser, &width, &code);
                   if (err != NK_SUCCESS) {
-                    if (has_name) {
-                      nk_pbuf_free(&name_buf);
-                    }
+                    free_name_buf_if_present(has_name, &name_buf);
                     return err;
                   }
 
                   if (code != name_terminator) {
-                    if (has_name) {
-                      nk_pbuf_free(&name_buf);
-                    }
+                    free_name_buf_if_present(has_name, &name_buf);
                     set_error_span_to_current(parser, group_specifier_begin);
                     return NK_ERR_INCOMPLETE_GROUP_SPECIFIER;
                   }
@@ -1805,25 +1837,19 @@ static nk_error_t lex_impl(nk_parser_t* parser, token_t* out_token) {
                 }
 
                 if (parser->pattern_bytes >= parser->pattern_bytes_end) {
-                  if (has_name) {
-                    nk_pbuf_free(&name_buf);
-                  }
+                  free_name_buf_if_present(has_name, &name_buf);
                   set_error_span_to_current(parser, group_specifier_begin);
                   return NK_ERR_INCOMPLETE_GROUP_SPECIFIER;
                 }
 
                 err = peek(parser, &width, &code);
                 if (err != NK_SUCCESS) {
-                  if (has_name) {
-                    nk_pbuf_free(&name_buf);
-                  }
+                  free_name_buf_if_present(has_name, &name_buf);
                   return err;
                 }
 
                 if (code != ')') {
-                  if (has_name) {
-                    nk_pbuf_free(&name_buf);
-                  }
+                  free_name_buf_if_present(has_name, &name_buf);
                   set_error_span_to_current(parser, group_specifier_begin);
                   return NK_ERR_INCOMPLETE_GROUP_SPECIFIER;
                 }
@@ -2022,20 +2048,6 @@ static nk_error_t lex_impl(nk_parser_t* parser, token_t* out_token) {
         }
 
         switch (code) {
-          // Character types (e.g., `\d`, `\w`, `\s`, `\h`):
-          case 'd':
-          case 'D':
-          case 'w':
-          case 'W':
-          case 's':
-          case 'S':
-          case 'h':
-          case 'H':
-            if (lex_escaped_char_type(code, out_token)) {
-              return NK_SUCCESS;
-            }
-            return NK_ERR_PARSER_BUG;
-
           // Grahpeme cluster/keep operator/newline:
           case 'X':
             out_token->type = TK_GRAPHEME_CLUSTER;
@@ -2072,17 +2084,6 @@ static nk_error_t lex_impl(nk_parser_t* parser, token_t* out_token) {
             out_token->type = TK_ASSERTION;
             out_token->data.assertion.type = NK_ASSERTION_TYPE_BEGIN_OF_MATCHING;
             return NK_SUCCESS;
-
-          // Character (Unicode) properties (`\p{...}` and `\P{...}`):
-          case 'p':
-          case 'P':
-          {
-            nk_error_t err = lex_char_prop_escape(parser, code, out_token);
-            if (err != NK_SUCCESS) {
-              return err;
-            }
-            return NK_SUCCESS;
-          }
 
           // Named back-reference (`\k<name>`, `\k'name'`):
           case 'k':
@@ -2140,17 +2141,13 @@ static nk_error_t lex_impl(nk_parser_t* parser, token_t* out_token) {
             }
 
             if (parser->pattern_bytes >= parser->pattern_bytes_end) {
-              if (has_name) {
-                nk_pbuf_free(&name_buf);
-              }
+              free_name_buf_if_present(has_name, &name_buf);
               set_error_span_to_current(parser, back_ref_begin);
               return NK_ERR_INCOMPLETE_BACK_REF;
             }
 
             if (has_name && name_buf.bytes >= name_buf.bytes_end) {
-              if (has_name) {
-                nk_pbuf_free(&name_buf);
-              }
+              free_name_buf_if_present(has_name, &name_buf);
               parser->error_bytes = name_bytes_for_error_report;
               parser->error_bytes_end = parser->pattern_bytes;
               return NK_ERR_EMPTY_GROUP_NAME;
@@ -2164,16 +2161,12 @@ static nk_error_t lex_impl(nk_parser_t* parser, token_t* out_token) {
 
             err = consume(parser, &next_width, &next_code);
             if (err != NK_SUCCESS) {
-              if (has_name) {
-                nk_pbuf_free(&name_buf);
-              }
+              free_name_buf_if_present(has_name, &name_buf);
               return err;
             }
 
             if (next_code != name_terminator) {
-              if (has_name) {
-                nk_pbuf_free(&name_buf);
-              }
+              free_name_buf_if_present(has_name, &name_buf);
               set_error_span_to_current(parser, back_ref_begin);
               return NK_ERR_INCOMPLETE_BACK_REF;
             }
@@ -2243,9 +2236,7 @@ static nk_error_t lex_impl(nk_parser_t* parser, token_t* out_token) {
             }
 
             if (parser->pattern_bytes >= parser->pattern_bytes_end) {
-              if (has_name) {
-                nk_pbuf_free(&name_buf);
-              }
+              free_name_buf_if_present(has_name, &name_buf);
               set_error_span_to_current(parser, subexp_call_begin);
               return NK_ERR_INCOMPLETE_SUBEXP_CALL;
             }
@@ -2259,16 +2250,12 @@ static nk_error_t lex_impl(nk_parser_t* parser, token_t* out_token) {
 
             err = consume(parser, &next_width, &next_code);
             if (err != NK_SUCCESS) {
-              if (has_name) {
-                nk_pbuf_free(&name_buf);
-              }
+              free_name_buf_if_present(has_name, &name_buf);
               return err;
             }
 
             if (next_code != name_terminator) {
-              if (has_name) {
-                nk_pbuf_free(&name_buf);
-              }
+              free_name_buf_if_present(has_name, &name_buf);
               set_error_span_to_current(parser, subexp_call_begin);
               return NK_ERR_INCOMPLETE_SUBEXP_CALL;
             }
@@ -2318,25 +2305,14 @@ static nk_error_t lex_impl(nk_parser_t* parser, token_t* out_token) {
 
           // Other case: treat the escaped character as a code itself.
           default:
-          {
-            bool is_handled = false;
-            nk_error_t err = lex_common_escape(parser, escape_bytes, width, code, &retry, &is_handled, out_token);
+            err = lex_escaped_token_common(parser, escape_bytes, width, code, &retry, out_token);
             if (err != NK_SUCCESS) {
               return err;
             }
-            if (is_handled) {
-              if (retry) {
-                continue;
-              }
-              return NK_SUCCESS;
+            if (retry) {
+              continue;
             }
-
-            out_token->type = TK_CODE;
-            out_token->data.code.value = code;
-            out_token->data.code.code_bytes = out_token->span_bytes;
-            out_token->data.code.code_bytes_end = parser->pattern_bytes;
             return NK_SUCCESS;
-          }
         }
       }
     }
@@ -2797,54 +2773,14 @@ static nk_error_t lex_in_char_class_impl(nk_parser_t* parser, token_t* out_token
           return err;
         }
 
-        switch (code) {
-          // Character types (e.g., `\d`, `\w`, `\s`, `\h`):
-          case 'd':
-          case 'D':
-          case 'w':
-          case 'W':
-          case 's':
-          case 'S':
-          case 'h':
-          case 'H':
-            if (lex_escaped_char_type(code, out_token)) {
-              return NK_SUCCESS;
-            }
-            return NK_ERR_PARSER_BUG;
-
-          // Character (Unicode) properties (`\p{...}` and `\P{...}`):
-          case 'p':
-          case 'P':
-          {
-            nk_error_t err = lex_char_prop_escape(parser, code, out_token);
-            if (err != NK_SUCCESS) {
-              return err;
-            }
-            return NK_SUCCESS;
-          }
-
-          // Other case: treat the escaped character as a code itself.
-          default:
-          {
-            bool is_handled = false;
-            nk_error_t err = lex_common_escape(parser, escape_bytes, width, code, &retry, &is_handled, out_token);
-            if (err != NK_SUCCESS) {
-              return err;
-            }
-            if (is_handled) {
-              if (retry) {
-                continue;
-              }
-              return NK_SUCCESS;
-            }
-
-            out_token->type = TK_CODE;
-            out_token->data.code.value = code;
-            out_token->data.code.code_bytes = out_token->span_bytes;
-            out_token->data.code.code_bytes_end = parser->pattern_bytes;
-            return NK_SUCCESS;
-          }
+        err = lex_escaped_token_common(parser, escape_bytes, width, code, &retry, out_token);
+        if (err != NK_SUCCESS) {
+          return err;
         }
+        if (retry) {
+          continue;
+        }
+        return NK_SUCCESS;
       }
     }
 
@@ -3932,18 +3868,14 @@ static nk_error_t parse_atom_impl(nk_parser_t* parser, token_t* tok, nk_node_t**
 
       nk_error_t err = lex(parser, tok);
       if (err != NK_SUCCESS) {
-        if (has_name) {
-          nk_pbuf_free(&name_buf);
-        }
+        free_name_buf_if_present(has_name, &name_buf);
         return err;
       }
 
       nk_node_t* yes_node;
       err = parse_concat(parser, tok, &yes_node);
       if (err != NK_SUCCESS) {
-        if (has_name) {
-          nk_pbuf_free(&name_buf);
-        }
+        free_name_buf_if_present(has_name, &name_buf);
         return err;
       }
 
@@ -3952,18 +3884,14 @@ static nk_error_t parse_atom_impl(nk_parser_t* parser, token_t* tok, nk_node_t**
         nk_error_t err = lex(parser, tok);
         if (err != NK_SUCCESS) {
           nk_node_free(yes_node);
-          if (has_name) {
-            nk_pbuf_free(&name_buf);
-          }
+          free_name_buf_if_present(has_name, &name_buf);
           return err;
         }
 
         err = parse_concat(parser, tok, &no_node);
         if (err != NK_SUCCESS) {
           nk_node_free(yes_node);
-          if (has_name) {
-            nk_pbuf_free(&name_buf);
-          }
+          free_name_buf_if_present(has_name, &name_buf);
           return err;
         }
       }
@@ -3971,9 +3899,7 @@ static nk_error_t parse_atom_impl(nk_parser_t* parser, token_t* tok, nk_node_t**
       if (tok->type != TK_GROUP_CLOSE) {
         nk_node_free(yes_node);
         nk_node_free(no_node);
-        if (has_name) {
-          nk_pbuf_free(&name_buf);
-        }
+        free_name_buf_if_present(has_name, &name_buf);
         set_error_span(parser, tok->span_bytes, tok->span_bytes);
         return NK_ERR_INVALID_CONDITIONAL_GROUP;
       }
@@ -3989,9 +3915,7 @@ static nk_error_t parse_atom_impl(nk_parser_t* parser, token_t* tok, nk_node_t**
       if (err != NK_SUCCESS) {
         nk_node_free(yes_node);
         nk_node_free(no_node);
-        if (has_name) {
-          nk_pbuf_free(&name_buf);
-        }
+        free_name_buf_if_present(has_name, &name_buf);
         return err;
       }
 
