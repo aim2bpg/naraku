@@ -31,6 +31,27 @@ class TestParse < Minitest::Test
     assert_equal 'foo', back_ref[:name]
   end
 
+  def test_includes_parser_info_without_postprocess
+    result = NarakuRuby.parse('(a)')
+    parser_info = result[:parser_info]
+
+    assert_equal 1, parser_info[:num_capture_groups]
+    assert_equal false, parser_info[:has_named_captures]
+    refute parser_info.key?(:capture_entries)
+    refute parser_info.key?(:capture_names_map)
+  end
+
+  def test_includes_postprocess_parser_info
+    result = NarakuRuby.parse('(?<foo>a)(?<foo>b)\k<foo>', postprocess: true)
+    parser_info = result[:parser_info]
+
+    assert_equal 2, parser_info[:num_capture_groups]
+    assert_equal true, parser_info[:has_named_captures]
+    assert_equal 1, parser_info[:capture_entries].length
+    assert_equal [1, 2], parser_info[:capture_entries][0][:capture_nums]
+    assert_equal 0, parser_info[:capture_names_map][:foo]
+  end
+
   private
 
   def first_node(node, &)

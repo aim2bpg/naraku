@@ -25,10 +25,20 @@ def run(request)
 
   parser.postprocess(node) if request['postprocess']
 
+  parser_info = {
+    'num_capture_groups' => parser.num_capture_groups,
+    'has_named_captures' => parser.has_named_captures,
+  }
+  if request['postprocess']
+    parser_info['capture_entries'] = parser.capture_entries
+    parser_info['capture_names_map'] = parser.capture_names_map
+  end
+
   {
     'ok' => true,
     'data' => {
       'node' => node.to_h,
+      'parser_info' => parser_info,
       'warnings' => warnings,
     },
   }

@@ -72,6 +72,7 @@ typedef struct nk_absence_node nk_absence_node_t;
 typedef struct nk_conditional_node nk_conditional_node_t;
 typedef struct nk_concat_node nk_concat_node_t;
 typedef struct nk_alt_node nk_alt_node_t;
+typedef struct nk_capture_names_map nk_capture_names_map_t;
 typedef union nk_node nk_node_t;
 
 /**
@@ -535,18 +536,10 @@ typedef struct nk_parser nk_parser_t;
 typedef void (*nk_warning_func_t)(const nk_parser_t* parser, nk_warning_t warning, size_t offset, size_t length);
 
 typedef struct {
-  bool has_name;
-  nk_pbuf_t name_buf;
   uint32_t* capture_nums;
   size_t capture_nums_len;
   size_t capture_nums_cap;
-} nk_capture_name_map_entry_t;
-
-typedef struct {
-  nk_capture_name_map_entry_t* entries;
-  size_t entries_len;
-  size_t entries_cap;
-} nk_capture_name_map_t;
+} nk_capture_entry_t;
 
 #define NK_CAPTURE_NAME_MAP_ENTRY_INDEX_UNRESOLVED SIZE_MAX
 
@@ -591,11 +584,10 @@ struct nk_parser {
 
   // Statistics:
   bool has_named_captures;
-  nk_node_t** capture_nodes_by_num;
-  size_t capture_nodes_by_num_len;
-  size_t* capture_entry_index_by_num;
-  size_t capture_entry_index_by_num_len;
-  nk_capture_name_map_t capture_name_map;
+  nk_capture_entry_t* capture_entries;
+  size_t capture_entries_len;
+  size_t capture_entries_cap;
+  nk_capture_names_map_t* capture_names_map;
 
   // Error reporting:
   const uint8_t* error_bytes;

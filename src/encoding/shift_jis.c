@@ -30,12 +30,16 @@ static int8_t shift_jis_scan_mbc_width(
   const uint8_t* bytes_end NARAKU_ARG_UNUSED
 ) {
   int8_t first_byte_width = SHIFT_JIS_FIRST_BYTE_TABLE[*bytes++];
-  if (first_byte_width <= 1) return first_byte_width;
+  if (first_byte_width <= 1) {
+    return first_byte_width;
+  }
 
   // Now, we assume `first_byte_width == 2`. If `bytes` is not enough for
   // the second byte, we return `-1` to indicate the character is incomplete
   // and one more byte is needed.
-  if (bytes == bytes_end) return -1;
+  if (bytes == bytes_end) {
+    return -1;
+  }
 
   return SHIFT_JIS_SECOND_BYTE_TABLE[*bytes];
 }

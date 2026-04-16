@@ -616,16 +616,24 @@ static mrb_value mrb_naraku_node_name(mrb_state* mrb, mrb_value self) {
   nk_node_t* node = mrb_naraku_node_get_ptr(mrb, self);
   switch (node->base.type) {
     case NK_NODE_TYPE_BACK_REF:
-      if (node->back_ref.target_kind != NK_REF_TARGET_KIND_NAME) return mrb_nil_value();
+      if (node->back_ref.target_kind != NK_REF_TARGET_KIND_NAME) {
+        return mrb_nil_value();
+      }
       return mrb_naraku_pbuf_to_str(mrb, &node->back_ref.name_buf);
     case NK_NODE_TYPE_CALL:
-      if (node->call.target_kind != NK_CALL_TARGET_KIND_NAME) return mrb_nil_value();
+      if (node->call.target_kind != NK_CALL_TARGET_KIND_NAME) {
+        return mrb_nil_value();
+      }
       return mrb_naraku_pbuf_to_str(mrb, &node->call.name_buf);
     case NK_NODE_TYPE_CAPTURE:
-      if (!node->capture.has_name) return mrb_nil_value();
+      if (!node->capture.has_name) {
+        return mrb_nil_value();
+      }
       return mrb_naraku_pbuf_to_str(mrb, &node->capture.name_buf);
     case NK_NODE_TYPE_CONDITIONAL:
-      if (node->conditional.target_kind != NK_REF_TARGET_KIND_NAME) return mrb_nil_value();
+      if (node->conditional.target_kind != NK_REF_TARGET_KIND_NAME) {
+        return mrb_nil_value();
+      }
       return mrb_naraku_pbuf_to_str(mrb, &node->conditional.name_buf);
     default:
       mrb_raisef(mrb, E_RUNTIME_ERROR, "name is not available for %s node", node_type_name(node->base.type));
@@ -637,15 +645,21 @@ static mrb_value mrb_naraku_node_capture_num(mrb_state* mrb, mrb_value self) {
   nk_node_t* node = mrb_naraku_node_get_ptr(mrb, self);
   switch (node->base.type) {
     case NK_NODE_TYPE_BACK_REF:
-      if (node->back_ref.target_kind != NK_REF_TARGET_KIND_CAPTURE_NUM) return mrb_nil_value();
+      if (node->back_ref.target_kind != NK_REF_TARGET_KIND_CAPTURE_NUM) {
+        return mrb_nil_value();
+      }
       return mrb_fixnum_value(node->back_ref.capture_num);
     case NK_NODE_TYPE_CALL:
-      if (node->call.target_kind != NK_CALL_TARGET_KIND_CAPTURE_NUM) return mrb_nil_value();
+      if (node->call.target_kind != NK_CALL_TARGET_KIND_CAPTURE_NUM) {
+        return mrb_nil_value();
+      }
       return mrb_fixnum_value(node->call.capture_num);
     case NK_NODE_TYPE_CAPTURE:
       return mrb_fixnum_value(node->capture.capture_num);
     case NK_NODE_TYPE_CONDITIONAL:
-      if (node->conditional.target_kind != NK_REF_TARGET_KIND_CAPTURE_NUM) return mrb_nil_value();
+      if (node->conditional.target_kind != NK_REF_TARGET_KIND_CAPTURE_NUM) {
+        return mrb_nil_value();
+      }
       return mrb_fixnum_value(node->conditional.capture_num);
     default:
       mrb_raisef(mrb, E_RUNTIME_ERROR, "capture_num is not available for %s node", node_type_name(node->base.type));
@@ -836,7 +850,9 @@ static mrb_value mrb_naraku_node_has_max(mrb_state* mrb, mrb_value self) {
 static mrb_value mrb_naraku_node_max(mrb_state* mrb, mrb_value self) {
   nk_node_t* node = mrb_naraku_node_get_ptr(mrb, self);
   node_check_type(mrb, node, NK_NODE_TYPE_QUANTIFIER, "max");
-  if (!node->quantifier.has_max) return mrb_nil_value();
+  if (!node->quantifier.has_max) {
+    return mrb_nil_value();
+  }
   return mrb_fixnum_value(node->quantifier.max);
 }
 

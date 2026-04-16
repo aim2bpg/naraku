@@ -2,13 +2,16 @@
 #include <stdlib.h>
 
 #include <mruby.h>
+#include <mruby/array.h>
 #include <mruby/class.h>
 #include <mruby/data.h>
+#include <mruby/hash.h>
 #include <mruby/presym.h>
 #include <mruby/value.h>
 #include <mruby/variable.h>
 
 #include "mrb_naraku.h"
+#include <naraku_syntax_internal.h>
 
 // ============================================================================
 //
@@ -226,6 +229,42 @@ static mrb_value mrb_naraku_parser_has_named_captures(mrb_state* mrb, mrb_value 
   return mrb_bool_value(parser->has_named_captures);
 }
 
+static mrb_value mrb_naraku_parser_capture_entries(mrb_state* mrb, mrb_value self) {
+  nk_parser_t* parser = mrb_naraku_parser_get_ptr(mrb, self);
+
+  mrb_value ary = mrb_ary_new_capa(mrb, parser->capture_entries_len);
+  for (size_t i = 0; i < parser->capture_entries_len; i++) {
+    const nk_capture_entry_t* entry = &parser->capture_entries[i];
+    mrb_value h = mrb_hash_new_capa(mrb, 1);
+    mrb_value capture_nums = mrb_ary_new_capa(mrb, entry->capture_nums_len);
+    for (size_t j = 0; j < entry->capture_nums_len; j++) {
+      mrb_ary_push(mrb, capture_nums, mrb_fixnum_value((mrb_int)entry->capture_nums[j]));
+    }
+    mrb_hash_set(mrb, h, mrb_symbol_value(mrb_intern_lit(mrb, "capture_nums")), capture_nums);
+    mrb_ary_push(mrb, ary, h);
+  }
+  return ary;
+}
+
+static mrb_value mrb_naraku_parser_capture_names_map(mrb_state* mrb, mrb_value self) {
+  nk_parser_t* parser = mrb_naraku_parser_get_ptr(mrb, self);
+  mrb_value h = mrb_hash_new(mrb);
+  if (parser->capture_names_map == NULL) {
+    return h;
+  }
+
+  for (size_t i = 0; i < parser->capture_names_map->buckets_len; i++) {
+    const capture_names_map_bucket_t* bucket = &parser->capture_names_map->buckets[i];
+    if (!bucket->in_use) {
+      continue;
+    }
+    size_t len = (size_t)(bucket->name_buf.bytes_end - bucket->name_buf.bytes);
+    mrb_value key = mrb_str_new(mrb, (const char*)bucket->name_buf.bytes, len);
+    mrb_hash_set(mrb, h, key, mrb_fixnum_value((mrb_int)bucket->capture_entry_index));
+  }
+  return h;
+}
+
 // ============================================================================
 //
 // `gem_init` for `Naraku::Parser`:
@@ -261,4 +300,6 @@ void mrb_naraku_parser_gem_init(mrb_state* mrb, struct RClass* naraku_module) {
   mrb_define_method(mrb, parser_class, "postprocess", mrb_naraku_parser_postprocess, MRB_ARGS_REQ(1));
   mrb_define_method(mrb, parser_class, "num_capture_groups", mrb_naraku_parser_num_capture_groups, MRB_ARGS_NONE());
   mrb_define_method(mrb, parser_class, "has_named_captures", mrb_naraku_parser_has_named_captures, MRB_ARGS_NONE());
+  mrb_define_method(mrb, parser_class, "capture_entries", mrb_naraku_parser_capture_entries, MRB_ARGS_NONE());
+  mrb_define_method(mrb, parser_class, "capture_names_map", mrb_naraku_parser_capture_names_map, MRB_ARGS_NONE());
 }

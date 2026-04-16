@@ -48,6 +48,29 @@ void char_class_item_free(nk_char_class_item_t* item);
 
 // ==========================================================================
 //
+// src/postprocess.c
+//
+// ==========================================================================
+
+typedef struct {
+  bool in_use;
+  nk_pbuf_t name_buf;  // owned
+  size_t capture_entry_index;
+} capture_names_map_bucket_t;
+
+struct nk_capture_names_map {
+  capture_names_map_bucket_t* buckets;
+  size_t buckets_len;
+  size_t buckets_used;
+};
+
+nk_error_t capture_names_map_init(nk_capture_names_map_t** out_map);
+void capture_names_map_free(nk_capture_names_map_t* map);
+nk_error_t capture_names_map_get(const nk_capture_names_map_t* map, const nk_pbuf_t* name_buf, size_t* out_index);
+nk_error_t capture_names_map_put(nk_capture_names_map_t* map, const nk_pbuf_t* name_buf, size_t capture_entry_index);
+
+// ==========================================================================
+//
 // src/parse.c
 //
 // ==========================================================================

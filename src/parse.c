@@ -39,13 +39,10 @@ nk_error_t nk_parser_init(
   out_parser->num_capture_groups = 0;
   out_parser->parse_depth = 0;
   out_parser->has_named_captures = false;
-  out_parser->capture_nodes_by_num = NULL;
-  out_parser->capture_nodes_by_num_len = 0;
-  out_parser->capture_entry_index_by_num = NULL;
-  out_parser->capture_entry_index_by_num_len = 0;
-  out_parser->capture_name_map.entries = NULL;
-  out_parser->capture_name_map.entries_len = 0;
-  out_parser->capture_name_map.entries_cap = 0;
+  out_parser->capture_entries = NULL;
+  out_parser->capture_entries_len = 0;
+  out_parser->capture_entries_cap = 0;
+  out_parser->capture_names_map = NULL;
 
   out_parser->error_bytes = NULL;
   out_parser->error_bytes_end = NULL;
@@ -54,32 +51,23 @@ nk_error_t nk_parser_init(
 }
 
 void nk_parser_free(nk_parser_t* parser) {
-  if (parser->capture_nodes_by_num != NULL) {
-    free(parser->capture_nodes_by_num);
-    parser->capture_nodes_by_num = NULL;
-    parser->capture_nodes_by_num_len = 0;
-  }
-  if (parser->capture_entry_index_by_num != NULL) {
-    free(parser->capture_entry_index_by_num);
-    parser->capture_entry_index_by_num = NULL;
-    parser->capture_entry_index_by_num_len = 0;
-  }
-
-  if (parser->capture_name_map.entries != NULL) {
-    for (size_t i = 0; i < parser->capture_name_map.entries_len; i++) {
-      nk_capture_name_map_entry_t* entry = &parser->capture_name_map.entries[i];
-      if (entry->has_name) {
-        nk_pbuf_free(&entry->name_buf);
-      }
+  if (parser->capture_entries != NULL) {
+    for (size_t i = 0; i < parser->capture_entries_len; i++) {
+      nk_capture_entry_t* entry = &parser->capture_entries[i];
       free(entry->capture_nums);
       entry->capture_nums = NULL;
       entry->capture_nums_len = 0;
       entry->capture_nums_cap = 0;
     }
-    free(parser->capture_name_map.entries);
-    parser->capture_name_map.entries = NULL;
-    parser->capture_name_map.entries_len = 0;
-    parser->capture_name_map.entries_cap = 0;
+    free(parser->capture_entries);
+    parser->capture_entries = NULL;
+    parser->capture_entries_len = 0;
+    parser->capture_entries_cap = 0;
+  }
+
+  if (parser->capture_names_map != NULL) {
+    capture_names_map_free(parser->capture_names_map);
+    parser->capture_names_map = NULL;
   }
 }
 
