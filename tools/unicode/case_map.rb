@@ -130,6 +130,13 @@ module Unicode
       result
     end
 
+    MAP_TYPES = {
+      lower: [:lower],
+      upper: %i[upper upper_title],
+      title: %i[title upper_title],
+      swap: %i[swap lower upper upper_title],
+    }.freeze
+
     def case_map(map_type, codes, context: false, language: nil)
       is_string = false
       if codes.is_a?(String)
@@ -144,13 +151,7 @@ module Unicode
       is_lithuanian = language == :lithuanian
       context = true if is_turkic || is_lithuanian
 
-      types =
-        case map_type
-        when :lower then [:lower]
-        when :upper then %i[upper upper_title]
-        when :title then %i[title upper_title]
-        when :swap  then %i[swap lower upper upper_title]
-        end
+      types = MAP_TYPES[map_type]
 
       result = codes.each_with_index.flat_map do |code, index|
         types = [:lower] if index.positive? && types.include?(:title)

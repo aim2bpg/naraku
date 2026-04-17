@@ -29,7 +29,8 @@ def gen_header(cat)
   puts "#define NK_MAX_DEFAULT_SUPPORT_CPROP #{cat.max_default_support_cprop_id}"
 end
 
-GPERF_COMMAND = %w[gperf -L ANSI-C -7 -c -j1 -i0 -t -C -P -T -H name2cprop_hash -Q name2cprop_pool -N name2cprop_lookup].freeze
+GPERF_COMMAND = %w[gperf -L ANSI-C -7 -c -j1 -i0 -t -C -P -T -H name2cprop_hash -Q name2cprop_pool -N
+                   name2cprop_lookup].freeze
 
 class DebugIO
   def initialize(io, debug:)

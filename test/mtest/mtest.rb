@@ -3,7 +3,6 @@
 # `Mtest` is a testing framework, a port of `Minitest` to mruby.
 
 module Mtest
-
   # The version constant.
   VERSION = '0.1.0'
 
@@ -54,18 +53,18 @@ module Mtest
       end
 
       if args[i].start_with?('-') && !args[i].start_with?('--')
-        flag = "sinexS"
-          .chars
-          .map { |flag| [flag, args[i].index(flag)] }
-          .filter { |_, index| index }
-          .min_by { |_, index| index }
-          &.first
+        flag = 'sinexS'
+               .chars
+               .map { |flag| [flag, args[i].index(flag)] }
+               .filter { |_, index| index }
+               .min_by { |_, index| index }
+               &.first
         if flag
           key, value = args[i].split(flag, 2)
           args.splice(i, 1, "#{key}#{flag}", value) unless value.empty?
         end
 
-        short_flags = args.splice(i, 1)[0][1..-1]
+        short_flags = args.splice(i, 1)[0][1..]
         short_flags.chars.each_with_index do |flag, index|
           args.insert(i + index, "-#{flag}")
         end
@@ -105,10 +104,10 @@ module Mtest
       i += 1
     end
 
-    unless options[:seed] then
+    unless options[:seed]
       srand
       options[:seed] = srand.to_i % 0xFFFF
-      original_args << "--seed" << options[:seed].to_s
+      original_args << '--seed' << options[:seed].to_s
     end
 
     options[:args] = original_args.map do |arg|
@@ -150,13 +149,9 @@ module Mtest
   def self.included_test_name?(options, class_name, method_name)
     full_name = "#{class_name}##{method_name}"
 
-    if options[:include] && !full_name.include?(options[:include])
-      return false
-    end
+    return false if options[:include] && !full_name.include?(options[:include])
 
-    if options[:exclude] && full_name.include?(options[:exclude])
-      return false
-    end
+    return false if options[:exclude] && full_name.include?(options[:exclude])
 
     true
   end
@@ -173,7 +168,7 @@ module Mtest
     Time.now.to_f
   end
 
-  class Assertion < Exception
+  class Assertion < StandardError
     def error
       self
     end
@@ -199,6 +194,7 @@ module Mtest
 
   class UnexpectedError < Assertion
     def initialize(error)
+      super(error.message)
       @error = error
     end
 
@@ -211,16 +207,16 @@ module Mtest
 
   module Assertions
     def skip(message = nil)
-      message ||= "Skipped"
+      message ||= 'Skipped'
       raise Skip, message
     end
 
     def assert(test, message = nil)
       @num_assertions += 1
-      unless test
-        message ||= "Expected #{test.inspect} to be truthy"
-        raise Assertion, message
-      end
+      return if test
+
+      message ||= "Expected #{test.inspect} to be truthy"
+      raise Assertion, message
     end
 
     def assert_equal(expected, actual, message = nil)
@@ -232,33 +228,30 @@ module Mtest
       message ||= "Expected #{object.inspect} to be nil"
       assert(object.nil?, message)
     end
-    
-    def assert_raises(expected_error_class, expected_message = nil, message = nil, &block)
+
+    def assert_raises(expected_error_class, expected_message = nil, message = nil, &)
       @num_assertions += 1
 
       message ||= begin
         m = "Expected #{expected_error_class} to be raised"
-        if expected_message
-          m += " with message #{expected_message.inspect}"
-        end
+        m + " with message #{expected_message.inspect}" if expected_message
       end
 
       begin
         yield
         raise Assertion, "#{message}\nBut, no error was raised"
-      rescue expected_error_class => ex
-        if expected_message && !ex.message.include?(expected_message)
-          raise Assertion, "#{message}\nBut, the raised error is #{ex.class} with message #{ex.message.inspect}"
+      rescue expected_error_class => e
+        if expected_message && !e.message.include?(expected_message)
+          raise Assertion, "#{message}\nBut, the raised error is #{e.class} with message #{e.message.inspect}"
         end
-      rescue Mtest::Assertion, NoMemoryError, SystemExit => ex
-        raise ex
-      rescue Exception => ex
-        raise Assertion, "#{message}\nBut, the raised error is #{ex.class} with message #{ex.message.inspect}"
+      rescue Mtest::Assertion, NoMemoryError, SystemExit => e
+        raise e
+      rescue Exception => e # rubocop:disable Lint/RescueException
+        raise Assertion, "#{message}\nBut, the raised error is #{e.class} with message #{e.message.inspect}"
       end
-
     end
 
-    def assert_timeout(seconds, message = nil, &block)
+    def assert_timeout(seconds, message = nil, &)
       message ||= "Expected block to finish within #{seconds} seconds"
 
       start_time = Mtest.time
@@ -273,14 +266,17 @@ module Mtest
   class Test
     include Assertions
 
-    @@test_classes = []
+    class << self
+      def inherited(subclass)
+        super
+        @test_classes ||= []
+        @test_classes << subclass
+      end
 
-    def self.inherited(subclass)
-      @@test_classes << subclass
-    end
-
-    def self.test_classes
-      @@test_classes.shuffle
+      def test_classes
+        @test_classes ||= []
+        @test_classes.shuffle
+      end
     end
 
     def initialize(method_name)
@@ -294,8 +290,8 @@ module Mtest
 
     def self.test_methods
       methods = public_instance_methods(false)
-        .map(&:to_s)
-        .filter { |m| m.start_with?('test_') }
+                .map(&:to_s)
+                .filter { |m| m.start_with?('test_') }
 
       methods.shuffle
     end
@@ -328,7 +324,7 @@ module Mtest
       raise
     rescue Assertion => e
       @failures << e
-    rescue Exception => e
+    rescue Exception => e # rubocop:disable Lint/RescueException
       @failures << UnexpectedError.new(e)
     end
   end
@@ -339,7 +335,7 @@ module Mtest
       'F' => "\e[31m",    # red
       'S' => "\e[33m",    # yellow
       'E' => "\e[37;41m", # white on red
-    }
+    }.freeze
 
     def initialize(class_name, method_name, time, num_assertions, failures)
       @class_name = class_name
@@ -387,14 +383,16 @@ module Mtest
   end
 
   class Reporter
-    @@reporters = []
+    class << self
+      def register(reporter)
+        @reporters ||= []
+        @reporters << reporter
+      end
 
-    def self.register(reporter)
-      @@reporters << reporter
-    end
-
-    def self.reporters
-      @@reporters
+      def reporters
+        @reporters ||= []
+        @reporters
+      end
     end
 
     def initialize
@@ -423,6 +421,8 @@ module Mtest
 
   class ProgressReporter < Reporter
     def initialize(io)
+      super()
+
       @io = io
       @num_wrote_dots = 0
     end
@@ -441,48 +441,50 @@ module Mtest
         @io.flush
       end
 
-      if verbose?
-        @io.print "#{class_name}##{method_name} ..."
-        @io.flush
-      end
+      return unless verbose?
+
+      @io.print "#{class_name}##{method_name} ..."
+      @io.flush
     end
 
     def on_test_finish(result)
       if show_dots?
         @io.print("\b#{result.colored_result_code}")
         @num_wrote_dots += 1
-        if @num_wrote_dots % 100 == 0
+        if (@num_wrote_dots % 100).zero?
           @io.puts
         else
           @io.flush
         end
       end
 
-      if verbose?
-        @io.puts "\r#{result.class_name}##{result.method_name} ... #{result.colored_result_label}\n"
+      return unless verbose?
 
-        if result.failure
-          @io.puts
-          result.failures.each do |failure|
-            @io.puts "  #{failure.error.class}: #{failure.error.message.split("\n").join("\n  ")}"
-            failure.filtered_backtrace(options).each do |line|
-              @io.puts "    #{line}"
-            end
-          end
-          @io.puts
+      @io.puts "\r#{result.class_name}##{result.method_name} ... #{result.colored_result_label}\n"
+
+      return unless result.failure
+
+      @io.puts
+      result.failures.each do |failure|
+        @io.puts "  #{failure.error.class}: #{failure.error.message.split("\n").join("\n  ")}"
+        failure.filtered_backtrace(options).each do |line|
+          @io.puts "    #{line}"
         end
       end
+      @io.puts
     end
 
     def on_finish
-      if show_dots? && @num_wrote_dots > 0 && @num_wrote_dots % 100 != 0
-        @io.puts
-      end
+      return unless show_dots? && @num_wrote_dots.positive? && @num_wrote_dots % 100 != 0
+
+      @io.puts
     end
   end
 
   class SummaryReporter < Reporter
     def initialize(io)
+      super()
+
       @io = io
 
       @num_tests = 0
@@ -495,7 +497,6 @@ module Mtest
     def report_skips?
       options[:show_skips] || options[:verbose]
     end
-
 
     def on_start
       @start_time = Mtest.time
@@ -526,9 +527,9 @@ module Mtest
 
       unless @reports.empty?
         if report_skips?
-          @io.puts "Failure/Error/Skip Reports:"
+          @io.puts 'Failure/Error/Skip Reports:'
         else
-          @io.puts "Failure/Error Reports:"
+          @io.puts 'Failure/Error Reports:'
         end
 
         @io.puts

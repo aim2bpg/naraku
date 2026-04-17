@@ -54,14 +54,14 @@ module Encoding
     end
 
     def test_adjust_mbc_head
-      context = Naraku::Encoding::AdjustMbcHeadContext.new("abcd", false)
+      context = Naraku::Encoding::AdjustMbcHeadContext.new('abcd', false)
       (0..4).each do |index|
         assert_equal index, E.adjust_mbc_head(index, context)
       end
     end
 
     def test_self_sync_string
-      assert E.self_sync_string?("abc")
+      assert E.self_sync_string?('abc')
     end
 
     def test_case_fold
@@ -100,7 +100,6 @@ module Encoding
         assert E.cprop?(code, 'Alpha')
       end
     end
-
 
     def test_cprop_code_range
       assert_equal [0x00..0x7F], E.cprop_code_range('ASCII')

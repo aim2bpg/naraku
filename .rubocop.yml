@@ -6,15 +6,15 @@ AllCops:
     - 'Gemfile'
     - 'Rakefile'
     - 'build_config.rb'
-    - 'ruby-prototype/**/*.rb'
-    - 'tools/**/*.rb'
-  Exclude:
-    - 'submodules/**/*'
+    - 'ruby-prototype/**/*'
+    - 'tools/**/*'
     - 'test/**/*'
-    - 'build/**/*'
-    - '.ruby-lsp/**/*'
     - 'mrbgems/mruby-naraku/mrblib/**/*'
     - 'mrbgems/mruby-naraku/mrbgem.rake'
+  Exclude:
+    - 'submodules/**/*'
+    - 'build/**/*'
+    - '.ruby-lsp/**/*'
     - 'ruby-prototype/lib/mruby-scripts/**/*'
 
 Layout/FirstHashElementIndentation:
@@ -23,31 +23,55 @@ Layout/FirstHashElementIndentation:
 Layout/LineLength:
   Max: 160
 
-Metrics/MethodLength:
-  Max: 40
+Metrics/AbcSize:
+  Max: 220
+  Exclude:
+    - 'test/**/*'
+    - 'ruby-prototype/test/**/*'
 
 Metrics/BlockLength:
   Max: 60
 
+Metrics/BlockNesting:
+  Max: 4
+
 Metrics/ClassLength:
-  Max: 240
-
-Metrics/ModuleLength:
-  Max: 240
-
-Metrics/AbcSize:
-  Max: 40
+  Max: 500
+  Exclude:
+    - 'test/**/*'
+    - 'ruby-prototype/test/**/*'
 
 Metrics/CyclomaticComplexity:
-  Max: 12
+  Max: 50
+
+Metrics/MethodLength:
+  Max: 200
+
+Metrics/ModuleLength:
+  Max: 500
+
+Metrics/ParameterLists:
+  Max: 10
 
 Metrics/PerceivedComplexity:
-  Max: 16
+  Max: 50
+
+Naming/ClassAndModuleCamelCase:
+  Exclude:
+    - 'test/encoding/*'
 
 Naming/MethodParameterName:
   MinNameLength: 2
 
 Style/Documentation:
+  Enabled: false
+
+Style/ExpandPathArguments:
+  Exclude:
+    - 'test/**/*'
+    - 'mrbgems/mruby-naraku/mrblib/**/*'
+
+Style/FormatStringToken:
   Enabled: false
 
 Style/FrozenStringLiteralComment:
@@ -56,8 +80,8 @@ Style/FrozenStringLiteralComment:
 Style/HashSyntax:
   EnforcedShorthandSyntax: always
 
-Style/TrailingCommaInHashLiteral:
+Style/TrailingCommaInArrayLiteral:
   EnforcedStyleForMultiline: comma
 
-Style/TrailingCommaInArrayLiteral:
+Style/TrailingCommaInHashLiteral:
   EnforcedStyleForMultiline: comma

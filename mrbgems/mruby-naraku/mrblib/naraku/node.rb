@@ -5,7 +5,7 @@ module Naraku
     # Returns a Hash representation of this node, recursively converting
     # child nodes as well.
     def to_h
-      h = { type: type, span_offset: span_offset, span_length: span_length }
+      h = { type:, span_offset:, span_length: }
       case type
       when :literal
         h[:buf] = buf
@@ -62,11 +62,7 @@ module Naraku
         h[:name] = name
         h[:capture_num] = capture_num
         h[:child] = child.to_h
-      when :group
-        h[:child] = child.to_h
-      when :atomic
-        h[:child] = child.to_h
-      when :absence
+      when :group, :atomic, :absence
         h[:child] = child.to_h
       when :conditional
         h[:target_kind] = target_kind
@@ -86,13 +82,13 @@ module Naraku
 
     class CharClassUnion
       def to_h
-        { span_offset: span_offset, span_length: span_length, items: items.map(&:to_h) }
+        { span_offset:, span_length:, items: items.map(&:to_h) }
       end
     end
 
     class CharClassItem
       def to_h
-        h = { type: type, span_offset: span_offset, span_length: span_length }
+        h = { type:, span_offset:, span_length: }
         case type
         when :code
           h[:code] = code

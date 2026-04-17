@@ -90,14 +90,14 @@ module Encoding
       [false, true].each do |use_cache|
         context = Naraku::Encoding::AdjustMbcHeadContext.new(
           # "あいうえおABCか0き1く2け3こ4" + "＝" * 100
-          "\x82\xA0\x82\xA2\x82\xA4\x82\xA6\x82\xA8ABC\x82\xA90\x82\xAB1\x82\xAD2\x82\xAF3\x82\xB14" + "\x81\x81" * 100,
+          "\x82\xA0\x82\xA2\x82\xA4\x82\xA6\x82\xA8ABC\x82\xA90\x82\xAB1\x82\xAD2\x82\xAF3\x82\xB14#{"\x81\x81" * 100}",
           use_cache
         )
         expected_results = [
           0, 0, 2, 2, 4, 4, 6, 6, 8, 8,
           10, 11, 12,
-          13, 13, 15, 16, 16, 18, 19, 19, 21, 22, 22, 24, 25, 25, 27,
-        ] + 100.times.flat_map { |i| [28 + i * 2, 28 + i * 2] }.to_a
+          13, 13, 15, 16, 16, 18, 19, 19, 21, 22, 22, 24, 25, 25, 27
+        ] + 100.times.flat_map { |i| [28 + (i * 2), 28 + (i * 2)] }.to_a
         expected_results.each_with_index do |expected, offset|
           assert_equal expected, E.adjust_mbc_head(offset, context)
         end
@@ -116,15 +116,15 @@ module Encoding
 
       assert_timeout(1.0) do
         (n - 1).downto(0) do |i|
-          assert_equal i * 2, E.adjust_mbc_head(i * 2 + 1, context)
+          assert_equal i * 2, E.adjust_mbc_head((i * 2) + 1, context)
           assert_equal i * 2, E.adjust_mbc_head(i * 2, context)
         end
       end
     end
 
     def test_self_sync_string
-      assert E.self_sync_string?("123")
-      assert !E.self_sync_string?("ABC")
+      assert E.self_sync_string?('123')
+      assert !E.self_sync_string?('ABC')
       assert !E.self_sync_string?("\x81\x81") # "＝"
     end
 

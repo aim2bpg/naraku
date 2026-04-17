@@ -125,7 +125,7 @@ def gen_sb(cat, enc, prefix)
       puts
       print '// '
       codes[index, 8].each do |c|
-        c = map[c]&.chr(Encoding::UTF_8)&.inspect || ('"\\x%02X"' % c)
+        c = map[c]&.chr(Encoding::UTF_8)&.inspect || format('"\\x%02X"', c)
         printf ' %8s,', c
       end
       puts
@@ -379,20 +379,22 @@ prefix = nil
 
 opt.on('--ascii', 'Generate cprop bits for ASCII (0x00..0x7F)') { mode = :ascii }
 opt.on('--unicode', 'Generate cprop bits for Unicode') { mode = :unicode }
-opt.on('--single-byte ENC_NAME', 'Generate cprop bits for a single byte encoding') do
+opt.on('--single-byte ENC_NAME', 'Generate cprop bits for a single byte encoding') do |e|
   mode = :single_byte
-  enc_name = it
+  enc_name = e
 end
-opt.on('--multi-byte2 ENC_NAME', 'Generate cprop bits for a multi-byte encoding (for max 2 bytes encoding; e.g., Shift_JIS)') do
+opt.on('--multi-byte2 ENC_NAME',
+       'Generate cprop bits for a multi-byte encoding (for max 2 bytes encoding; e.g., Shift_JIS)') do |e|
   mode = :multi_byte2
-  enc_name = it
+  enc_name = e
 end
-opt.on('--multi-byte-full ENC_NAME', 'Generate cprop bits for a multi-byte encoding (for max 4 bytes encoding; e.g., GB18030)') do
+opt.on('--multi-byte-full ENC_NAME',
+       'Generate cprop bits for a multi-byte encoding (for max 4 bytes encoding; e.g., GB18030)') do |e|
   mode = :multi_byte_full
-  enc_name = it
+  enc_name = e
 end
-opt.on('--prefix PREFIX', 'Prefix for the generated variable names') do
-  prefix = it
+opt.on('--prefix PREFIX', 'Prefix for the generated variable names') do |p|
+  prefix = p
 end
 
 opt.parse!(ARGV)

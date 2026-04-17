@@ -141,7 +141,8 @@ module Unicode
       # the UCD, so we can just use that instead.
       non_standards['XDigit'] = @props['ASCII_Hex_Digit']
 
-      non_standards['Word'] = non_standards['Alpha'] | @gc['M'] | non_standards['Digit'] | @gc['Pc'] | @props['Join_Control']
+      non_standards['Word'] =
+        non_standards['Alpha'] | @gc['M'] | non_standards['Digit'] | @gc['Pc'] | @props['Join_Control']
       non_standards['Alnum'] = non_standards['Alpha'] | non_standards['Digit']
 
       # NOTE(makenowjust): This value is also explicitly given in the Onigmo implementation,
@@ -274,7 +275,8 @@ module Unicode
       )
     end
 
-    def add_cprop(name:, category:, range_set:, prop_name:, prop_name_aliases: [], value_name: nil, value_name_aliases: [], other_names: [])
+    def add_cprop(name:, category:, range_set:, prop_name:, prop_name_aliases: [], value_name: nil,
+                  value_name_aliases: [], other_names: [])
       id = @id
       prop_name, *prop_name_aliases = [prop_name, *prop_name_aliases].uniq { CpropCatalog.normalize_name(it) }
       value_name, *value_name_aliases = [value_name, *value_name_aliases].uniq { CpropCatalog.normalize_name(it) }

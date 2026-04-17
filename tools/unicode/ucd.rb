@@ -499,10 +499,7 @@ module Unicode
 
       keys = emoji_seqs.keys
       emoji_seqs['RGI_Emoji'] = {
-        rs: keys.map do
-          p [it, emoji_seqs[it]]
-          emoji_seqs[it][:rs]
-        end.reduce(RangeSet.new, :|),
+        rs: keys.map { emoji_seqs[it][:rs] }.reduce(RangeSet.new, :|),
         seqs: keys.flat_map { emoji_seqs[it][:seqs] },
       }
 

@@ -1,1152 +1,1152 @@
-  class ParserTest < Mtest::Test
-    def parse(pattern, encoding: Naraku::Encoding::UTF_8, **options)
-      parser = Naraku::Parser.new(encoding, pattern, **options)
-      node = parser.parse
-      result = node.to_h
-      assert_span_consistency(pattern, result)
-      result
-    end
+class ParserTest < Mtest::Test
+  def parse(pattern, encoding: Naraku::Encoding::UTF_8, **)
+    parser = Naraku::Parser.new(encoding, pattern, **)
+    node = parser.parse
+    result = node.to_h
+    assert_span_consistency(pattern, result)
+    result
+  end
 
-    def assert_parse_error(pattern, message, offset:, length:, encoding: Naraku::Encoding::UTF_8, **options)
-      parser = Naraku::Parser.new(encoding, pattern, **options)
-      begin
-        parser.parse
-      rescue Naraku::ParseError => ex
-        expected_message =
-          if length > 0
-            "#{message} (at span #{offset}...#{offset + length})"
-          else
-            "#{message} (at offset #{offset})"
-          end
-        assert_equal expected_message, ex.message.lines.first.chomp
-        assert_equal offset, ex.offset
-        assert_equal length, ex.length
-        return
-      end
-
-      assert false, "Expected Naraku::ParseError to be raised for #{pattern.inspect}"
-    end
-
-    def collect_parse_warnings(pattern, encoding: Naraku::Encoding::UTF_8, **options)
-      warnings = []
-      parser = Naraku::Parser.new(
-        encoding,
-        pattern,
-        warning_func: ->(warning, offset, length) {
-          warnings << {
-            warning: warning,
-            message: Naraku.warning_message(warning),
-            offset: offset,
-            length: length,
-          }
-        },
-        **options
-      )
-      result = parser.parse.to_h
-      assert_span_consistency(pattern, result)
-      warnings
-    end
-
-    def assert_span_consistency(pattern, root)
-      pattern_len = pattern.bytesize
-      assert_node_span(root, pattern_len, 0, pattern_len)
-    end
-
-    def assert_span_fields(obj, kind, pattern_len, parent_offset, parent_end)
-      assert obj.key?(:span_offset), "#{kind} is missing span_offset"
-      assert obj.key?(:span_length), "#{kind} is missing span_length"
-      offset = obj[:span_offset]
-      length = obj[:span_length]
-      assert offset.is_a?(Integer), "#{kind} span_offset must be an Integer"
-      assert length.is_a?(Integer), "#{kind} span_length must be an Integer"
-      assert offset >= 0, "#{kind} span_offset must be non-negative"
-      assert length >= 0, "#{kind} span_length must be non-negative"
-
-      span_end = offset + length
-      assert span_end <= pattern_len, "#{kind} span must be within pattern length"
-      assert offset >= parent_offset, "#{kind} span_offset must be inside parent span"
-      assert span_end <= parent_end, "#{kind} span_end must be inside parent span"
-
-      [offset, span_end]
-    end
-
-    def assert_node_span(node, pattern_len, parent_offset, parent_end)
-      kind = "node(#{node[:type]})"
-      offset, span_end = assert_span_fields(node, kind, pattern_len, parent_offset, parent_end)
-
-      case node[:type]
-      when :char_class
-        node[:unions].each do |char_class_union|
-          assert_char_class_union_span(char_class_union, pattern_len, offset, span_end)
+  def assert_parse_error(pattern, message, offset:, length:, encoding: Naraku::Encoding::UTF_8, **)
+    parser = Naraku::Parser.new(encoding, pattern, **)
+    begin
+      parser.parse
+    rescue Naraku::ParseError => e
+      expected_message =
+        if length.positive?
+          "#{message} (at span #{offset}...#{offset + length})"
+        else
+          "#{message} (at offset #{offset})"
         end
-      when :assertion, :quantifier, :capture, :group, :atomic, :absence
-        assert_node_span(node[:child], pattern_len, offset, span_end) if node[:child]
-      when :conditional
-        assert_node_span(node[:yes_child], pattern_len, offset, span_end)
-        assert_node_span(node[:no_child], pattern_len, offset, span_end) if node[:no_child]
-      when :concat, :alt
-        node[:children].each do |child|
-          assert_node_span(child, pattern_len, offset, span_end)
-        end
-      end
+      assert_equal expected_message, e.message.lines.first.chomp
+      assert_equal offset, e.offset
+      assert_equal length, e.length
+      return
     end
 
-    def assert_char_class_union_span(char_class_union, pattern_len, parent_offset, parent_end)
-      offset, span_end = assert_span_fields(char_class_union, 'char_class_union', pattern_len, parent_offset, parent_end)
-      char_class_union[:items].each do |item|
-        assert_char_class_item_span(item, pattern_len, offset, span_end)
-      end
-    end
+    assert false, "Expected Naraku::ParseError to be raised for #{pattern.inspect}"
+  end
 
-    def assert_char_class_item_span(item, pattern_len, parent_offset, parent_end)
-      offset, span_end = assert_span_fields(item, "char_class_item(#{item[:type]})", pattern_len, parent_offset, parent_end)
-      return unless item[:type] == :nested_char_class
+  def collect_parse_warnings(pattern, encoding: Naraku::Encoding::UTF_8, **)
+    warnings = []
+    parser = Naraku::Parser.new(
+      encoding,
+      pattern,
+      warning_func: lambda { |warning, offset, length|
+        warnings << {
+          warning:,
+          message: Naraku.warning_message(warning),
+          offset:,
+          length:,
+        }
+      },
+      **
+    )
+    result = parser.parse.to_h
+    assert_span_consistency(pattern, result)
+    warnings
+  end
 
-      item[:unions].each do |char_class_union|
+  def assert_span_consistency(pattern, root)
+    pattern_len = pattern.bytesize
+    assert_node_span(root, pattern_len, 0, pattern_len)
+  end
+
+  def assert_span_fields(obj, kind, pattern_len, parent_offset, parent_end)
+    assert obj.key?(:span_offset), "#{kind} is missing span_offset"
+    assert obj.key?(:span_length), "#{kind} is missing span_length"
+    offset = obj[:span_offset]
+    length = obj[:span_length]
+    assert offset.is_a?(Integer), "#{kind} span_offset must be an Integer"
+    assert length.is_a?(Integer), "#{kind} span_length must be an Integer"
+    assert offset >= 0, "#{kind} span_offset must be non-negative"
+    assert length >= 0, "#{kind} span_length must be non-negative"
+
+    span_end = offset + length
+    assert span_end <= pattern_len, "#{kind} span must be within pattern length"
+    assert offset >= parent_offset, "#{kind} span_offset must be inside parent span"
+    assert span_end <= parent_end, "#{kind} span_end must be inside parent span"
+
+    [offset, span_end]
+  end
+
+  def assert_node_span(node, pattern_len, parent_offset, parent_end)
+    kind = "node(#{node[:type]})"
+    offset, span_end = assert_span_fields(node, kind, pattern_len, parent_offset, parent_end)
+
+    case node[:type]
+    when :char_class
+      node[:unions].each do |char_class_union|
         assert_char_class_union_span(char_class_union, pattern_len, offset, span_end)
       end
-    end
-
-    # ========================================================================
-    #
-    # Empty pattern:
-    #
-    # ========================================================================
-
-    def test_empty_pattern
-      result = parse('')
-      assert_equal :concat, result[:type]
-      assert_equal [], result[:children]
-    end
-
-    def test_parser_default_limit_constants
-      assert_equal 1_000_000, Naraku::Parser::DEFAULT_RANGE_QUANTIFIER_MAX_REPETITION
-      assert_equal 10_000, Naraku::Parser::DEFAULT_BARE_BACK_REF_MAX_NUM
-      assert_equal 10_000_000, Naraku::Parser::DEFAULT_MAX_CAPTURE_NUM
-      assert_equal 10_000_000, Naraku::Parser::DEFAULT_BACK_REF_MAX_NUM
-      assert_equal 1_000, Naraku::Parser::DEFAULT_MAX_CAPTURE_DEPTH
-      assert_equal 1_000, Naraku::Parser::DEFAULT_MAX_PARSE_DEPTH
-    end
-
-    # ========================================================================
-    #
-    # Literals:
-    #
-    # ========================================================================
-
-    def test_single_literal
-      result = parse('a')
-      assert_equal :literal, result[:type]
-      assert_equal 'a', result[:buf]
-    end
-
-    def test_multi_char_literal
-      result = parse('abc')
-      assert_equal :literal, result[:type]
-      assert_equal 'abc', result[:buf]
-    end
-
-    def test_escaped_special_char_as_literal
-      result = parse('\*')
-      assert_equal :literal, result[:type]
-      assert_equal '*', result[:buf]
-    end
-
-    def test_escaped_plus_as_literal
-      result = parse('\+')
-      assert_equal :literal, result[:type]
-      assert_equal '+', result[:buf]
-    end
-
-    def test_escaped_question_as_literal
-      result = parse('\?')
-      assert_equal :literal, result[:type]
-      assert_equal '?', result[:buf]
-    end
-
-    def test_escaped_dot_as_literal
-      result = parse('\.')
-      assert_equal :literal, result[:type]
-      assert_equal '.', result[:buf]
-    end
-
-    def test_escaped_pipe_as_literal
-      result = parse('\|')
-      assert_equal :literal, result[:type]
-      assert_equal '|', result[:buf]
-    end
-
-    def test_escaped_caret_as_literal
-      result = parse('\^')
-      assert_equal :literal, result[:type]
-      assert_equal '^', result[:buf]
-    end
-
-    def test_escaped_dollar_as_literal
-      result = parse('\$')
-      assert_equal :literal, result[:type]
-      assert_equal '$', result[:buf]
-    end
-
-    def test_escaped_backslash_as_literal
-      result = parse('\\\\')
-      assert_equal :literal, result[:type]
-      assert_equal '\\', result[:buf]
-    end
-
-    def test_escaped_brace_as_literal
-      result = parse('\{')
-      assert_equal :literal, result[:type]
-      assert_equal '{', result[:buf]
-    end
-
-    def test_multibyte_literal
-      result = parse('あ')
-      assert_equal :literal, result[:type]
-      assert_equal 'あ', result[:buf]
-    end
-
-    def test_adjacent_literals_with_multibyte
-      result = parse('aあb')
-      assert_equal :literal, result[:type]
-      assert_equal 'aあb', result[:buf]
-    end
-
-    def test_node_span_for_literal
-      result = parse('abc')
-      assert_equal 0, result[:span_offset]
-      assert_equal 3, result[:span_length]
-    end
-
-    # ========================================================================
-    #
-    # Dot:
-    #
-    # ========================================================================
-
-    def test_dot
-      result = parse('.')
-      assert_equal :dot, result[:type]
-      assert_equal false, result[:allows_newline]
-    end
-
-    def test_dot_allows_newline
-      result = parse('.', dot_allows_newline: true)
-      assert_equal :dot, result[:type]
-      assert_equal true, result[:allows_newline]
-    end
-
-    # ========================================================================
-    #
-    # Assertions:
-    #
-    # ========================================================================
-
-    def test_assertion_begin_of_line
-      result = parse('^')
-      assert_equal :assertion, result[:type]
-      assert_equal :begin_of_line, result[:assertion_type]
-      assert_nil result[:child]
-    end
-
-    def test_assertion_end_of_line
-      result = parse('$')
-      assert_equal :assertion, result[:type]
-      assert_equal :end_of_line, result[:assertion_type]
-      assert_nil result[:child]
-    end
-
-    def test_assertion_word_boundary
-      result = parse('\b')
-      assert_equal :assertion, result[:type]
-      assert_equal :word_boundary, result[:assertion_type]
-    end
-
-    def test_assertion_non_word_boundary
-      result = parse('\B')
-      assert_equal :assertion, result[:type]
-      assert_equal :non_word_boundary, result[:assertion_type]
-    end
-
-    def test_assertion_begin_of_string
-      result = parse('\A')
-      assert_equal :assertion, result[:type]
-      assert_equal :begin_of_string, result[:assertion_type]
-    end
-
-    def test_assertion_end_of_string_strict
-      result = parse('\z')
-      assert_equal :assertion, result[:type]
-      assert_equal :end_of_string_strict, result[:assertion_type]
-    end
-
-    def test_assertion_end_of_string_loose
-      result = parse('\Z')
-      assert_equal :assertion, result[:type]
-      assert_equal :end_of_string_loose, result[:assertion_type]
-    end
-
-    def test_assertion_begin_of_matching
-      result = parse('\G')
-      assert_equal :assertion, result[:type]
-      assert_equal :begin_of_matching, result[:assertion_type]
-    end
-
-    # ========================================================================
-    #
-    # Character types:
-    #
-    # ========================================================================
-
-    def test_char_type_digit
-      result = parse('\d')
-      assert_equal :char_type, result[:type]
-      assert_equal :digit, result[:char_type]
-      assert_equal true, result[:is_positive]
-    end
-
-    def test_char_type_non_digit
-      result = parse('\D')
-      assert_equal :char_type, result[:type]
-      assert_equal :digit, result[:char_type]
-      assert_equal false, result[:is_positive]
-    end
-
-    def test_char_type_word
-      result = parse('\w')
-      assert_equal :char_type, result[:type]
-      assert_equal :word, result[:char_type]
-      assert_equal true, result[:is_positive]
-    end
-
-    def test_char_type_non_word
-      result = parse('\W')
-      assert_equal :char_type, result[:type]
-      assert_equal :word, result[:char_type]
-      assert_equal false, result[:is_positive]
-    end
-
-    def test_char_type_space
-      result = parse('\s')
-      assert_equal :char_type, result[:type]
-      assert_equal :space, result[:char_type]
-      assert_equal true, result[:is_positive]
-    end
-
-    def test_char_type_non_space
-      result = parse('\S')
-      assert_equal :char_type, result[:type]
-      assert_equal :space, result[:char_type]
-      assert_equal false, result[:is_positive]
-    end
-
-    def test_char_type_hex_digit
-      result = parse('\h')
-      assert_equal :char_type, result[:type]
-      assert_equal :hex_digit, result[:char_type]
-      assert_equal true, result[:is_positive]
-    end
-
-    def test_char_type_non_hex_digit
-      result = parse('\H')
-      assert_equal :char_type, result[:type]
-      assert_equal :hex_digit, result[:char_type]
-      assert_equal false, result[:is_positive]
-    end
-
-    def test_char_type_ascii_only_option
-      result = parse('\d', char_type_is_ascii_only: true)
-      assert_equal :char_type, result[:type]
-      assert_equal true, result[:is_ascii_only]
-    end
-
-    def test_char_type_ignore_case_option
-      result = parse('\w', is_ignore_case: true)
-      assert_equal :char_type, result[:type]
-      assert_equal true, result[:is_ignore_case]
-    end
-
-    # ========================================================================
-    #
-    # Unicode escapes:
-    #
-    # ========================================================================
-
-    def test_unicode_escape_fixed
-      result = parse('\u0061')
-      assert_equal :literal, result[:type]
-      assert_equal 'a', result[:buf]
-
-      result = parse('\u3042')
-      assert_equal :literal, result[:type]
-      assert_equal 'あ', result[:buf]
-    end
-
-    def test_unicode_escape_variable
-      result = parse('\u{61}')
-      assert_equal :literal, result[:type]
-      assert_equal 'a', result[:buf]
-
-      result = parse('\u{3042}')
-      assert_equal :literal, result[:type]
-      assert_equal 'あ', result[:buf]
-
-      result = parse('\u{1F308}')
-      assert_equal :literal, result[:type]
-      assert_equal "\u{1F308}", result[:buf]
-    end
-
-    def test_unicode_escape_multiple
-      result = parse('\u{61 62 63}')
-      assert_equal :literal, result[:type]
-      assert_equal 'abc', result[:buf]
-
-      result = parse('\u{3042 3044}')
-      assert_equal :literal, result[:type]
-      assert_equal 'あい', result[:buf]
-    end
-
-    def test_unicode_escape_whitespace
-      result = parse('\u{  61  }')
-      assert_equal :literal, result[:type]
-      assert_equal 'a', result[:buf]
-
-      result = parse("\\u{61\t62}")
-      assert_equal :literal, result[:type]
-      assert_equal 'ab', result[:buf]
-    end
-
-    def test_unicode_escape_large_code_point
-      # U+10FFFF is the maximum valid Unicode code point.
-      result = parse('\u{10FFFF}')
-      assert_equal :literal, result[:type]
-      assert_equal "\u{10FFFF}", result[:buf]
-
-      # U+110000 is out of range for UTF-8.
-      assert_parse_error('\u{110000}', 'code point is out of range', offset: 3, length: 6)
-      # Too many hex digits in a single code point must not be split into multiple code points.
-      assert_parse_error('\u{10FFFFF}', 'code point is out of range', offset: 3, length: 7)
-      assert_parse_error('\u{11FFFF}', 'code point is out of range', offset: 3, length: 6)
-    end
-
-    def test_unicode_escape_surrogate
-      # Surrogate code points are invalid in UTF-8.
-      assert_parse_error('\u{D800}', 'invalid code point', offset: 3, length: 4)
-      assert_parse_error('\u{DFFF}', 'invalid code point', offset: 3, length: 4)
-    end
-
-    def test_unicode_escape_encoding_constraint
-      # U+0080 is out of range for US-ASCII.
-      assert_parse_error('\u0080', 'Unicode escape sequence in non-Unicode encoding', offset: 0, length: 2, encoding: Naraku::Encoding::US_ASCII)
-      assert_parse_error('\u{80}', 'Unicode escape sequence in non-Unicode encoding', offset: 0, length: 2, encoding: Naraku::Encoding::US_ASCII)
-    end
-
-    def test_unicode_escape_errors
-      # Trailing \u
-      assert_parse_error('\u', 'unclosed Unicode escape sequence brace', offset: 0, length: 2)
-      # Too short fixed escape
-      assert_parse_error('\u123', 'incomplete Unicode escape sequence', offset: 0, length: 5)
-      # Invalid hex digit
-      assert_parse_error('\u123G', 'incomplete Unicode escape sequence', offset: 0, length: 5)
-      # Unclosed brace
-      assert_parse_error('\u{61', 'unclosed Unicode escape sequence brace', offset: 5, length: 0)
-      # Invalid hex in brace
-      assert_parse_error('\u{G}', 'invalid Unicode escape sequence', offset: 3, length: 0)
-      # Empty brace
-      assert_parse_error('\u{}', 'empty Unicode escape sequence brace', offset: 0, length: 4)
-    end
-
-    # ========================================================================
-    #
-    # Escape sequences:
-    #
-    # ========================================================================
-
-    def test_trailing_backslash
-      assert_parse_error('\\', 'incomplete escape sequence', offset: 1, length: 0)
-    end
-
-    def test_backslash_and_newline
-      result = parse("\\\n")
-      assert_equal :concat, result[:type]
-      assert_equal 0, result[:children].size
-
-      result = parse("\\\r\n")
-      assert_equal :concat, result[:type]
-      assert_equal 0, result[:children].size
-    end
-
-    def test_hex_escape
-      result = parse('\x61')
-      assert_equal :literal, result[:type]
-      assert_equal 'a', result[:buf]
-
-      # Single hex digit
-      result = parse('\x1')
-      assert_equal :literal, result[:type]
-      assert_equal "\x01", result[:buf]
-
-      result = parse('\x7F')
-      assert_equal :literal, result[:type]
-      assert_equal "\x7F", result[:buf]
-    end
-
-    def test_octal_escape
-      result = parse('\0')
-      assert_equal :literal, result[:type]
-      assert_equal "\0", result[:buf]
-
-      result = parse('\012')
-      assert_equal :literal, result[:type]
-      assert_equal "\n", result[:buf]
-
-      result = parse('\123')
-      assert_equal :literal, result[:type]
-      assert_equal "S", result[:buf]
-
-      # \07 is octal
-      result = parse('\07')
-      assert_equal :literal, result[:type]
-      assert_equal "\a", result[:buf]
-    end
-
-    def test_meta_control_escape
-      result = parse('\M-a', encoding: Naraku::Encoding::ASCII_8BIT)
-      assert_equal :literal, result[:type]
-      assert_equal "\xe1", result[:buf].bytes.map { |b| b.chr }.join
-
-      result = parse('\C-a', encoding: Naraku::Encoding::ASCII_8BIT)
-      assert_equal :literal, result[:type]
-      assert_equal "\x01", result[:buf]
-
-      result = parse('\ca', encoding: Naraku::Encoding::ASCII_8BIT)
-      assert_equal :literal, result[:type]
-      assert_equal "\x01", result[:buf]
-
-      result = parse('\C-?', encoding: Naraku::Encoding::ASCII_8BIT)
-      assert_equal :literal, result[:type]
-      assert_equal "\x7F", result[:buf]
-
-      result = parse('\c?', encoding: Naraku::Encoding::ASCII_8BIT)
-      assert_equal :literal, result[:type]
-      assert_equal "\x7F", result[:buf]
-
-      result = parse('\C-\q', encoding: Naraku::Encoding::ASCII_8BIT)
-      assert_equal :literal, result[:type]
-      assert_equal "\x11", result[:buf]
-
-      result = parse('\c\q', encoding: Naraku::Encoding::ASCII_8BIT)
-      assert_equal :literal, result[:type]
-      assert_equal "\x11", result[:buf]
-
-      result = parse('\M-\C-a', encoding: Naraku::Encoding::ASCII_8BIT)
-      assert_equal :literal, result[:type]
-      assert_equal "\x81", result[:buf].bytes.map { |b| b.chr }.join
-
-      result = parse('\M-\ca', encoding: Naraku::Encoding::ASCII_8BIT)
-      assert_equal :literal, result[:type]
-      assert_equal "\x81", result[:buf].bytes.map { |b| b.chr }.join
-    end
-
-    def test_standard_escapes
-      assert_equal "\n", parse('\n')[:buf]
-      assert_equal "\t", parse('\t')[:buf]
-      assert_equal "\r", parse('\r')[:buf]
-      assert_equal "\f", parse('\f')[:buf]
-      assert_equal "\v", parse('\v')[:buf]
-      assert_equal "\a", parse('\a')[:buf]
-      assert_equal "\e", parse('\e')[:buf]
-    end
-
-    def test_multibyte_escaped_sequence
-      # UTF-8 encoded 'あ'
-      result = parse('\xe3\x81\x82')
-      assert_equal :literal, result[:type]
-      assert_equal 'あ', result[:buf]
-
-      result = parse('\343\201\202')
-      assert_equal :literal, result[:type]
-      assert_equal 'あ', result[:buf]
-    end
-
-    def test_escape_errors
-      # Missing hex digits
-      assert_parse_error('\x', 'incomplete \x escape sequence', offset: 0, length: 2)
-      # Invalid hex digit
-      assert_parse_error('\xG', 'incomplete \x escape sequence', offset: 0, length: 2)
-      # Missing meta character
-      assert_parse_error('\M', 'incomplete \M- escape sequence', offset: 0, length: 2)
-      assert_parse_error('\M-', 'incomplete \M- escape sequence', offset: 0, length: 3)
-      assert_parse_error('\c', 'incomplete \c/\C- escape sequence', offset: 0, length: 2)
-      assert_parse_error('\C-', 'incomplete \c/\C- escape sequence', offset: 0, length: 3)
-      # Duplicate prefixes
-      assert_parse_error('\M-\M-a', 'duplicate \M- escape sequence', offset: 0, length: 5)
-      assert_parse_error('\C-\C-a', 'duplicate \c/\C- escape sequence', offset: 0, length: 5)
-      # Invalid control/meta character
-      assert_parse_error('\C-あ', 'invalid code in \c/\C- escape sequence', offset: 0, length: 6)
-      assert_parse_error('\cあ', 'invalid code in \c/\C- escape sequence', offset: 0, length: 5)
-      assert_parse_error('\M-あ', 'invalid code in \M- escape sequence', offset: 0, length: 6)
-      assert_parse_error('\xE3\C-あ', 'invalid code in \c/\C- escape sequence', offset: 4, length: 6)
-      # Incomplete multibyte sequence (only first byte of 'あ')
-      assert_parse_error('\xe3', 'incomplete escaped byte sequence', offset: 0, length: 4)
-      assert_parse_error('\xe3\x81', 'incomplete escaped byte sequence', offset: 0, length: 8)
-      assert_parse_error('\xe3a', 'incomplete escaped byte sequence', offset: 0, length: 4)
-      # Invalid multibyte sequence (surrogate code point)
-      assert_parse_error('\xED\xA0\x80', 'invalid escaped byte sequence', offset: 0, length: 12)
-    end
-
-    def test_warning_for_incomplete_named_escapes
-      warnings = collect_parse_warnings('\p')
-      assert_equal 1, warnings.length
-      assert_equal 'incomplete character property escape', warnings[0][:message]
-      assert_equal 0, warnings[0][:offset]
-      assert_equal 2, warnings[0][:length]
-
-      warnings = collect_parse_warnings('\k')
-      assert_equal 1, warnings.length
-      assert_equal 'incomplete named back-reference escape', warnings[0][:message]
-      assert_equal 0, warnings[0][:offset]
-      assert_equal 2, warnings[0][:length]
-
-      warnings = collect_parse_warnings('\g')
-      assert_equal 1, warnings.length
-      assert_equal 'incomplete sub-expression call escape', warnings[0][:message]
-      assert_equal 0, warnings[0][:offset]
-      assert_equal 2, warnings[0][:length]
-    end
-
-    def test_warning_for_literal_right_bracket_outside_char_class
-      warnings = collect_parse_warnings(']')
-      assert_equal 1, warnings.length
-      assert_equal 'literal `]` outside character class', warnings[0][:message]
-      assert_equal 0, warnings[0][:offset]
-      assert_equal 1, warnings[0][:length]
-    end
-
-    # ========================================================================
-    #
-    # Unicode properties:
-    #
-    # ========================================================================
-
-    def test_char_prop
-      # Positive property \p{...}
-      result = parse('\p{Lu}')
-      assert_equal :char_prop, result[:type]
-      assert_equal true, result[:is_positive]
-      assert_equal Naraku::Encoding.name_to_cprop('Lu'), result[:cprop]
-
-      result = parse('\p{L}')
-      assert_equal :char_prop, result[:type]
-      assert_equal true, result[:is_positive]
-      assert_equal Naraku::Encoding.name_to_cprop('L'), result[:cprop]
-
-      result = parse('\p{Digit}')
-      assert_equal :char_prop, result[:type]
-      assert_equal true, result[:is_positive]
-      assert_equal Naraku::Encoding.name_to_cprop('Digit'), result[:cprop]
-
-      # Negative property \P{...}
-      result = parse('\P{Lu}')
-      assert_equal :char_prop, result[:type]
-      assert_equal false, result[:is_positive]
-      assert_equal Naraku::Encoding.name_to_cprop('Lu'), result[:cprop]
-
-      result = parse('\P{Digit}')
-      assert_equal :char_prop, result[:type]
-      assert_equal false, result[:is_positive]
-      assert_equal Naraku::Encoding.name_to_cprop('Digit'), result[:cprop]
-
-      # Negative property \p{^...}
-      result = parse('\p{^Lu}')
-      assert_equal :char_prop, result[:type]
-      assert_equal false, result[:is_positive]
-      assert_equal Naraku::Encoding.name_to_cprop('Lu'), result[:cprop]
-
-      result = parse('\P{^Digit}')
-      assert_equal :char_prop, result[:type]
-      assert_equal true, result[:is_positive]
-      assert_equal Naraku::Encoding.name_to_cprop('Digit'), result[:cprop]
-
-      # Unicode escapes in property names
-      result = parse('\p{\u004c\u0075}')
-      assert_equal :char_prop, result[:type]
-      assert_equal true, result[:is_positive]
-      assert_equal Naraku::Encoding.name_to_cprop('Lu'), result[:cprop]
-
-      result = parse('\p{\u{4c 75}}')
-      assert_equal :char_prop, result[:type]
-      assert_equal true, result[:is_positive]
-      assert_equal Naraku::Encoding.name_to_cprop('Lu'), result[:cprop]
-
-      result = parse('\p{\u{4c}u}')
-      assert_equal :char_prop, result[:type]
-      assert_equal true, result[:is_positive]
-      assert_equal Naraku::Encoding.name_to_cprop('Lu'), result[:cprop]
-    end
-
-    def test_char_prop_missing_brace
-      result = parse('\p')
-      assert_equal :literal, result[:type]
-      assert_equal 'p', result[:buf]
-
-      result = parse('\P')
-      assert_equal :literal, result[:type]
-      assert_equal 'P', result[:buf]
-    end
-
-    def test_char_prop_errors
-      # Unclosed brace
-      assert_parse_error('\p{Lu', 'unclosed character property escape sequence brace', offset: 0, length: 5)
-      # Empty property name
-      assert_parse_error('\p{}', 'empty character property name', offset: 0, length: 3)
-      # Invalid property name
-      assert_parse_error('\p{InvalidProperty}', 'invalid character property name', offset: 3, length: 15)
-      assert_parse_error('\p{^InvalidProperty}', 'invalid character property name', offset: 4, length: 15)
-    end
-
-    # ========================================================================
-    #
-    # Special nodes: grapheme cluster, keep, newline
-    #
-    # ========================================================================
-
-    def test_grapheme_cluster
-      result = parse('\X')
-      assert_equal :grapheme_cluster, result[:type]
-    end
-
-    def test_keep
-      result = parse('\K')
-      assert_equal :keep, result[:type]
-    end
-
-    def test_newline
-      result = parse('\R')
-      assert_equal :newline, result[:type]
-    end
-
-    # ========================================================================
-    #
-    # Quantifiers:
-    #
-    # ========================================================================
-
-    # Greedy quantifiers:
-
-    def test_quantifier_star_greedy
-      result = parse('a*')
-      assert_equal :quantifier, result[:type]
-      assert_equal 0, result[:min]
-      assert_equal false, result[:has_max]
-      assert_equal nil, result[:max]
-      assert_equal :greedy, result[:quantifier_type]
-      assert_equal :literal, result[:child][:type]
-      assert_equal 'a', result[:child][:buf]
-    end
-
-    def test_quantifier_plus_greedy
-      result = parse('a+')
-      assert_equal :quantifier, result[:type]
-      assert_equal 1, result[:min]
-      assert_equal false, result[:has_max]
-      assert_equal nil, result[:max]
-      assert_equal :greedy, result[:quantifier_type]
-    end
-
-    def test_quantifier_question_greedy
-      result = parse('a?')
-      assert_equal :quantifier, result[:type]
-      assert_equal 0, result[:min]
-      assert_equal true, result[:has_max]
-      assert_equal 1, result[:max]
-      assert_equal :greedy, result[:quantifier_type]
-    end
-
-    # Reluctant quantifiers:
-
-    def test_quantifier_star_reluctant
-      result = parse('a*?')
-      assert_equal :quantifier, result[:type]
-      assert_equal 0, result[:min]
-      assert_equal false, result[:has_max]
-      assert_equal nil, result[:max]
-      assert_equal :reluctant, result[:quantifier_type]
-    end
-
-    def test_quantifier_plus_reluctant
-      result = parse('a+?')
-      assert_equal :quantifier, result[:type]
-      assert_equal 1, result[:min]
-      assert_equal false, result[:has_max]
-      assert_equal nil, result[:max]
-      assert_equal :reluctant, result[:quantifier_type]
-    end
-
-    def test_quantifier_question_reluctant
-      result = parse('a??')
-      assert_equal :quantifier, result[:type]
-      assert_equal 0, result[:min]
-      assert_equal true, result[:has_max]
-      assert_equal 1, result[:max]
-      assert_equal :reluctant, result[:quantifier_type]
-    end
-
-    # Possessive quantifiers:
-
-    def test_quantifier_star_possessive
-      result = parse('a*+')
-      assert_equal :quantifier, result[:type]
-      assert_equal 0, result[:min]
-      assert_equal false, result[:has_max]
-      assert_equal nil, result[:max]
-      assert_equal :possessive, result[:quantifier_type]
-    end
-
-    def test_quantifier_plus_possessive
-      result = parse('a++')
-      assert_equal :quantifier, result[:type]
-      assert_equal 1, result[:min]
-      assert_equal false, result[:has_max]
-      assert_equal nil, result[:max]
-      assert_equal :possessive, result[:quantifier_type]
-    end
-
-    def test_quantifier_question_possessive
-      result = parse('a?+')
-      assert_equal :quantifier, result[:type]
-      assert_equal 0, result[:min]
-      assert_equal true, result[:has_max]
-      assert_equal 1, result[:max]
-      assert_equal :possessive, result[:quantifier_type]
-    end
-
-    # Range quantifiers:
-
-    def test_quantifier_range_exact
-      result = parse('a{3}')
-      assert_equal :quantifier, result[:type]
-      assert_equal 3, result[:min]
-      assert_equal true, result[:has_max]
-      assert_equal 3, result[:max]
-      assert_equal :greedy, result[:quantifier_type]
-    end
-
-    def test_quantifier_range_min_max
-      result = parse('a{2,5}')
-      assert_equal :quantifier, result[:type]
-      assert_equal 2, result[:min]
-      assert_equal true, result[:has_max]
-      assert_equal 5, result[:max]
-      assert_equal :greedy, result[:quantifier_type]
-    end
-
-    def test_quantifier_range_min_only
-      result = parse('a{2,}')
-      assert_equal :quantifier, result[:type]
-      assert_equal 2, result[:min]
-      assert_equal false, result[:has_max]
-      assert_equal nil, result[:max]
-      assert_equal :greedy, result[:quantifier_type]
-    end
-
-    def test_quantifier_range_max_only
-      result = parse('a{,5}')
-      assert_equal :quantifier, result[:type]
-      assert_equal 0, result[:min]
-      assert_equal true, result[:has_max]
-      assert_equal 5, result[:max]
-      assert_equal :greedy, result[:quantifier_type]
-    end
-
-    def test_quantifier_range_reluctant
-      result = parse('a{2,5}?')
-      assert_equal :quantifier, result[:type]
-      assert_equal 2, result[:min]
-      assert_equal true, result[:has_max]
-      assert_equal 5, result[:max]
-      assert_equal :reluctant, result[:quantifier_type]
-    end
-
-    def test_quantifier_range_possessive
-      result = parse('a{2,5}+')
-      assert_equal :quantifier, result[:type]
-      assert_equal 2, result[:min]
-      assert_equal true, result[:has_max]
-      assert_equal 5, result[:max]
-      assert_equal :possessive, result[:quantifier_type]
-    end
-
-    def test_quantifier_range_exact_not_reluctant
-      # `{n}` does not allow reluctant modifier, so `?` becomes a separate quantifier.
-      result = parse('a{3}?')
-      assert_equal :quantifier, result[:type]
-      assert_equal 0, result[:min]
-      assert_equal true, result[:has_max]
-      assert_equal 1, result[:max]
-      child = result[:child]
-      assert_equal :quantifier, child[:type]
-      assert_equal 3, child[:min]
-      assert_equal true, child[:has_max]
-      assert_equal 3, child[:max]
-    end
-
-    # Incomplete range quantifiers (treated as literals):
-
-    def test_incomplete_range_quantifier_brace_only
-      result = parse('a{')
-      assert_equal :literal, result[:type]
-      assert_equal 'a{', result[:buf]
-    end
-
-    def test_incomplete_range_quantifier_no_closing_brace
-      result = parse('a{3')
-      assert_equal :literal, result[:type]
-      assert_equal 'a{3', result[:buf]
-    end
-
-    def test_incomplete_range_quantifier_comma_no_close
-      result = parse('a{2,5')
-      assert_equal :literal, result[:type]
-      assert_equal 'a{2,5', result[:buf]
-    end
-
-    # Quantifier on non-literal:
-
-    def test_quantifier_on_dot
-      result = parse('.*')
-      assert_equal :quantifier, result[:type]
-      assert_equal :dot, result[:child][:type]
-    end
-
-    def test_quantifier_on_char_type
-      result = parse('\d+')
-      assert_equal :quantifier, result[:type]
-      assert_equal :char_type, result[:child][:type]
-      assert_equal :digit, result[:child][:char_type]
-    end
-
-
-    def test_quantifier_nothing_to_repeat
-      assert_parse_error('*', 'nothing to repeat', offset: 0, length: 1)
-      assert_parse_error('+', 'nothing to repeat', offset: 0, length: 1)
-      assert_parse_error('?', 'nothing to repeat', offset: 0, length: 1)
-      assert_parse_error('{1}', 'nothing to repeat', offset: 0, length: 3)
-    end
-
-    def test_quantifier_error_too_large_number
-      assert_parse_error('a{1000001}', 'number in quantifier is too large', offset: 2, length: 7)
-    end
-
-    def test_quantifier_error_too_large_number_with_custom_limit
-      assert_parse_error(
-        'a{11}',
-        'number in quantifier is too large',
-        offset: 2,
-        length: 2,
-        range_quantifier_max_repetition_limit: 10
-      )
-    end
-
-    def test_quantifier_error_numbers_out_of_order
-      assert_parse_error('a{2,1}', 'numbers in quantifier are out of order', offset: 1, length: 4)
-    end
-
-    # ========================================================================
-    #
-    # Concatenation:
-    #
-    # ========================================================================
-
-    def test_concat_two_elements
-      result = parse('a.')
-      assert_equal :concat, result[:type]
-      assert_equal 2, result[:children].length
-      assert_equal :literal, result[:children][0][:type]
-      assert_equal 'a', result[:children][0][:buf]
-      assert_equal :dot, result[:children][1][:type]
-    end
-
-    def test_concat_three_elements
-      result = parse('a.b')
-      assert_equal :concat, result[:type]
-      assert_equal 3, result[:children].length
-      assert_equal :literal, result[:children][0][:type]
-      assert_equal 'a', result[:children][0][:buf]
-      assert_equal :dot, result[:children][1][:type]
-      assert_equal :literal, result[:children][2][:type]
-      assert_equal 'b', result[:children][2][:buf]
-    end
-
-    def test_concat_literal_merging
-      result = parse('ab.cd')
-      assert_equal :concat, result[:type]
-      assert_equal 3, result[:children].length
-      assert_equal :literal, result[:children][0][:type]
-      assert_equal 'ab', result[:children][0][:buf]
-      assert_equal :dot, result[:children][1][:type]
-      assert_equal :literal, result[:children][2][:type]
-      assert_equal 'cd', result[:children][2][:buf]
-    end
-
-    def test_concat_with_quantifier
-      result = parse('ab*c')
-      assert_equal :concat, result[:type]
-      assert_equal 3, result[:children].length
-      assert_equal :literal, result[:children][0][:type]
-      assert_equal 'a', result[:children][0][:buf]
-      assert_equal :quantifier, result[:children][1][:type]
-      assert_equal :literal, result[:children][2][:type]
-      assert_equal 'c', result[:children][2][:buf]
-    end
-
-    # ========================================================================
-    #
-    # Alternation:
-    #
-    # ========================================================================
-
-    def test_alt_two_branches
-      result = parse('a|b')
-      assert_equal :alt, result[:type]
-      assert_equal 2, result[:children].length
-      assert_equal :literal, result[:children][0][:type]
-      assert_equal 'a', result[:children][0][:buf]
-      assert_equal :literal, result[:children][1][:type]
-      assert_equal 'b', result[:children][1][:buf]
-    end
-
-    def test_alt_three_branches
-      result = parse('a|b|c')
-      assert_equal :alt, result[:type]
-      assert_equal 3, result[:children].length
-      assert_equal :literal, result[:children][0][:type]
-      assert_equal :literal, result[:children][1][:type]
-      assert_equal :literal, result[:children][2][:type]
-    end
-
-    def test_alt_with_empty_left
-      result = parse('|a')
-      assert_equal :alt, result[:type]
-      assert_equal 2, result[:children].length
-      assert_equal :concat, result[:children][0][:type]
-      assert_equal [], result[:children][0][:children]
-      assert_equal :literal, result[:children][1][:type]
-    end
-
-    def test_alt_with_empty_right
-      result = parse('a|')
-      assert_equal :alt, result[:type]
-      assert_equal 2, result[:children].length
-      assert_equal :literal, result[:children][0][:type]
-      assert_equal :concat, result[:children][1][:type]
-      assert_equal [], result[:children][1][:children]
-    end
-
-    def test_alt_both_empty
-      result = parse('|')
-      assert_equal :alt, result[:type]
-      assert_equal 2, result[:children].length
-      assert_equal :concat, result[:children][0][:type]
-      assert_equal :concat, result[:children][1][:type]
-    end
-
-    def test_alt_with_concat
-      result = parse('ab|cd')
-      assert_equal :alt, result[:type]
-      assert_equal 2, result[:children].length
-      assert_equal :literal, result[:children][0][:type]
-      assert_equal 'ab', result[:children][0][:buf]
-      assert_equal :literal, result[:children][1][:type]
-      assert_equal 'cd', result[:children][1][:buf]
-    end
-
-    def test_node_span_for_alt
-      result = parse('a|bc')
-      assert_equal :alt, result[:type]
-      assert_equal 0, result[:span_offset]
-      assert_equal 4, result[:span_length]
-
-      left = result[:children][0]
-      assert_equal 0, left[:span_offset]
-      assert_equal 1, left[:span_length]
-
-      right = result[:children][1]
-      assert_equal 2, right[:span_offset]
-      assert_equal 2, right[:span_length]
-    end
-
-    # ========================================================================
-    #
-    # Extended mode:
-    #
-    # ========================================================================
-
-    def test_extended_mode_ignores_spaces
-      result = parse('a b', is_extended_mode: true)
-      assert_equal :literal, result[:type]
-      assert_equal 'ab', result[:buf]
-    end
-
-    def test_extended_mode_ignores_tabs
-      result = parse("a\tb", is_extended_mode: true)
-      assert_equal :literal, result[:type]
-      assert_equal 'ab', result[:buf]
-    end
-
-    def test_extended_mode_ignores_newlines
-      result = parse("a\nb", is_extended_mode: true)
-      assert_equal :literal, result[:type]
-      assert_equal 'ab', result[:buf]
-    end
-
-    def test_extended_mode_ignores_comments
-      result = parse("a# comment\nb", is_extended_mode: true)
-      assert_equal :literal, result[:type]
-      assert_equal 'ab', result[:buf]
-    end
-
-    def test_non_extended_mode_preserves_spaces
-      result = parse('a b')
-      assert_equal :literal, result[:type]
-      assert_equal 'a b', result[:buf]
-    end
-
-    def test_non_extended_mode_hash_is_literal
-      result = parse('a#b')
-      assert_equal :literal, result[:type]
-      assert_equal 'a#b', result[:buf]
-    end
-
-    # ========================================================================
-    #
-    # Parser options:
-    #
-    # ========================================================================
-
-    def test_ignore_case_flag_on_literal
-      result = parse('a', is_ignore_case: true)
-      assert_equal :literal, result[:type]
-      assert_equal true, result[:is_ignore_case]
-    end
-
-    def test_ignore_case_flag_off_on_literal
-      result = parse('a')
-      assert_equal :literal, result[:type]
-      assert_equal false, result[:is_ignore_case]
-    end
-
-    def test_dot_allows_newline_flag
-      result = parse('.', dot_allows_newline: true)
-      assert_equal :dot, result[:type]
-      assert_equal true, result[:allows_newline]
-    end
-
-    def test_dot_disallows_newline_flag
-      result = parse('.')
-      assert_equal :dot, result[:type]
-      assert_equal false, result[:allows_newline]
-    end
+    when :assertion, :quantifier, :capture, :group, :atomic, :absence
+      assert_node_span(node[:child], pattern_len, offset, span_end) if node[:child]
+    when :conditional
+      assert_node_span(node[:yes_child], pattern_len, offset, span_end)
+      assert_node_span(node[:no_child], pattern_len, offset, span_end) if node[:no_child]
+    when :concat, :alt
+      node[:children].each do |child|
+        assert_node_span(child, pattern_len, offset, span_end)
+      end
+    end
+  end
+
+  def assert_char_class_union_span(char_class_union, pattern_len, parent_offset, parent_end)
+    offset, span_end = assert_span_fields(char_class_union, 'char_class_union', pattern_len, parent_offset, parent_end)
+    char_class_union[:items].each do |item|
+      assert_char_class_item_span(item, pattern_len, offset, span_end)
+    end
+  end
+
+  def assert_char_class_item_span(item, pattern_len, parent_offset, parent_end)
+    offset, span_end = assert_span_fields(item, "char_class_item(#{item[:type]})", pattern_len, parent_offset,
+                                          parent_end)
+    return unless item[:type] == :nested_char_class
+
+    item[:unions].each do |char_class_union|
+      assert_char_class_union_span(char_class_union, pattern_len, offset, span_end)
+    end
+  end
+
+  # ========================================================================
+  #
+  # Empty pattern:
+  #
+  # ========================================================================
+
+  def test_empty_pattern
+    result = parse('')
+    assert_equal :concat, result[:type]
+    assert_equal [], result[:children]
+  end
+
+  def test_parser_default_limit_constants
+    assert_equal 1_000_000, Naraku::Parser::DEFAULT_RANGE_QUANTIFIER_MAX_REPETITION
+    assert_equal 10_000, Naraku::Parser::DEFAULT_BARE_BACK_REF_MAX_NUM
+    assert_equal 10_000_000, Naraku::Parser::DEFAULT_MAX_CAPTURE_NUM
+    assert_equal 10_000_000, Naraku::Parser::DEFAULT_BACK_REF_MAX_NUM
+    assert_equal 1_000, Naraku::Parser::DEFAULT_MAX_CAPTURE_DEPTH
+    assert_equal 1_000, Naraku::Parser::DEFAULT_MAX_PARSE_DEPTH
+  end
+
+  # ========================================================================
+  #
+  # Literals:
+  #
+  # ========================================================================
+
+  def test_single_literal
+    result = parse('a')
+    assert_equal :literal, result[:type]
+    assert_equal 'a', result[:buf]
+  end
+
+  def test_multi_char_literal
+    result = parse('abc')
+    assert_equal :literal, result[:type]
+    assert_equal 'abc', result[:buf]
+  end
+
+  def test_escaped_special_char_as_literal
+    result = parse('\*')
+    assert_equal :literal, result[:type]
+    assert_equal '*', result[:buf]
+  end
+
+  def test_escaped_plus_as_literal
+    result = parse('\+')
+    assert_equal :literal, result[:type]
+    assert_equal '+', result[:buf]
+  end
+
+  def test_escaped_question_as_literal
+    result = parse('\?')
+    assert_equal :literal, result[:type]
+    assert_equal '?', result[:buf]
+  end
+
+  def test_escaped_dot_as_literal
+    result = parse('\.')
+    assert_equal :literal, result[:type]
+    assert_equal '.', result[:buf]
+  end
+
+  def test_escaped_pipe_as_literal
+    result = parse('\|')
+    assert_equal :literal, result[:type]
+    assert_equal '|', result[:buf]
+  end
+
+  def test_escaped_caret_as_literal
+    result = parse('\^')
+    assert_equal :literal, result[:type]
+    assert_equal '^', result[:buf]
+  end
+
+  def test_escaped_dollar_as_literal
+    result = parse('\$')
+    assert_equal :literal, result[:type]
+    assert_equal '$', result[:buf]
+  end
+
+  def test_escaped_backslash_as_literal
+    result = parse('\\\\')
+    assert_equal :literal, result[:type]
+    assert_equal '\\', result[:buf]
+  end
+
+  def test_escaped_brace_as_literal
+    result = parse('\{')
+    assert_equal :literal, result[:type]
+    assert_equal '{', result[:buf]
+  end
+
+  def test_multibyte_literal
+    result = parse('あ')
+    assert_equal :literal, result[:type]
+    assert_equal 'あ', result[:buf]
+  end
+
+  def test_adjacent_literals_with_multibyte
+    result = parse('aあb')
+    assert_equal :literal, result[:type]
+    assert_equal 'aあb', result[:buf]
+  end
+
+  def test_node_span_for_literal
+    result = parse('abc')
+    assert_equal 0, result[:span_offset]
+    assert_equal 3, result[:span_length]
+  end
+
+  # ========================================================================
+  #
+  # Dot:
+  #
+  # ========================================================================
+
+  def test_dot
+    result = parse('.')
+    assert_equal :dot, result[:type]
+    assert_equal false, result[:allows_newline]
+  end
+
+  def test_dot_allows_newline
+    result = parse('.', dot_allows_newline: true)
+    assert_equal :dot, result[:type]
+    assert_equal true, result[:allows_newline]
+  end
+
+  # ========================================================================
+  #
+  # Assertions:
+  #
+  # ========================================================================
+
+  def test_assertion_begin_of_line
+    result = parse('^')
+    assert_equal :assertion, result[:type]
+    assert_equal :begin_of_line, result[:assertion_type]
+    assert_nil result[:child]
+  end
+
+  def test_assertion_end_of_line
+    result = parse('$')
+    assert_equal :assertion, result[:type]
+    assert_equal :end_of_line, result[:assertion_type]
+    assert_nil result[:child]
+  end
+
+  def test_assertion_word_boundary
+    result = parse('\b')
+    assert_equal :assertion, result[:type]
+    assert_equal :word_boundary, result[:assertion_type]
+  end
+
+  def test_assertion_non_word_boundary
+    result = parse('\B')
+    assert_equal :assertion, result[:type]
+    assert_equal :non_word_boundary, result[:assertion_type]
+  end
+
+  def test_assertion_begin_of_string
+    result = parse('\A')
+    assert_equal :assertion, result[:type]
+    assert_equal :begin_of_string, result[:assertion_type]
+  end
+
+  def test_assertion_end_of_string_strict
+    result = parse('\z')
+    assert_equal :assertion, result[:type]
+    assert_equal :end_of_string_strict, result[:assertion_type]
+  end
+
+  def test_assertion_end_of_string_loose
+    result = parse('\Z')
+    assert_equal :assertion, result[:type]
+    assert_equal :end_of_string_loose, result[:assertion_type]
+  end
+
+  def test_assertion_begin_of_matching
+    result = parse('\G')
+    assert_equal :assertion, result[:type]
+    assert_equal :begin_of_matching, result[:assertion_type]
+  end
+
+  # ========================================================================
+  #
+  # Character types:
+  #
+  # ========================================================================
+
+  def test_char_type_digit
+    result = parse('\d')
+    assert_equal :char_type, result[:type]
+    assert_equal :digit, result[:char_type]
+    assert_equal true, result[:is_positive]
+  end
+
+  def test_char_type_non_digit
+    result = parse('\D')
+    assert_equal :char_type, result[:type]
+    assert_equal :digit, result[:char_type]
+    assert_equal false, result[:is_positive]
+  end
+
+  def test_char_type_word
+    result = parse('\w')
+    assert_equal :char_type, result[:type]
+    assert_equal :word, result[:char_type]
+    assert_equal true, result[:is_positive]
+  end
+
+  def test_char_type_non_word
+    result = parse('\W')
+    assert_equal :char_type, result[:type]
+    assert_equal :word, result[:char_type]
+    assert_equal false, result[:is_positive]
+  end
+
+  def test_char_type_space
+    result = parse('\s')
+    assert_equal :char_type, result[:type]
+    assert_equal :space, result[:char_type]
+    assert_equal true, result[:is_positive]
+  end
+
+  def test_char_type_non_space
+    result = parse('\S')
+    assert_equal :char_type, result[:type]
+    assert_equal :space, result[:char_type]
+    assert_equal false, result[:is_positive]
+  end
+
+  def test_char_type_hex_digit
+    result = parse('\h')
+    assert_equal :char_type, result[:type]
+    assert_equal :hex_digit, result[:char_type]
+    assert_equal true, result[:is_positive]
+  end
+
+  def test_char_type_non_hex_digit
+    result = parse('\H')
+    assert_equal :char_type, result[:type]
+    assert_equal :hex_digit, result[:char_type]
+    assert_equal false, result[:is_positive]
+  end
+
+  def test_char_type_ascii_only_option
+    result = parse('\d', char_type_is_ascii_only: true)
+    assert_equal :char_type, result[:type]
+    assert_equal true, result[:is_ascii_only]
+  end
+
+  def test_char_type_ignore_case_option
+    result = parse('\w', is_ignore_case: true)
+    assert_equal :char_type, result[:type]
+    assert_equal true, result[:is_ignore_case]
+  end
+
+  # ========================================================================
+  #
+  # Unicode escapes:
+  #
+  # ========================================================================
+
+  def test_unicode_escape_fixed
+    result = parse('\u0061')
+    assert_equal :literal, result[:type]
+    assert_equal 'a', result[:buf]
+
+    result = parse('\u3042')
+    assert_equal :literal, result[:type]
+    assert_equal 'あ', result[:buf]
+  end
+
+  def test_unicode_escape_variable
+    result = parse('\u{61}')
+    assert_equal :literal, result[:type]
+    assert_equal 'a', result[:buf]
+
+    result = parse('\u{3042}')
+    assert_equal :literal, result[:type]
+    assert_equal 'あ', result[:buf]
+
+    result = parse('\u{1F308}')
+    assert_equal :literal, result[:type]
+    assert_equal "\u{1F308}", result[:buf]
+  end
+
+  def test_unicode_escape_multiple
+    result = parse('\u{61 62 63}')
+    assert_equal :literal, result[:type]
+    assert_equal 'abc', result[:buf]
+
+    result = parse('\u{3042 3044}')
+    assert_equal :literal, result[:type]
+    assert_equal 'あい', result[:buf]
+  end
+
+  def test_unicode_escape_whitespace
+    result = parse('\u{  61  }')
+    assert_equal :literal, result[:type]
+    assert_equal 'a', result[:buf]
+
+    result = parse("\\u{61\t62}")
+    assert_equal :literal, result[:type]
+    assert_equal 'ab', result[:buf]
+  end
+
+  def test_unicode_escape_large_code_point
+    # U+10FFFF is the maximum valid Unicode code point.
+    result = parse('\u{10FFFF}')
+    assert_equal :literal, result[:type]
+    assert_equal "\u{10FFFF}", result[:buf]
+
+    # U+110000 is out of range for UTF-8.
+    assert_parse_error('\u{110000}', 'code point is out of range', offset: 3, length: 6)
+    # Too many hex digits in a single code point must not be split into multiple code points.
+    assert_parse_error('\u{10FFFFF}', 'code point is out of range', offset: 3, length: 7)
+    assert_parse_error('\u{11FFFF}', 'code point is out of range', offset: 3, length: 6)
+  end
+
+  def test_unicode_escape_surrogate
+    # Surrogate code points are invalid in UTF-8.
+    assert_parse_error('\u{D800}', 'invalid code point', offset: 3, length: 4)
+    assert_parse_error('\u{DFFF}', 'invalid code point', offset: 3, length: 4)
+  end
+
+  def test_unicode_escape_encoding_constraint
+    # U+0080 is out of range for US-ASCII.
+    assert_parse_error('\u0080', 'Unicode escape sequence in non-Unicode encoding', offset: 0, length: 2, encoding: Naraku::Encoding::US_ASCII)
+    assert_parse_error('\u{80}', 'Unicode escape sequence in non-Unicode encoding', offset: 0, length: 2, encoding: Naraku::Encoding::US_ASCII)
+  end
+
+  def test_unicode_escape_errors
+    # Trailing \u
+    assert_parse_error('\u', 'unclosed Unicode escape sequence brace', offset: 0, length: 2)
+    # Too short fixed escape
+    assert_parse_error('\u123', 'incomplete Unicode escape sequence', offset: 0, length: 5)
+    # Invalid hex digit
+    assert_parse_error('\u123G', 'incomplete Unicode escape sequence', offset: 0, length: 5)
+    # Unclosed brace
+    assert_parse_error('\u{61', 'unclosed Unicode escape sequence brace', offset: 5, length: 0)
+    # Invalid hex in brace
+    assert_parse_error('\u{G}', 'invalid Unicode escape sequence', offset: 3, length: 0)
+    # Empty brace
+    assert_parse_error('\u{}', 'empty Unicode escape sequence brace', offset: 0, length: 4)
+  end
+
+  # ========================================================================
+  #
+  # Escape sequences:
+  #
+  # ========================================================================
+
+  def test_trailing_backslash
+    assert_parse_error('\\', 'incomplete escape sequence', offset: 1, length: 0)
+  end
+
+  def test_backslash_and_newline
+    result = parse("\\\n")
+    assert_equal :concat, result[:type]
+    assert_equal 0, result[:children].size
+
+    result = parse("\\\r\n")
+    assert_equal :concat, result[:type]
+    assert_equal 0, result[:children].size
+  end
+
+  def test_hex_escape
+    result = parse('\x61')
+    assert_equal :literal, result[:type]
+    assert_equal 'a', result[:buf]
+
+    # Single hex digit
+    result = parse('\x1')
+    assert_equal :literal, result[:type]
+    assert_equal "\x01", result[:buf]
+
+    result = parse('\x7F')
+    assert_equal :literal, result[:type]
+    assert_equal "\x7F", result[:buf]
+  end
+
+  def test_octal_escape
+    result = parse('\0')
+    assert_equal :literal, result[:type]
+    assert_equal "\0", result[:buf]
+
+    result = parse('\012')
+    assert_equal :literal, result[:type]
+    assert_equal "\n", result[:buf]
+
+    result = parse('\123')
+    assert_equal :literal, result[:type]
+    assert_equal 'S', result[:buf]
+
+    # \07 is octal
+    result = parse('\07')
+    assert_equal :literal, result[:type]
+    assert_equal "\a", result[:buf]
+  end
+
+  def test_meta_control_escape
+    result = parse('\M-a', encoding: Naraku::Encoding::ASCII_8BIT)
+    assert_equal :literal, result[:type]
+    assert_equal "\xe1", result[:buf].bytes.map(&:chr).join
+
+    result = parse('\C-a', encoding: Naraku::Encoding::ASCII_8BIT)
+    assert_equal :literal, result[:type]
+    assert_equal "\x01", result[:buf]
+
+    result = parse('\ca', encoding: Naraku::Encoding::ASCII_8BIT)
+    assert_equal :literal, result[:type]
+    assert_equal "\x01", result[:buf]
+
+    result = parse('\C-?', encoding: Naraku::Encoding::ASCII_8BIT)
+    assert_equal :literal, result[:type]
+    assert_equal "\x7F", result[:buf]
+
+    result = parse('\c?', encoding: Naraku::Encoding::ASCII_8BIT)
+    assert_equal :literal, result[:type]
+    assert_equal "\x7F", result[:buf]
+
+    result = parse('\C-\q', encoding: Naraku::Encoding::ASCII_8BIT)
+    assert_equal :literal, result[:type]
+    assert_equal "\x11", result[:buf]
+
+    result = parse('\c\q', encoding: Naraku::Encoding::ASCII_8BIT)
+    assert_equal :literal, result[:type]
+    assert_equal "\x11", result[:buf]
+
+    result = parse('\M-\C-a', encoding: Naraku::Encoding::ASCII_8BIT)
+    assert_equal :literal, result[:type]
+    assert_equal "\x81", result[:buf].bytes.map(&:chr).join
+
+    result = parse('\M-\ca', encoding: Naraku::Encoding::ASCII_8BIT)
+    assert_equal :literal, result[:type]
+    assert_equal "\x81", result[:buf].bytes.map(&:chr).join
+  end
+
+  def test_standard_escapes
+    assert_equal "\n", parse('\n')[:buf]
+    assert_equal "\t", parse('\t')[:buf]
+    assert_equal "\r", parse('\r')[:buf]
+    assert_equal "\f", parse('\f')[:buf]
+    assert_equal "\v", parse('\v')[:buf]
+    assert_equal "\a", parse('\a')[:buf]
+    assert_equal "\e", parse('\e')[:buf]
+  end
+
+  def test_multibyte_escaped_sequence
+    # UTF-8 encoded 'あ'
+    result = parse('\xe3\x81\x82')
+    assert_equal :literal, result[:type]
+    assert_equal 'あ', result[:buf]
+
+    result = parse('\343\201\202')
+    assert_equal :literal, result[:type]
+    assert_equal 'あ', result[:buf]
+  end
+
+  def test_escape_errors
+    # Missing hex digits
+    assert_parse_error('\x', 'incomplete \x escape sequence', offset: 0, length: 2)
+    # Invalid hex digit
+    assert_parse_error('\xG', 'incomplete \x escape sequence', offset: 0, length: 2)
+    # Missing meta character
+    assert_parse_error('\M', 'incomplete \M- escape sequence', offset: 0, length: 2)
+    assert_parse_error('\M-', 'incomplete \M- escape sequence', offset: 0, length: 3)
+    assert_parse_error('\c', 'incomplete \c/\C- escape sequence', offset: 0, length: 2)
+    assert_parse_error('\C-', 'incomplete \c/\C- escape sequence', offset: 0, length: 3)
+    # Duplicate prefixes
+    assert_parse_error('\M-\M-a', 'duplicate \M- escape sequence', offset: 0, length: 5)
+    assert_parse_error('\C-\C-a', 'duplicate \c/\C- escape sequence', offset: 0, length: 5)
+    # Invalid control/meta character
+    assert_parse_error('\C-あ', 'invalid code in \c/\C- escape sequence', offset: 0, length: 6)
+    assert_parse_error('\cあ', 'invalid code in \c/\C- escape sequence', offset: 0, length: 5)
+    assert_parse_error('\M-あ', 'invalid code in \M- escape sequence', offset: 0, length: 6)
+    assert_parse_error('\xE3\C-あ', 'invalid code in \c/\C- escape sequence', offset: 4, length: 6)
+    # Incomplete multibyte sequence (only first byte of 'あ')
+    assert_parse_error('\xe3', 'incomplete escaped byte sequence', offset: 0, length: 4)
+    assert_parse_error('\xe3\x81', 'incomplete escaped byte sequence', offset: 0, length: 8)
+    assert_parse_error('\xe3a', 'incomplete escaped byte sequence', offset: 0, length: 4)
+    # Invalid multibyte sequence (surrogate code point)
+    assert_parse_error('\xED\xA0\x80', 'invalid escaped byte sequence', offset: 0, length: 12)
+  end
+
+  def test_warning_for_incomplete_named_escapes
+    warnings = collect_parse_warnings('\p')
+    assert_equal 1, warnings.length
+    assert_equal 'incomplete character property escape', warnings[0][:message]
+    assert_equal 0, warnings[0][:offset]
+    assert_equal 2, warnings[0][:length]
+
+    warnings = collect_parse_warnings('\k')
+    assert_equal 1, warnings.length
+    assert_equal 'incomplete named back-reference escape', warnings[0][:message]
+    assert_equal 0, warnings[0][:offset]
+    assert_equal 2, warnings[0][:length]
+
+    warnings = collect_parse_warnings('\g')
+    assert_equal 1, warnings.length
+    assert_equal 'incomplete sub-expression call escape', warnings[0][:message]
+    assert_equal 0, warnings[0][:offset]
+    assert_equal 2, warnings[0][:length]
+  end
+
+  def test_warning_for_literal_right_bracket_outside_char_class
+    warnings = collect_parse_warnings(']')
+    assert_equal 1, warnings.length
+    assert_equal 'literal `]` outside character class', warnings[0][:message]
+    assert_equal 0, warnings[0][:offset]
+    assert_equal 1, warnings[0][:length]
+  end
+
+  # ========================================================================
+  #
+  # Unicode properties:
+  #
+  # ========================================================================
+
+  def test_char_prop
+    # Positive property \p{...}
+    result = parse('\p{Lu}')
+    assert_equal :char_prop, result[:type]
+    assert_equal true, result[:is_positive]
+    assert_equal Naraku::Encoding.name_to_cprop('Lu'), result[:cprop]
+
+    result = parse('\p{L}')
+    assert_equal :char_prop, result[:type]
+    assert_equal true, result[:is_positive]
+    assert_equal Naraku::Encoding.name_to_cprop('L'), result[:cprop]
+
+    result = parse('\p{Digit}')
+    assert_equal :char_prop, result[:type]
+    assert_equal true, result[:is_positive]
+    assert_equal Naraku::Encoding.name_to_cprop('Digit'), result[:cprop]
+
+    # Negative property \P{...}
+    result = parse('\P{Lu}')
+    assert_equal :char_prop, result[:type]
+    assert_equal false, result[:is_positive]
+    assert_equal Naraku::Encoding.name_to_cprop('Lu'), result[:cprop]
+
+    result = parse('\P{Digit}')
+    assert_equal :char_prop, result[:type]
+    assert_equal false, result[:is_positive]
+    assert_equal Naraku::Encoding.name_to_cprop('Digit'), result[:cprop]
+
+    # Negative property \p{^...}
+    result = parse('\p{^Lu}')
+    assert_equal :char_prop, result[:type]
+    assert_equal false, result[:is_positive]
+    assert_equal Naraku::Encoding.name_to_cprop('Lu'), result[:cprop]
+
+    result = parse('\P{^Digit}')
+    assert_equal :char_prop, result[:type]
+    assert_equal true, result[:is_positive]
+    assert_equal Naraku::Encoding.name_to_cprop('Digit'), result[:cprop]
+
+    # Unicode escapes in property names
+    result = parse('\p{\u004c\u0075}')
+    assert_equal :char_prop, result[:type]
+    assert_equal true, result[:is_positive]
+    assert_equal Naraku::Encoding.name_to_cprop('Lu'), result[:cprop]
+
+    result = parse('\p{\u{4c 75}}')
+    assert_equal :char_prop, result[:type]
+    assert_equal true, result[:is_positive]
+    assert_equal Naraku::Encoding.name_to_cprop('Lu'), result[:cprop]
+
+    result = parse('\p{\u{4c}u}')
+    assert_equal :char_prop, result[:type]
+    assert_equal true, result[:is_positive]
+    assert_equal Naraku::Encoding.name_to_cprop('Lu'), result[:cprop]
+  end
+
+  def test_char_prop_missing_brace
+    result = parse('\p')
+    assert_equal :literal, result[:type]
+    assert_equal 'p', result[:buf]
+
+    result = parse('\P')
+    assert_equal :literal, result[:type]
+    assert_equal 'P', result[:buf]
+  end
+
+  def test_char_prop_errors
+    # Unclosed brace
+    assert_parse_error('\p{Lu', 'unclosed character property escape sequence brace', offset: 0, length: 5)
+    # Empty property name
+    assert_parse_error('\p{}', 'empty character property name', offset: 0, length: 3)
+    # Invalid property name
+    assert_parse_error('\p{InvalidProperty}', 'invalid character property name', offset: 3, length: 15)
+    assert_parse_error('\p{^InvalidProperty}', 'invalid character property name', offset: 4, length: 15)
+  end
+
+  # ========================================================================
+  #
+  # Special nodes: grapheme cluster, keep, newline
+  #
+  # ========================================================================
+
+  def test_grapheme_cluster
+    result = parse('\X')
+    assert_equal :grapheme_cluster, result[:type]
+  end
+
+  def test_keep
+    result = parse('\K')
+    assert_equal :keep, result[:type]
+  end
+
+  def test_newline
+    result = parse('\R')
+    assert_equal :newline, result[:type]
+  end
+
+  # ========================================================================
+  #
+  # Quantifiers:
+  #
+  # ========================================================================
+
+  # Greedy quantifiers:
+
+  def test_quantifier_star_greedy
+    result = parse('a*')
+    assert_equal :quantifier, result[:type]
+    assert_equal 0, result[:min]
+    assert_equal false, result[:has_max]
+    assert_equal nil, result[:max]
+    assert_equal :greedy, result[:quantifier_type]
+    assert_equal :literal, result[:child][:type]
+    assert_equal 'a', result[:child][:buf]
+  end
+
+  def test_quantifier_plus_greedy
+    result = parse('a+')
+    assert_equal :quantifier, result[:type]
+    assert_equal 1, result[:min]
+    assert_equal false, result[:has_max]
+    assert_equal nil, result[:max]
+    assert_equal :greedy, result[:quantifier_type]
+  end
+
+  def test_quantifier_question_greedy
+    result = parse('a?')
+    assert_equal :quantifier, result[:type]
+    assert_equal 0, result[:min]
+    assert_equal true, result[:has_max]
+    assert_equal 1, result[:max]
+    assert_equal :greedy, result[:quantifier_type]
+  end
+
+  # Reluctant quantifiers:
+
+  def test_quantifier_star_reluctant
+    result = parse('a*?')
+    assert_equal :quantifier, result[:type]
+    assert_equal 0, result[:min]
+    assert_equal false, result[:has_max]
+    assert_equal nil, result[:max]
+    assert_equal :reluctant, result[:quantifier_type]
+  end
+
+  def test_quantifier_plus_reluctant
+    result = parse('a+?')
+    assert_equal :quantifier, result[:type]
+    assert_equal 1, result[:min]
+    assert_equal false, result[:has_max]
+    assert_equal nil, result[:max]
+    assert_equal :reluctant, result[:quantifier_type]
+  end
+
+  def test_quantifier_question_reluctant
+    result = parse('a??')
+    assert_equal :quantifier, result[:type]
+    assert_equal 0, result[:min]
+    assert_equal true, result[:has_max]
+    assert_equal 1, result[:max]
+    assert_equal :reluctant, result[:quantifier_type]
+  end
+
+  # Possessive quantifiers:
+
+  def test_quantifier_star_possessive
+    result = parse('a*+')
+    assert_equal :quantifier, result[:type]
+    assert_equal 0, result[:min]
+    assert_equal false, result[:has_max]
+    assert_equal nil, result[:max]
+    assert_equal :possessive, result[:quantifier_type]
+  end
+
+  def test_quantifier_plus_possessive
+    result = parse('a++')
+    assert_equal :quantifier, result[:type]
+    assert_equal 1, result[:min]
+    assert_equal false, result[:has_max]
+    assert_equal nil, result[:max]
+    assert_equal :possessive, result[:quantifier_type]
+  end
+
+  def test_quantifier_question_possessive
+    result = parse('a?+')
+    assert_equal :quantifier, result[:type]
+    assert_equal 0, result[:min]
+    assert_equal true, result[:has_max]
+    assert_equal 1, result[:max]
+    assert_equal :possessive, result[:quantifier_type]
+  end
+
+  # Range quantifiers:
+
+  def test_quantifier_range_exact
+    result = parse('a{3}')
+    assert_equal :quantifier, result[:type]
+    assert_equal 3, result[:min]
+    assert_equal true, result[:has_max]
+    assert_equal 3, result[:max]
+    assert_equal :greedy, result[:quantifier_type]
+  end
+
+  def test_quantifier_range_min_max
+    result = parse('a{2,5}')
+    assert_equal :quantifier, result[:type]
+    assert_equal 2, result[:min]
+    assert_equal true, result[:has_max]
+    assert_equal 5, result[:max]
+    assert_equal :greedy, result[:quantifier_type]
+  end
+
+  def test_quantifier_range_min_only
+    result = parse('a{2,}')
+    assert_equal :quantifier, result[:type]
+    assert_equal 2, result[:min]
+    assert_equal false, result[:has_max]
+    assert_equal nil, result[:max]
+    assert_equal :greedy, result[:quantifier_type]
+  end
+
+  def test_quantifier_range_max_only
+    result = parse('a{,5}')
+    assert_equal :quantifier, result[:type]
+    assert_equal 0, result[:min]
+    assert_equal true, result[:has_max]
+    assert_equal 5, result[:max]
+    assert_equal :greedy, result[:quantifier_type]
+  end
+
+  def test_quantifier_range_reluctant
+    result = parse('a{2,5}?')
+    assert_equal :quantifier, result[:type]
+    assert_equal 2, result[:min]
+    assert_equal true, result[:has_max]
+    assert_equal 5, result[:max]
+    assert_equal :reluctant, result[:quantifier_type]
+  end
+
+  def test_quantifier_range_possessive
+    result = parse('a{2,5}+')
+    assert_equal :quantifier, result[:type]
+    assert_equal 2, result[:min]
+    assert_equal true, result[:has_max]
+    assert_equal 5, result[:max]
+    assert_equal :possessive, result[:quantifier_type]
+  end
+
+  def test_quantifier_range_exact_not_reluctant
+    # `{n}` does not allow reluctant modifier, so `?` becomes a separate quantifier.
+    result = parse('a{3}?')
+    assert_equal :quantifier, result[:type]
+    assert_equal 0, result[:min]
+    assert_equal true, result[:has_max]
+    assert_equal 1, result[:max]
+    child = result[:child]
+    assert_equal :quantifier, child[:type]
+    assert_equal 3, child[:min]
+    assert_equal true, child[:has_max]
+    assert_equal 3, child[:max]
+  end
+
+  # Incomplete range quantifiers (treated as literals):
+
+  def test_incomplete_range_quantifier_brace_only
+    result = parse('a{')
+    assert_equal :literal, result[:type]
+    assert_equal 'a{', result[:buf]
+  end
+
+  def test_incomplete_range_quantifier_no_closing_brace
+    result = parse('a{3')
+    assert_equal :literal, result[:type]
+    assert_equal 'a{3', result[:buf]
+  end
+
+  def test_incomplete_range_quantifier_comma_no_close
+    result = parse('a{2,5')
+    assert_equal :literal, result[:type]
+    assert_equal 'a{2,5', result[:buf]
+  end
+
+  # Quantifier on non-literal:
+
+  def test_quantifier_on_dot
+    result = parse('.*')
+    assert_equal :quantifier, result[:type]
+    assert_equal :dot, result[:child][:type]
+  end
+
+  def test_quantifier_on_char_type
+    result = parse('\d+')
+    assert_equal :quantifier, result[:type]
+    assert_equal :char_type, result[:child][:type]
+    assert_equal :digit, result[:child][:char_type]
+  end
+
+  def test_quantifier_nothing_to_repeat
+    assert_parse_error('*', 'nothing to repeat', offset: 0, length: 1)
+    assert_parse_error('+', 'nothing to repeat', offset: 0, length: 1)
+    assert_parse_error('?', 'nothing to repeat', offset: 0, length: 1)
+    assert_parse_error('{1}', 'nothing to repeat', offset: 0, length: 3)
+  end
+
+  def test_quantifier_error_too_large_number
+    assert_parse_error('a{1000001}', 'number in quantifier is too large', offset: 2, length: 7)
+  end
+
+  def test_quantifier_error_too_large_number_with_custom_limit
+    assert_parse_error(
+      'a{11}',
+      'number in quantifier is too large',
+      offset: 2,
+      length: 2,
+      range_quantifier_max_repetition_limit: 10
+    )
+  end
+
+  def test_quantifier_error_numbers_out_of_order
+    assert_parse_error('a{2,1}', 'numbers in quantifier are out of order', offset: 1, length: 4)
+  end
+
+  # ========================================================================
+  #
+  # Concatenation:
+  #
+  # ========================================================================
+
+  def test_concat_two_elements
+    result = parse('a.')
+    assert_equal :concat, result[:type]
+    assert_equal 2, result[:children].length
+    assert_equal :literal, result[:children][0][:type]
+    assert_equal 'a', result[:children][0][:buf]
+    assert_equal :dot, result[:children][1][:type]
+  end
+
+  def test_concat_three_elements
+    result = parse('a.b')
+    assert_equal :concat, result[:type]
+    assert_equal 3, result[:children].length
+    assert_equal :literal, result[:children][0][:type]
+    assert_equal 'a', result[:children][0][:buf]
+    assert_equal :dot, result[:children][1][:type]
+    assert_equal :literal, result[:children][2][:type]
+    assert_equal 'b', result[:children][2][:buf]
+  end
+
+  def test_concat_literal_merging
+    result = parse('ab.cd')
+    assert_equal :concat, result[:type]
+    assert_equal 3, result[:children].length
+    assert_equal :literal, result[:children][0][:type]
+    assert_equal 'ab', result[:children][0][:buf]
+    assert_equal :dot, result[:children][1][:type]
+    assert_equal :literal, result[:children][2][:type]
+    assert_equal 'cd', result[:children][2][:buf]
+  end
+
+  def test_concat_with_quantifier
+    result = parse('ab*c')
+    assert_equal :concat, result[:type]
+    assert_equal 3, result[:children].length
+    assert_equal :literal, result[:children][0][:type]
+    assert_equal 'a', result[:children][0][:buf]
+    assert_equal :quantifier, result[:children][1][:type]
+    assert_equal :literal, result[:children][2][:type]
+    assert_equal 'c', result[:children][2][:buf]
+  end
+
+  # ========================================================================
+  #
+  # Alternation:
+  #
+  # ========================================================================
+
+  def test_alt_two_branches
+    result = parse('a|b')
+    assert_equal :alt, result[:type]
+    assert_equal 2, result[:children].length
+    assert_equal :literal, result[:children][0][:type]
+    assert_equal 'a', result[:children][0][:buf]
+    assert_equal :literal, result[:children][1][:type]
+    assert_equal 'b', result[:children][1][:buf]
+  end
+
+  def test_alt_three_branches
+    result = parse('a|b|c')
+    assert_equal :alt, result[:type]
+    assert_equal 3, result[:children].length
+    assert_equal :literal, result[:children][0][:type]
+    assert_equal :literal, result[:children][1][:type]
+    assert_equal :literal, result[:children][2][:type]
+  end
+
+  def test_alt_with_empty_left
+    result = parse('|a')
+    assert_equal :alt, result[:type]
+    assert_equal 2, result[:children].length
+    assert_equal :concat, result[:children][0][:type]
+    assert_equal [], result[:children][0][:children]
+    assert_equal :literal, result[:children][1][:type]
+  end
+
+  def test_alt_with_empty_right
+    result = parse('a|')
+    assert_equal :alt, result[:type]
+    assert_equal 2, result[:children].length
+    assert_equal :literal, result[:children][0][:type]
+    assert_equal :concat, result[:children][1][:type]
+    assert_equal [], result[:children][1][:children]
+  end
+
+  def test_alt_both_empty
+    result = parse('|')
+    assert_equal :alt, result[:type]
+    assert_equal 2, result[:children].length
+    assert_equal :concat, result[:children][0][:type]
+    assert_equal :concat, result[:children][1][:type]
+  end
+
+  def test_alt_with_concat
+    result = parse('ab|cd')
+    assert_equal :alt, result[:type]
+    assert_equal 2, result[:children].length
+    assert_equal :literal, result[:children][0][:type]
+    assert_equal 'ab', result[:children][0][:buf]
+    assert_equal :literal, result[:children][1][:type]
+    assert_equal 'cd', result[:children][1][:buf]
+  end
+
+  def test_node_span_for_alt
+    result = parse('a|bc')
+    assert_equal :alt, result[:type]
+    assert_equal 0, result[:span_offset]
+    assert_equal 4, result[:span_length]
+
+    left = result[:children][0]
+    assert_equal 0, left[:span_offset]
+    assert_equal 1, left[:span_length]
+
+    right = result[:children][1]
+    assert_equal 2, right[:span_offset]
+    assert_equal 2, right[:span_length]
+  end
+
+  # ========================================================================
+  #
+  # Extended mode:
+  #
+  # ========================================================================
+
+  def test_extended_mode_ignores_spaces
+    result = parse('a b', is_extended_mode: true)
+    assert_equal :literal, result[:type]
+    assert_equal 'ab', result[:buf]
+  end
+
+  def test_extended_mode_ignores_tabs
+    result = parse("a\tb", is_extended_mode: true)
+    assert_equal :literal, result[:type]
+    assert_equal 'ab', result[:buf]
+  end
+
+  def test_extended_mode_ignores_newlines
+    result = parse("a\nb", is_extended_mode: true)
+    assert_equal :literal, result[:type]
+    assert_equal 'ab', result[:buf]
+  end
+
+  def test_extended_mode_ignores_comments
+    result = parse("a# comment\nb", is_extended_mode: true)
+    assert_equal :literal, result[:type]
+    assert_equal 'ab', result[:buf]
+  end
+
+  def test_non_extended_mode_preserves_spaces
+    result = parse('a b')
+    assert_equal :literal, result[:type]
+    assert_equal 'a b', result[:buf]
+  end
+
+  def test_non_extended_mode_hash_is_literal
+    result = parse('a#b')
+    assert_equal :literal, result[:type]
+    assert_equal 'a#b', result[:buf]
+  end
+
+  # ========================================================================
+  #
+  # Parser options:
+  #
+  # ========================================================================
+
+  def test_ignore_case_flag_on_literal
+    result = parse('a', is_ignore_case: true)
+    assert_equal :literal, result[:type]
+    assert_equal true, result[:is_ignore_case]
+  end
+
+  def test_ignore_case_flag_off_on_literal
+    result = parse('a')
+    assert_equal :literal, result[:type]
+    assert_equal false, result[:is_ignore_case]
+  end
+
+  def test_dot_allows_newline_flag
+    result = parse('.', dot_allows_newline: true)
+    assert_equal :dot, result[:type]
+    assert_equal true, result[:allows_newline]
+  end
+
+  def test_dot_disallows_newline_flag
+    result = parse('.')
+    assert_equal :dot, result[:type]
+    assert_equal false, result[:allows_newline]
+  end
 
   # ========================================================================
   #
@@ -1173,11 +1173,11 @@
     assert_equal :literal, child[:children][0][:type]
     assert_equal 'a', child[:children][0][:buf]
 
-  inner_group = child[:children][1]
-  assert_equal :capture, inner_group[:type]
-  assert_equal 2, inner_group[:capture_num]
-  assert_equal 'b', inner_group[:child][:buf]
-end
+    inner_group = child[:children][1]
+    assert_equal :capture, inner_group[:type]
+    assert_equal 2, inner_group[:capture_num]
+    assert_equal 'b', inner_group[:child][:buf]
+  end
 
   def test_group_non_capturing
     result = parse('(?:a)')
@@ -1202,21 +1202,21 @@ end
     assert_equal false, literal[:is_ignore_case]
   end
 
-  def test_group_inline_option_I_is_sugar_for_iSA
+  def test_group_inline_option_captital_i_is_sugar
     result_i = parse('(?I:a)')
     result_isa = parse('(?iSA:a)')
     assert_equal result_isa[:child][:is_ignore_case], result_i[:child][:is_ignore_case]
     assert_equal result_isa[:child][:fold_flags], result_i[:child][:fold_flags]
   end
 
-  def test_group_inline_option_minus_I_is_same_as_minus_i
+  def test_group_inline_option_minus_capital_i_is_same_as_minus_small_i
     result_minus_i = parse('(?i-i:a)')
-    result_minus_I = parse('(?i-I:a)')
-    assert_equal result_minus_i[:child][:is_ignore_case], result_minus_I[:child][:is_ignore_case]
-    assert_equal false, result_minus_I[:child][:is_ignore_case]
+    result_minus_capital_i = parse('(?i-I:a)')
+    assert_equal result_minus_i[:child][:is_ignore_case], result_minus_capital_i[:child][:is_ignore_case]
+    assert_equal false, result_minus_capital_i[:child][:is_ignore_case]
   end
 
-  def test_group_inline_option_minus_A_and_minus_T_are_allowed
+  def test_group_inline_option_minus_capital_a_and_minus_capital_t
     result_i = parse('(?i:a)')
     result_iat_minus_at = parse('(?iAT-AT:a)')
     assert_equal result_i[:child][:is_ignore_case], result_iat_minus_at[:child][:is_ignore_case]
@@ -1359,7 +1359,7 @@ end
     assert_equal :literal, result[:no_child][:type]
     assert_equal 'b', result[:no_child][:buf]
 
-    result = parse(%q{(?('name')a|b)})
+    result = parse("(?('name')a|b)")
     assert_equal :conditional, result[:type]
     assert_equal :name, result[:target_kind]
     assert_equal true, result[:has_name]
@@ -1610,7 +1610,7 @@ end
     assert_equal 'name', result[:name]
     assert_equal nil, result[:capture_num]
 
-    result = parse(%q{\k'name'})
+    result = parse(%q(\k'name'))
     assert_equal :back_ref, result[:type]
     assert_equal :name, result[:target_kind]
     assert_equal true, result[:has_name]
@@ -1661,7 +1661,7 @@ end
   def test_error_incomplete_back_ref
     assert_parse_error('\k<', 'incomplete back reference', offset: 0, length: 3)
     assert_parse_error('\k<name', 'incomplete back reference', offset: 0, length: 7)
-    assert_parse_error(%q{\k'name}, 'incomplete back reference', offset: 0, length: 7)
+    assert_parse_error(%q(\k'name), 'incomplete back reference', offset: 0, length: 7)
   end
 
   def test_error_incomplete_capture_depth
@@ -1718,7 +1718,7 @@ end
     assert_equal 'name', result[:name]
     assert_equal nil, result[:capture_num]
 
-    result = parse(%q{\g'name'})
+    result = parse(%q(\g'name'))
     assert_equal :call, result[:type]
     assert_equal :name, result[:target_kind]
     assert_equal true, result[:has_name]
@@ -1747,7 +1747,7 @@ end
   def test_error_incomplete_subexp_call
     assert_parse_error('\g<', 'incomplete sub-expression call', offset: 0, length: 3)
     assert_parse_error('\g<name', 'incomplete sub-expression call', offset: 0, length: 7)
-    assert_parse_error(%q{\g'name}, 'incomplete sub-expression call', offset: 0, length: 7)
+    assert_parse_error(%q(\g'name), 'incomplete sub-expression call', offset: 0, length: 7)
   end
 
   # ========================================================================

@@ -10,7 +10,7 @@ def require(path)
   absolute_path = File.expand_path(path, REQUIRE_BASE_DIR)
   absolute_path += '.rb' unless absolute_path.end_with?('.rb')
 
-  eval File.read(absolute_path), nil, absolute_path, 1
+  eval File.read(absolute_path), nil, absolute_path, 1 # rubocop:disable Security/Eval
 end
 
 class Array

@@ -61,7 +61,7 @@ def gen_ascii(case_map)
     cond = []
     range_set.each_range do |r|
       cond << if r.begin == r.end
-                ('code == 0x%02X' % r.begin)
+                format('code == 0x%02X', r.begin)
               else
                 format('(code >= 0x%02X && code <= 0x%02X)', r.begin, r.end)
               end
@@ -153,7 +153,9 @@ def gen_unicode(case_map)
       special_array << special_item
     end
 
-    printf "  {0x%04X, %s, {%s}},\n", from_code, to_type_flags.join('|'), to_codes.map { |c| '0x%04X' % c }.join(', ')
+    printf "  {0x%04X, %s, {%s}},\n", from_code, to_type_flags.join('|'), to_codes.map { |c|
+      format('0x%04X', c)
+    }.join(', ')
   end
   puts '};'
   puts
@@ -162,7 +164,10 @@ def gen_unicode(case_map)
   case_map_items = case_map.case_map_items.to_a.sort_by! { |from_code, _item| from_code }
   case_map_items.each do |from_code, item|
     to_code = item[:to_codes].first
-    raise "Unexpected multiple to_codes for case map item with from_code 0x%04X: #{item[:to_codes].inspect}" % from_code if item[:to_codes].length > 1
+    if item[:to_codes].length > 1
+      raise format('Unexpected multiple to_codes for case map item with from_code 0x%04X: %s', from_code,
+                   item[:to_codes].inspect)
+    end
 
     specials = item[:specials].dup
 
@@ -209,7 +214,8 @@ def gen_unicode(case_map)
   puts '#undef SL'
 
   fold_table_source = IO.popen(
-    [*GPERF_COMMAND, '-H', 'unicode_fold_table_hash', '-Q', 'unicode_fold_table_pool', '-N', 'unicode_fold_table_lookup', { err: :err }], 'w+'
+    [*GPERF_COMMAND, '-H', 'unicode_fold_table_hash', '-Q', 'unicode_fold_table_pool', '-N',
+     'unicode_fold_table_lookup', { err: :err }], 'w+'
   ) do |io|
     io.puts '%{'
     io.puts '%}'
@@ -217,7 +223,7 @@ def gen_unicode(case_map)
     io.puts '%%'
 
     fold_items.each_with_index do |(from_code, _), index|
-      from_code_str = 3.times.map { |i| from_code[i * 8, 8] }.reverse.map { |part| '\\x%.2x' % part }.join
+      from_code_str = 3.times.map { |i| from_code[i * 8, 8] }.reverse.map { |part| format('\\x%.2x', part) }.join
       io.puts format('%-20s %d', "\"#{from_code_str}\",", index)
     end
     io.puts '%%'
@@ -232,7 +238,8 @@ def gen_unicode(case_map)
   puts fold_table_source
 
   case_map_table_source = IO.popen(
-    [*GPERF_COMMAND, '-H', 'unicode_case_map_table_hash', '-Q', 'unicode_case_map_table_pool', '-N', 'unicode_case_map_table_lookup', { err: :err }], 'w+'
+    [*GPERF_COMMAND, '-H', 'unicode_case_map_table_hash', '-Q', 'unicode_case_map_table_pool', '-N',
+     'unicode_case_map_table_lookup', { err: :err }], 'w+'
   ) do |io|
     io.puts '%{'
     io.puts '%}'
@@ -240,7 +247,7 @@ def gen_unicode(case_map)
     io.puts '%%'
 
     case_map_items.each_with_index do |(from_code, _), index|
-      from_code_str = 3.times.map { |i| from_code[i * 8, 8] }.reverse.map { |part| '\\x%.2x' % part }.join
+      from_code_str = 3.times.map { |i| from_code[i * 8, 8] }.reverse.map { |part| format('\\x%.2x', part) }.join
       io.puts format('%-20s %d', "\"#{from_code_str}\",", index)
     end
     io.puts '%%'
@@ -296,7 +303,9 @@ def gen_unicode(case_map)
       io.puts 'struct unicode_table_entry;'
       io.puts '%%'
       items.each do |(to_codes, unfold_index)|
-        to_codes_str = to_codes.flat_map { |to_code| 3.times.map { |i| to_code[i * 8, 8] }.reverse.map { |part| '\\x%.2x' % part } }.join
+        to_codes_str = to_codes.flat_map do |to_code|
+          3.times.map { |i| to_code[i * 8, 8] }.reverse.map { |part| format('\\x%.2x', part) }
+        end.join
         io.puts format('%-20s %d', "\"#{to_codes_str}\",", unfold_index)
       end
       io.puts '%%'
@@ -335,7 +344,7 @@ def gen_sb(case_map, enc, prefix)
       puts
       print '// '
       codes[index, 8].each do |c|
-        c = map[c]&.chr(Encoding::UTF_8)&.inspect || ('"\\x%02X"' % c)
+        c = map[c]&.chr(Encoding::UTF_8)&.inspect || format('"\\x%02X"', c)
         printf ' %8s,', c
       end
       puts
@@ -343,7 +352,9 @@ def gen_sb(case_map, enc, prefix)
     end
 
     begin
-      unicode_code = map[enc_code] or raise "Encoding #{enc} code 0x%02X does not map to any Unicode code point" % enc_code
+      unicode_code = map[enc_code]
+      raise format("Encoding #{enc} code 0x%02X does not map to any Unicode code point", enc_code) unless unicode_code
+
       fold_result = case_map.fold([unicode_code], mode: :simple).pack('U*').encode(enc).codepoints
       raise "Unexpected fold result for code #{unicode_code} (#{enc_code} in encoding #{enc}): #{fold_result.inspect}" if fold_result.length > 1
 
@@ -374,7 +385,7 @@ def gen_sb(case_map, enc, prefix)
   puts '    return nk_enc_ascii_get_case_fold(enc, flags, code, folded_codes);'
   puts '  }'
   if has_sharp_s
-    puts '  if (code == 0x%02X && (flags & NK_FOLD_FULL) != 0) { // LATIN SMALL LETTER SHARP S' % rev_map[0x00DF]
+    puts format('  if (code == 0x%02X && (flags & NK_FOLD_FULL) != 0) { // LATIN SMALL LETTER SHARP S', rev_map[0x00DF])
     puts '    if (folded_codes != NULL) {'
     puts '      folded_codes[0] = 0x73;'
     puts '      folded_codes[1] = 0x73;'
@@ -403,7 +414,7 @@ def gen_sb(case_map, enc, prefix)
     cond = []
     range_set.each_range do |r|
       cond << if r.begin == r.end
-                ('code == 0x%02X' % r.begin)
+                format('code == 0x%02X', r.begin)
               else
                 format('(code >= 0x%02X && code <= 0x%02X)', r.begin, r.end)
               end
@@ -418,7 +429,7 @@ def gen_sb(case_map, enc, prefix)
   if has_sharp_s
     puts '  if ((flags & NK_FOLD_FULL) != 0 && code == 0x73 && folded_codes_len >= 2 && folded_codes[1] == 0x73) { // "ss"'
     puts '    unfold_items[unfold_count].folded_codes_len = 2;'
-    puts '    unfold_items[unfold_count].unfolded_code = 0x%02X;' % rev_map[0x00DF]
+    puts format('    unfold_items[unfold_count].unfolded_code = 0x%02X;', rev_map[0x00DF])
     puts '    unfold_count++;'
     puts '  }'
   end
@@ -453,7 +464,7 @@ def gen_sb(case_map, enc, prefix)
   if has_sharp_s
     puts '  if ((flags & NK_FOLD_FULL) != 0) {'
     puts '    uint32_t folded_codes[2] = {0x73, 0x73}; // "ss"'
-    puts '    nk_error_t err = callback(0x%02X, folded_codes, 2, user_data); // LATIN SMALL LETTER SHARP S' % rev_map[0x00DF]
+    puts format('    nk_error_t err = callback(0x%02X, folded_codes, 2, user_data); // LATIN SMALL LETTER SHARP S', rev_map[0x00DF])
     puts '    if (err < 0) {'
     puts '      return err;'
     puts '    }'
@@ -482,9 +493,11 @@ def gen_mb2(case_map, enc, prefix)
   diff_map = {}
   codes.each_with_index do |enc_code, _index|
     begin
-      unicode_code = map[enc_code] or raise "Encoding #{enc} code 0x%02X does not map to any Unicode code point" % enc_code
+      unicode_code = map[enc_code]
+      raise format('Encoding %s code 0x%02X does not map to any Unicode code point', enc, enc_code) unless unicode_code
+
       fold_result = case_map.fold([unicode_code], mode: :simple).pack('U*').encode(enc).codepoints
-      raise "Unexpected fold result for code #{unicode_code} (#{enc_code} in encoding #{enc}): #{fold_result.inspect}" if fold_result.length > 1
+      raise format('Unexpected fold result for code %d (0x%02X in encoding %s): %s', unicode_code, enc_code, enc, fold_result.inspect) if fold_result.length > 1
 
       fold_code = fold_result.first
     rescue StandardError
@@ -510,7 +523,7 @@ def gen_mb2(case_map, enc, prefix)
   puts '    return nk_enc_ascii_get_case_fold(enc, flags, code, folded_codes);'
   puts '  }'
   if has_sharp_s
-    puts '  if (code == 0x%02X && (flags & NK_FOLD_FULL) != 0) { // LATIN SMALL LETTER SHARP S' % rev_map[0x00DF]
+    puts format('  if (code == 0x%02X && (flags & NK_FOLD_FULL) != 0) { // LATIN SMALL LETTER SHARP S', rev_map[0x00DF])
     puts '    if (folded_codes != NULL) {'
     puts '      folded_codes[0] = 0x73;'
     puts '      folded_codes[1] = 0x73;'
@@ -571,7 +584,7 @@ def gen_mb2(case_map, enc, prefix)
   if has_sharp_s
     puts '  if ((flags & NK_FOLD_FULL) != 0 && code == 0x73 && folded_codes_len >= 2 && folded_codes[1] == 0x73) { // "ss"'
     puts '    unfold_items[unfold_count].folded_codes_len = 2;'
-    puts '    unfold_items[unfold_count].unfolded_code = 0x%02X;' % rev_map[0x00DF]
+    puts format('    unfold_items[unfold_count].unfolded_code = 0x%02X;', rev_map[0x00DF])
     puts '    unfold_count++;'
     puts '  }'
   end
@@ -593,7 +606,7 @@ def gen_mb2(case_map, enc, prefix)
   diff_map.each do |diff, range_set|
     range_set.each_range do |r|
       puts format('  for (uint32_t code = 0x%02X; code <= 0x%02X; code++) {', r.begin + diff, r.end + diff)
-      puts "    uint32_t folded_code = (uint32_t)(code #{diff.negative? ? '+' : '-'} #{diff.abs});"
+      puts format('    uint32_t folded_code = (uint32_t)(code %s %d);', diff.negative? ? '+' : '-', diff.abs)
       puts '    nk_error_t err = callback(code, &folded_code, 1, user_data);'
       puts '    if (err < 0) {'
       puts '      return err;'
@@ -605,7 +618,7 @@ def gen_mb2(case_map, enc, prefix)
   if has_sharp_s
     puts '  if ((flags & NK_FOLD_FULL) != 0) {'
     puts '    uint32_t folded_codes[2] = {0x73, 0x73}; // "ss"'
-    puts '    nk_error_t err = callback(0x%02X, folded_codes, 2, user_data); // LATIN SMALL LETTER SHARP S' % rev_map[0x00DF]
+    puts format('    nk_error_t err = callback(0x%02X, folded_codes, 2, user_data); // LATIN SMALL LETTER SHARP S', rev_map[0x00DF])
     puts '    if (err < 0) {'
     puts '      return err;'
     puts '    }'

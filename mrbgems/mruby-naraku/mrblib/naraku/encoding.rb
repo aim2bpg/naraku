@@ -1,11 +1,11 @@
 module Naraku
   class Encoding
     def unicode?
-      (flags & FLAG_UNICODE) != 0
+      flags.anybits?(FLAG_UNICODE)
     end
 
     def self_sync?
-      (flags & FLAG_SELF_SYNC) != 0
+      flags.anybits?(FLAG_SELF_SYNC)
     end
 
     private :_get_case_fold
@@ -24,9 +24,9 @@ module Naraku
 
     private :_iterate_case_fold
 
-    def iterate_case_fold(*options, &block)
+    def iterate_case_fold(*options, &)
       flags = Naraku.parse_fold_flags(options)
-      _iterate_case_fold(flags, &block)
+      _iterate_case_fold(flags, &)
     end
 
     private :_cprop?
@@ -43,9 +43,9 @@ module Naraku
 
       result = _get_cprop_code_range(cprop)
       case result
-      when :'delegate_7bit'
+      when :delegate_7bit
         delegate_range = (0x00..0x7F)
-      when :'delegate_8bit'
+      when :delegate_8bit
         delegate_range = (0x00..0xFF)
       else
         return result
@@ -55,15 +55,13 @@ module Naraku
       range_begin = nil
       range_end = nil
       delegate_range.each do |code|
-        if cprop?(code, cprop)
-          if range_begin != nil && code == range_end + 1
-            range_end = code
-          else
-            result << (range_begin..range_end) if range_begin
-            range_begin = code
-            range_end = code
-          end
+        next unless cprop?(code, cprop)
+
+        unless !range_begin.nil? && code == range_end + 1
+          result << (range_begin..range_end) if range_begin
+          range_begin = code
         end
+        range_end = code
       end
       result << (range_begin..range_end) if range_begin
 

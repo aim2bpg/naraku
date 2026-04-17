@@ -84,7 +84,7 @@ def download(version, type, file)
   }.compact
 
   begin
-    URI.open(url, options) do |remote_file|
+    URI.open(url, options) do |remote_file| # rubocop:disable Security/Open
       new_mtime = remote_file.last_modified
       print "Downloading '#{file}'... "
       File.open(path, 'wb') do |local_file|

@@ -32,8 +32,12 @@ parser = OptionParser.new do |opts|
     options[:bare_back_ref_max_num_limit] = value
   end
   opts.on('--max-capture-num N', Integer, 'Set max capture number') { |value| options[:max_capture_num_limit] = value }
-  opts.on('--back-ref-max-num N', Integer, 'Set back-reference max number') { |value| options[:back_ref_max_num_limit] = value }
-  opts.on('--max-capture-depth N', Integer, 'Set max capture depth') { |value| options[:max_capture_depth_limit] = value }
+  opts.on('--back-ref-max-num N', Integer, 'Set back-reference max number') do |value|
+    options[:back_ref_max_num_limit] = value
+  end
+  opts.on('--max-capture-depth N', Integer, 'Set max capture depth') do |value|
+    options[:max_capture_depth_limit] = value
+  end
   opts.on('--max-parse-depth N', Integer, 'Set max parse depth') { |value| options[:max_parse_depth_limit] = value }
   opts.on('--warning', 'Enable parser warning callback output') { options[:enable_warning] = true }
 end

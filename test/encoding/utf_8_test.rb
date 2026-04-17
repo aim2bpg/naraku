@@ -74,9 +74,9 @@ module Encoding
         end
       end
 
-      assert_raises(Naraku::Error, '') {
+      assert_raises(Naraku::Error, '') do
         E.encode_mbc(0x110000)
-      }
+      end
     end
 
     def test_decode_mbc
@@ -100,7 +100,7 @@ module Encoding
     end
 
     def test_self_sync_string
-      assert E.self_sync_string?("ABC")
+      assert E.self_sync_string?('ABC')
       assert E.self_sync_string?("\xC3\x9F")
       assert E.self_sync_string?("\xE3\x81\x82")
       assert E.self_sync_string?("\xF0\x9F\x98\x80")
