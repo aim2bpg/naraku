@@ -1,7 +1,7 @@
 def normalize_fold_flags(raw_fold_flags)
   return [] if raw_fold_flags.nil?
 
-  raw_fold_flags.map(&:to_sym)
+  raw_fold_flags.map { |flag| flag.is_a?(String) ? flag.to_sym : flag }
 end
 
 def normalize_cprop(raw_cprop)

@@ -74,6 +74,14 @@ class NarakuRubyTest < Minitest::Test
     assert(items.any? { |item| item[:code] == 0x41 && item[:folded_codes] == [0x61] })
   end
 
+  def test_iterate_case_fold_with_turkish_azeri_flag
+    items = NarakuRuby.iterate_case_fold(:turkish_azeri)
+    item = items.find { |entry| entry[:code] == 0x49 }
+
+    refute_nil item
+    assert_equal [0x131], item[:folded_codes]
+  end
+
   def test_cprop_code_range_uses_utf8
     assert_equal [0x00..0x7F], NarakuRuby.cprop_code_range('ASCII')
   end

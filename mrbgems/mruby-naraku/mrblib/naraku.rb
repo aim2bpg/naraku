@@ -1,5 +1,7 @@
 module Naraku
   def self.parse_fold_flags(options)
+    return options[0] if options.length == 1 && options[0].is_a?(Integer)
+
     flags = FOLD_DEFAULT
     options.each do |option|
       case option

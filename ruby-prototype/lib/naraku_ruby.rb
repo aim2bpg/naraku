@@ -79,3 +79,5 @@ module NarakuRuby
 end
 
 require_relative 'naraku_ruby/encoding'
+require_relative 'naraku_ruby/char_class'
+require_relative 'naraku_ruby/char_class_builder'
