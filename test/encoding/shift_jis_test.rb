@@ -1,5 +1,5 @@
 module Encoding
-  class Test_Shift_JIS < Mtest::Test
+  class Shift_JIS_Test < Mtest::Test
     E = Naraku::Encoding::SHIFT_JIS
 
     def test_name

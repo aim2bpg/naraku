@@ -1,5 +1,5 @@
 module Encoding
-  class Test_UTF_8 < Mtest::Test
+  class UTF_8_Test < Mtest::Test
     E = Naraku::Encoding::UTF_8
 
     def test_name

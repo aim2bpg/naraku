@@ -20,7 +20,7 @@ Naraku is a Ruby/Onigmo-compatible regular expression engine implemented in C.
   - Ruby-side prototyping code (VM/compiler experiments and bridge utilities).
   - `ruby-prototype/lib/mruby-scripts/`: scripts executed by mruby.
   - `ruby-prototype/lib/naraku_ruby/`: CRuby-side helper code for prototype workflow.
-  - `ruby-prototype/tests/`: prototype tests (run via top-level Rake task).
+  - `ruby-prototype/test/`: prototype tests (run via top-level Rake task).
 - `tests/`
   - mruby-based tests (entrypoint: `tests/run_test.rb`)
   - custom framework: `Mtest`

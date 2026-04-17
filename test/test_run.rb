@@ -36,7 +36,7 @@ def collect_test_files(dir = REQUIRE_BASE_DIR)
     entry_path = File.join(dir, entry_name)
     if File.directory?(entry_path)
       test_files.concat(collect_test_files(entry_path))
-    elsif entry_name.start_with?('test_') && entry_name.end_with?('.rb')
+    elsif entry_name.end_with?('_test.rb')
       test_files << entry_path
     end
   end

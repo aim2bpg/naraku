@@ -1,10 +1,10 @@
 # frozen_string_literal: true
 
-require_relative './ucd'
+require_relative 'ucd'
 
 module Unicode
   class CaseMap
-    def initialize(version)      
+    def initialize(version)
       @version = version
 
       @fold_items = {}
@@ -25,20 +25,18 @@ module Unicode
           if to_codes.nil?
             to_types << type
             to_codes = map[type]
+          elsif to_codes == map[type]
+            to_types << type
           else
-            if to_codes == map[type]
-              to_types << type
-            else
-              specials << { to_type: type, to_codes: map[type] }
-              if type == :upper && map[type] == map[:title]
-                specials.last[:to_type] = :upper_title
-                break
-              end
+            specials << { to_type: type, to_codes: map[type] }
+            if type == :upper && map[type] == map[:title]
+              specials.last[:to_type] = :upper_title
+              break
             end
           end
         end
 
-        is_title = [from_code] == map[:title] && [from_code] != map[:lower] && [from_code] != map[:upper]
+        is_title = map[:title] == [from_code] && map[:lower] != [from_code] && map[:upper] != [from_code]
         if is_title
           swap_codes =
             case from_code
@@ -75,23 +73,21 @@ module Unicode
         unfold_item = @unfold_items[to_codes]
 
         if to_types.include?(:fold)
-          if to_types.include?(:fold_full)
-            unfold_item[:fold_and_fold_full] << from_code
-          end
+          unfold_item[:fold_and_fold_full] << from_code if to_types.include?(:fold_full)
         else
           unfold_item[:fold] << from_code
         end
 
         item[:specials].each do |special|
-          if special[:to_type] == :fold_full
-            to_codes = special[:to_codes]
-            @unfold_items[to_codes] ||= {
-              fold: [],
-              fold_and_fold_full: [],
-              fold_full: [],
-            }
-            @unfold_items[to_codes][:fold_full] << from_code
-          end
+          next unless special[:to_type] == :fold_full
+
+          to_codes = special[:to_codes]
+          @unfold_items[to_codes] ||= {
+            fold: [],
+            fold_and_fold_full: [],
+            fold_full: [],
+          }
+          @unfold_items[to_codes][:fold_full] << from_code
         end
       end
     end
@@ -105,12 +101,8 @@ module Unicode
         codes = codes.codepoints
       end
 
-      if mode != :full && mode != :simple
-        raise ArgumentError, "Invalid mode: #{mode}"
-      end
-      if language && language != :turkic
-        raise ArgumentError, "Invalid language: #{language}"
-      end
+      raise ArgumentError, "Invalid mode: #{mode}" if mode != :full && mode != :simple
+      raise ArgumentError, "Invalid language: #{language}" if language && language != :turkic
 
       type = mode == :full ? :fold_full : :fold
       is_turkic = language == :turkic
@@ -130,7 +122,7 @@ module Unicode
 
         next item[:to_codes] if item[:to_types].include?(type)
 
-        special = item[:specials].find { _1[:to_type] == type }
+        special = item[:specials].find { it[:to_type] == type }
         special ? special[:to_codes] : [code]
       end
 
@@ -145,12 +137,8 @@ module Unicode
         codes = codes.codepoints
       end
 
-      if !%i[lower upper title swap].include?(map_type)
-        raise ArgumentError, "Invalid map_type: #{map_type}"
-      end
-      if language && !%i[turkic lithuanian].include?(language)
-        raise ArgumentError, "Invalid language: #{language}"
-      end
+      raise ArgumentError, "Invalid map_type: #{map_type}" unless %i[lower upper title swap].include?(map_type)
+      raise ArgumentError, "Invalid language: #{language}" if language && !%i[turkic lithuanian].include?(language)
 
       is_turkic = language == :turkic
       is_lithuanian = language == :lithuanian
@@ -159,32 +147,28 @@ module Unicode
       types =
         case map_type
         when :lower then [:lower]
-        when :upper then [:upper, :upper_title]
-        when :title then [:title, :upper_title]
-        when :swap  then [:swap, :lower, :upper, :upper_title]
+        when :upper then %i[upper upper_title]
+        when :title then %i[title upper_title]
+        when :swap  then %i[swap lower upper upper_title]
         end
 
       result = codes.each_with_index.flat_map do |code, index|
-        types = [:lower] if index > 0 && types.include?(:title)
+        types = [:lower] if index.positive? && types.include?(:title)
 
         # From:
         #   03A3; 03C2; 03A3; 03A3; Final_Sigma; # GREEK CAPITAL LETTER SIGMA
-        if context && code == 0x03A3 && types.include?(:lower) && final_sigma?(codes, index)
-          next [0x03C2]
-        end
+        next [0x03C2] if context && code == 0x03A3 && types.include?(:lower) && final_sigma?(codes, index)
 
         if is_lithuanian
           # From:
           #   0307; 0307; ; ; lt After_Soft_Dotted; # COMBINING DOT ABOVE
-          if code == 0x0307 && types.include?(:upper_title) && after_soft_dotted?(codes, index)
-            next []
-          end
+          next [] if code == 0x0307 && types.include?(:upper_title) && after_soft_dotted?(codes, index)
 
           # From:
           #   0049; 0069 0307; 0049; 0049; lt More_Above; # LATIN CAPITAL LETTER I
           #   004A; 006A 0307; 004A; 004A; lt More_Above; # LATIN CAPITAL LETTER J
           #   012E; 012F 0307; 012E; 012E; lt More_Above; # LATIN CAPITAL LETTER I WITH OGONEK
-          if (code == 0x0049 || code == 0x004A || code == 0x012E) && types.include?(:lower) && more_above?(codes, index)
+          if [0x0049, 0x004A, 0x012E].include?(code) && types.include?(:lower) && more_above?(codes, index)
             lower = code == 0x012E ? 0x012F : code + 0x20
             next [lower, 0x0307]
           end
@@ -193,8 +177,12 @@ module Unicode
           #   00CC; 0069 0307 0300; 00CC; 00CC; lt; # LATIN CAPITAL LETTER I WITH GRAVE
           #   00CD; 0069 0307 0301; 00CD; 00CD; lt; # LATIN CAPITAL LETTER I WITH ACUTE
           #   0128; 0069 0307 0303; 0128; 0128; lt; # LATIN CAPITAL LETTER I WITH TILDE
-          if (code == 0x00CC || code == 0x00CD || code == 0x0128) && types.include?(:lower)
-            above = code == 0x00CC ? 0x0300 : code == 0x00CD ? 0x0301 : 0x0303
+          if [0x00CC, 0x00CD, 0x0128].include?(code) && types.include?(:lower)
+            above = if code == 0x00CC
+                      0x0300
+                    else
+                      code == 0x00CD ? 0x0301 : 0x0303
+                    end
             next [0x0069, 0x0307, above]
           end
         end
@@ -203,39 +191,31 @@ module Unicode
           # From:
           #   0130; 0069; 0130; 0130; tr; # LATIN CAPITAL LETTER I WITH DOT ABOVE
           #   0130; 0069; 0130; 0130; az; # LATIN CAPITAL LETTER I WITH DOT ABOVE
-          if code == 0x0130 && types.include?(:lower)
-            next [0x0069]
-          end
+          next [0x0069] if code == 0x0130 && types.include?(:lower)
 
           # From:
           #   0307; ; 0307; 0307; tr After_I; # COMBINING DOT ABOVE
           #   0307; ; 0307; 0307; az After_I; # COMBINING DOT ABOVE
-          if code == 0x0307 && types.include?(:lower) && after_i?(codes, index)
-            next []
-          end
+          next [] if code == 0x0307 && types.include?(:lower) && after_i?(codes, index)
 
           # From:
           #   0049; 0131; 0049; 0049; tr Not_Before_Dot; # LATIN CAPITAL LETTER I
           #   0049; 0131; 0049; 0049; az Not_Before_Dot; # LATIN CAPITAL LETTER I
-          if code == 0x0049 && types.include?(:lower) && !before_dot?(codes, index)
-            next [0x0131]
-          end
+          next [0x0131] if code == 0x0049 && types.include?(:lower) && !before_dot?(codes, index)
 
           # From:
           #   0069; 0069; 0130; 0130; tr; # LATIN SMALL LETTER I
           #   0069; 0069; 0130; 0130; az; # LATIN SMALL LETTER I
-          if code == 0x0069 && types.include?(:upper_title)
-            next [0x0130]
-          end
+          next [0x0130] if code == 0x0069 && types.include?(:upper_title)
         end
 
         item = @fold_items[code] || @case_map_items[code]
         next [code] unless item
 
-        special = item[:specials].find { types.include?(_1[:to_type]) }
+        special = item[:specials].find { types.include?(it[:to_type]) }
         next special[:to_codes] if special
 
-        next item[:to_codes] if types.any? { item[:to_types].include?(_1) }
+        next item[:to_codes] if types.any? { item[:to_types].include?(it) }
 
         [code]
       end
@@ -264,7 +244,7 @@ module Unicode
       return false unless found
 
       # After C: not /\p{Case_Ignorable})* \p{cased}/
-      (index + 1...codes.size).each do |i|
+      ((index + 1)...codes.size).each do |i|
         return false if cased.include?(codes[i])
 
         break unless case_ignorable.include?(codes[i])
@@ -296,7 +276,7 @@ module Unicode
       ccc230 = @ccc['230']
 
       # After C: /[^\p{ccc=230} \p{ccc=0}]* [\p{ccc=230}]/
-      (index + 1...codes.size).each do |i|
+      ((index + 1)...codes.size).each do |i|
         return true if ccc230.include?(codes[i])
         break unless ccc0.include?(codes[i])
       end
@@ -324,7 +304,7 @@ module Unicode
       ccc230 = @ccc['230']
 
       # After C: /([^\p{ccc=230} \p{ccc=0}])* [\u0307]/
-      (index + 1...codes.size).each do |i|
+      ((index + 1)...codes.size).each do |i|
         return true if codes[i] == 0x0307
         break unless ccc0.include?(codes[i]) || ccc230.include?(codes[i])
       end

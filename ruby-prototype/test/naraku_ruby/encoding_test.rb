@@ -1,57 +1,8 @@
 # frozen_string_literal: true
 
-require_relative 'test_helper'
+require_relative '../test_helper'
 
-class TestEncoding < Minitest::Test
-  def setup
-    NarakuRuby.clear_cache!
-  end
-
-  def test_case_fold_uses_utf8
-    assert_equal [0x61], NarakuRuby.case_fold(0x41)
-  end
-
-  def test_expand_case_unfold_uses_utf8
-    result = NarakuRuby.expand_case_unfold([0x61])
-
-    refute_nil result
-    assert(result.any? { |item| item[:unfolded_code] == 0x41 })
-  end
-
-  def test_iterate_case_fold_uses_utf8
-    items = NarakuRuby.iterate_case_fold
-    assert(items.any? { |item| item[:code] == 0x41 && item[:folded_codes] == [0x61] })
-  end
-
-  def test_cprop_code_range_uses_utf8
-    assert_equal [0x00..0x7F], NarakuRuby.cprop_code_range('ASCII')
-  end
-
-  def test_encoding_bridge_caches_by_request
-    calls = 0
-    Open3.singleton_class.class_eval do
-      alias_method :__naraku_original_capture3, :capture3
-      define_method(:capture3) do |*args, **kwargs|
-        calls += 1
-        __naraku_original_capture3(*args, **kwargs)
-      end
-    end
-
-    begin
-      NarakuRuby.case_fold(0x41)
-      NarakuRuby.case_fold(0x41)
-      assert_equal 1, calls
-    ensure
-      Open3.singleton_class.class_eval do
-        remove_method :capture3
-        alias_method :capture3, :__naraku_original_capture3
-        remove_method :__naraku_original_capture3
-      end
-    end
-  end
-end
-
-class TestNarakuRubyEncoding < Minitest::Test
+class NarakuRubyEncodingTest < Minitest::Test
   def setup
     NarakuRuby.clear_cache!
   end

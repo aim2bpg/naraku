@@ -14,25 +14,28 @@ module Unicode
     end
 
     # Returns the total number of code points in the set.
-    def size =
+    def size
       @ranges.reduce(0) { |sum, r| sum + (r.end - r.begin + 1) }
+    end
 
     def range_size = @ranges.size
 
     # Checks if the set is empty.
-    def empty? = size == 0
+    def empty? = size.zero?
 
     # Checks if the set only contains ASCII code points (U+0000 to U+007F).
-    def ascii_only? =
+    def ascii_only?
       @ranges.empty? || (@ranges.last.end <= 0x7F)
+    end
 
     # Checks if the set only contains code points that can be represented in 8 bits (U+0000 to U+00FF).
-    def ascii_8bit_only? =
+    def ascii_8bit_only?
       @ranges.empty? || (@ranges.last.end <= 0xFF)
+    end
 
     # Adds a code point or range to the set, merging it with existing ranges
     # if necessary.
-    # 
+    #
     # ```ruby
     # rs = RangeSet.new
     # rs << 100
@@ -51,7 +54,7 @@ module Unicode
       insert_idx = @ranges.bsearch_index { |r| r.begin >= new_start } || @ranges.size
 
       start_idx = insert_idx
-      if insert_idx > 0 && @ranges[insert_idx - 1].end + 1 >= new_start
+      if insert_idx.positive? && @ranges[insert_idx - 1].end + 1 >= new_start
         start_idx = insert_idx - 1
         new_start = [@ranges[insert_idx - 1].begin, new_start].min
       end
@@ -89,13 +92,11 @@ module Unicode
       return self unless start_idx
 
       i = start_idx
-      while i < @ranges.size && @ranges[i].begin <= del_end
-        i += 1
-      end
+      i += 1 while i < @ranges.size && @ranges[i].begin <= del_end
 
       (i - 1).downto(start_idx) do |idx|
         existing = @ranges[idx]
-        
+
         if existing.begin < del_start && existing.end > del_end
           @ranges[idx] = (existing.begin..(del_start - 1))
           @ranges.insert(idx + 1, (del_end + 1)..existing.end)
@@ -110,7 +111,6 @@ module Unicode
 
       self
     end
-
 
     # Checks if this set includes a given code point.
     #
@@ -135,7 +135,7 @@ module Unicode
     end
 
     # Checks if this set is a subset of another set.
-    # 
+    #
     # ```ruby
     # rs1 = RangeSet.new(100..200)
     # rs2 = RangeSet.new(50..250)
@@ -172,15 +172,11 @@ module Unicode
       prev_end = -1
 
       each_range do |range|
-        if range.begin > prev_end + 1
-          result << (prev_end + 1..range.begin - 1)
-        end
+        result << ((prev_end + 1)..(range.begin - 1)) if range.begin > prev_end + 1
         prev_end = range.end
       end
 
-      if prev_end < 0x10FFFF
-        result << (prev_end + 1..0x10FFFF)
-      end
+      result << ((prev_end + 1)..0x10FFFF) if prev_end < 0x10FFFF
 
       result
     end
@@ -193,8 +189,9 @@ module Unicode
     # rs3 = rs1 & rs2
     # rs3.each { |r| p r } # => 150..200
     # ```
-    def &(other) =
+    def &(other)
       ~(~self | ~other)
+    end
 
     # Returns a new `RangeSet` that is the difference of this set and another set.
     #
@@ -204,8 +201,9 @@ module Unicode
     # rs3 = rs1 - rs2
     # rs3.each { |r| p r } # => 100..149
     # ```
-    def -(other) =
+    def -(other)
       self & ~other
+    end
 
     # Iterates over the ranges in this set.
     #
@@ -213,10 +211,10 @@ module Unicode
     # rs = RangeSet.new(100..200, 300..400)
     # rs.each { |r| p r } # => 100..200, 300..400
     # ```
-    def each_range(&block)
+    def each_range(&)
       return enum_for(:each_range) unless block_given?
 
-      @ranges.each(&block)
+      @ranges.each(&)
       self
     end
 

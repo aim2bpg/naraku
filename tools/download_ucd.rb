@@ -32,20 +32,20 @@ FILES = %w[
   extracted/DerivedGeneralCategory.txt
   extracted/DerivedName.txt
   extracted/DerivedNumericValues.txt
-]
+].freeze
 
 # File names to be downloaded from the `emoji` directory.
 EMOJI_FILES = %w[
   emoji-sequences.txt
   emoji-zwj-sequences.txt
-]
+].freeze
 
 # Returns the download URL for the given version, type, and file name.
 def url_for(version, type, file)
   case type
-  when :ucd then
+  when :ucd
     "https://www.unicode.org/Public/#{version}/ucd/#{file}"
-  when :emoji then
+  when :emoji
     # `emoji` data files were moved to each version's directory starting from
     # Unicode 17.0.0.
     if version.split('.').first.to_i >= 17
@@ -60,8 +60,9 @@ def url_for(version, type, file)
 end
 
 # Returns the local file path for the given version, type, and file name.
-def path_for(version, type, file) =
+def path_for(version, type, file)
   File.join(File.dirname(__FILE__), '..', 'data/unicode', version, type.to_s, file)
+end
 
 # Downloads the specified file for the given version and type. If the file already exists
 # and is up to date, it will not be downloaded again.
@@ -73,15 +74,13 @@ def download(version, type, file)
 
   FileUtils.mkdir_p(File.dirname(path))
 
-  if File.exist?(path)
-    mtime = File.mtime(path)
-  end
+  mtime = File.mtime(path) if File.exist?(path)
 
   options = {
     # I don't know why but downloading some files under `emoji` directory with
     # `If-Modified-Since` header causes 520 error, so we only set the header
     # for non `emoji` files.
-    'If-Modified-Since' => type != :emoji ? mtime&.httpdate : nil
+    'If-Modified-Since' => type == :emoji ? nil : mtime&.httpdate,
   }.compact
 
   begin
@@ -95,17 +94,15 @@ def download(version, type, file)
       File.utime(new_mtime, new_mtime, path)
     end
   rescue OpenURI::HTTPError => e
-    if e.io.status[0] == '304'
-      puts "File '#{file}' is up to date."
-    else
-      raise e
-    end
+    raise e unless e.io.status[0] == '304'
+
+    puts "File '#{file}' is up to date."
   end
 end
 
 version = ARGV[0]
 if version.nil?
-  puts "Usage: tools/download-ucd.rb <version>"
+  puts 'Usage: tools/download-ucd.rb <version>'
   exit 1
 end
 

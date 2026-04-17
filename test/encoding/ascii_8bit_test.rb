@@ -1,5 +1,5 @@
 module Encoding
-  class Test_ASCII_8BIT < Mtest::Test
+  class ASCII_8BIT_Test < Mtest::Test
     E = Naraku::Encoding::ASCII_8BIT
 
     def test_name

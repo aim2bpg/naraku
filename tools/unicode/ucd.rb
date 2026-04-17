@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require_relative './range_set'
+require_relative 'range_set'
 
 module Unicode
   # `UCD` provides methods to load various data from the Unicode Character
@@ -9,40 +9,6 @@ module Unicode
   # This module also provides method to load emoji sequence data.
   module UCD
     extend self
-
-    # Returns a path to the UCD file for the given version and file name.
-    private def path_for(version, type, file) =
-      File.join(File.dirname(__FILE__), '../..', 'data/unicode', version, type.to_s, file)
-
-    # Loads the UCD or similar format file for the given version and file name,
-    # and yield each line as an array of values.
-    private def load_file(version, type, file)
-      data_path = path_for(version, type, file)
-
-      File.read(data_path).each_line(chomp: true) do |line|
-        next if line.start_with?('#') || line.strip.empty?
-
-        line = line.gsub(/#.*\z/, '').split(';', -1).map(&:strip)
-        yield(*line)
-      end
-
-      nil
-    end
-
-    # Loads the UCD file for the given version and file name, and yields each
-    # code point range and its associated values.
-    private def load_file_cp(version, file)
-      load_file(version, 'ucd', file) do |range_str, *values|
-        match = range_str.match(/\A(?<begin>[0-9a-fA-F]+)(?:\.\.(?<end>[0-9a-fA-F]+))?\z/)
-
-        raise "Invalid range format in #{file}: #{range_str}" unless match
-
-        begin_cp = match[:begin].to_i(16)
-        end_cp = match[:end]&.to_i(16) || begin_cp
-
-        yield (begin_cp..end_cp), *values
-      end
-    end
 
     # Loads `extracted/DerivedName.txt` from the UCD for the given version, and
     # returns a hash mapping character names to their code points.
@@ -61,11 +27,11 @@ module Unicode
             next
           end
 
-          if cp <= 0xFFFF
-            cp_hex = cp.to_s(16).upcase.rjust(4, '0')
-          else
-            cp_hex = cp.to_s(16).upcase.rjust(6, '0')
-          end
+          cp_hex = if cp <= 0xFFFF
+                     cp.to_s(16).upcase.rjust(4, '0')
+                   else
+                     cp.to_s(16).upcase.rjust(6, '0')
+                   end
 
           names[name.sub('*', cp_hex)] = cp
         end
@@ -77,7 +43,7 @@ module Unicode
     # Loads `extracted/DerivedGeneralCategory.txt` from the UCD for the given
     # version, and returns a hash mapping value names of the `General_Category`
     # property to their code point ranges.
-    # 
+    #
     # Note that each key in the result is a short name for the property value.
     #
     # ```ruby
@@ -106,9 +72,9 @@ module Unicode
 
     # Loads `Scripts.txt` from the UCD for the given version, and returns a hash
     # mapping value names of the `Script` property to their code point ranges.
-    # 
+    #
     # Note that each key in the result is a long name for the property value.
-    # 
+    #
     # ```ruby
     # sc = Unicode::UCD.load_sc('17.0.0')
     #
@@ -132,7 +98,7 @@ module Unicode
     # point ranges of which this property value in the `Script_Extensions`
     # property (NOTE: value of the `Script_Extensions` property is a set of
     # `Script` property values).
-    # 
+    #
     # As the same as `load_sc`, each key in the result is a long name for
     # the property value.
     #
@@ -141,7 +107,7 @@ module Unicode
     # an argument `sc`. In addition, `Script_Extensions.txt` refers to the short
     # names of the `Script` property values, so this method also takes the result
     # of `load_property_value_aliases` as an argument `sc_aliases`.
-    # 
+    #
     # ```ruby
     # sc = Unicode::UCD.load_sc('17.0.0')
     # _, sc_aliases = Unicode::UCD.load_property_value_aliases('17.0.0')
@@ -182,7 +148,7 @@ module Unicode
     #
     # ```ruby
     # blocks = Unicode::UCD.load_blocks('17.0.0')
-    # 
+    #
     # blocks['Basic Latin'].include?(0x0041) # => true
     # ```
     def load_blocks(version)
@@ -200,7 +166,7 @@ module Unicode
     #
     # ```ruby
     # ages = Unicode::UCD.load_ages('17.0.0')
-    # 
+    #
     # ages['1.1'].include?(0x0041) # => true
     # ages['6.1'].include?(0x1F600) # => true
     # ```
@@ -225,7 +191,7 @@ module Unicode
     # mapping binary property names to their code point ranges.
     #
     # Note that each key in the result is a long name for the property.
-    # 
+    #
     # ```ruby
     # props = Unicode::UCD.load_props('17.0.0')
     #
@@ -276,7 +242,7 @@ module Unicode
 
     # Loads `emoji/emoji-data.txt` from the UCD for the given version, and
     # returns a hash mapping emoji property names to their code point ranges.
-    # 
+    #
     # Note that each key in the result is a long name for the property.
     #
     # ```ruby
@@ -301,7 +267,7 @@ module Unicode
     #
     # ```ruby
     # ccc = Unicode::UCD.load_ccc('17.0.0')
-    # 
+    #
     # ccc['230'].include?(0x0301) # => true
     # ```
     def load_ccc(version)
@@ -313,7 +279,7 @@ module Unicode
 
       # The default value of `ccc` is `0`.
       ccc['0'] ||= RangeSet.new
-      ccc['0'] = ccc['0'] | ~ccc.filter { |k, _| k != '0' }.values.reduce(RangeSet.new, :|)
+      ccc['0'] = ccc['0'] | ~ccc.except('0').values.reduce(RangeSet.new, :|)
 
       ccc
     end
@@ -324,7 +290,7 @@ module Unicode
     #
     # ```ruby
     # gcb = Unicode::UCD.load_grapheme_cluster_breaks('17.0.0')
-    # 
+    #
     # gcb['CR'].include?(0x000D) # => true
     # ```
     def load_grapheme_cluster_breaks(version)
@@ -344,7 +310,7 @@ module Unicode
     #
     # ```ruby
     # numeric_values = Unicode::UCD.load_numeric_values('17.0.0')
-    # 
+    #
     # numeric_values[1].include?(0x0031) # => true
     # numeric_values[1/320r].include?(0x11FC0) # => true
     # ```
@@ -407,7 +373,7 @@ module Unicode
     #
     # The case mapping information for each code point is represented as a hash
     # with the following keys:
-    # 
+    #
     # - `:upper`: an array of code points that are the uppercase mapping.
     # - `:lower`: an array of code points that are the lowercase mapping.
     # - `:title`: an array of code points that are the titlecase mapping.
@@ -419,7 +385,7 @@ module Unicode
     #
     # ```ruby
     # case_map = Unicode::UCD.load_case_map('17.0.0')
-    # 
+    #
     # case_map[0x0041]
     # # => {
     #   upper: [0x0041],
@@ -437,7 +403,7 @@ module Unicode
 
         code = code.to_i(16)
         upper, lower, title = line[11..13].map { |v| v.empty? ? nil : v.to_i(16) }
-        
+
         if upper || lower || title
           case_map[code] = {}
           case_map[code][:upper] = upper ? [upper] : [code]
@@ -457,9 +423,9 @@ module Unicode
         upper = upper.split.map { |v| v.to_i(16) }
 
         case_map[code] ||= {}
-        case_map[code][:lower] = [code] != lower ? lower : [code]
-        case_map[code][:title] = [code] != title ? title : [code]
-        case_map[code][:upper] = [code] != upper ? upper : [code]
+        case_map[code][:lower] = lower == [code] ? [code] : lower
+        case_map[code][:title] = title == [code] ? [code] : title
+        case_map[code][:upper] = upper == [code] ? [code] : upper
         case_map[code][:fold] = [code]
         case_map[code][:fold_full] = [code]
       end
@@ -491,7 +457,7 @@ module Unicode
     # and sequences.
     #
     # The value for each key in the result is a hash with the following keys:
-    # 
+    #
     # - `:rs`: a `RangeSet` of code points that have the property.
     # - `:seqs`: an array of emoji sequences (each sequence is an array of code points)
     #   that have the property.
@@ -508,7 +474,7 @@ module Unicode
       load_file(version, :emoji, 'emoji-sequences.txt') do |code, prop|
         emoji_seqs[prop] ||= {
           rs: RangeSet.new,
-          seqs: []
+          seqs: [],
         }
 
         match = code.match(/\A(?<begin>[0-9a-fA-F]+)(?:\.\.(?<end>[0-9a-fA-F]+))?\z/)
@@ -525,7 +491,7 @@ module Unicode
       load_file(version, :emoji, 'emoji-zwj-sequences.txt') do |code, prop|
         emoji_seqs[prop] ||= {
           rs: RangeSet.new,
-          seqs: []
+          seqs: [],
         }
 
         emoji_seqs[prop][:seqs] << code.split.map { |v| v.to_i(16) }
@@ -533,11 +499,51 @@ module Unicode
 
       keys = emoji_seqs.keys
       emoji_seqs['RGI_Emoji'] = {
-        rs: keys.map { p [_1, emoji_seqs[_1]]; emoji_seqs[_1][:rs] }.reduce(RangeSet.new, :|),
-        seqs: keys.flat_map { emoji_seqs[_1][:seqs] }
+        rs: keys.map do
+          p [it, emoji_seqs[it]]
+          emoji_seqs[it][:rs]
+        end.reduce(RangeSet.new, :|),
+        seqs: keys.flat_map { emoji_seqs[it][:seqs] },
       }
 
       emoji_seqs
+    end
+
+    private
+
+    # Returns a path to the UCD file for the given version and file name.
+    def path_for(version, type, file)
+      File.join(File.dirname(__FILE__), '../..', 'data/unicode', version, type.to_s, file)
+    end
+
+    # Loads the UCD or similar format file for the given version and file name,
+    # and yield each line as an array of values.
+    def load_file(version, type, file)
+      data_path = path_for(version, type, file)
+
+      File.read(data_path).each_line(chomp: true) do |line|
+        next if line.start_with?('#') || line.strip.empty?
+
+        line = line.gsub(/#.*\z/, '').split(';', -1).map(&:strip)
+        yield(*line)
+      end
+
+      nil
+    end
+
+    # Loads the UCD file for the given version and file name, and yields each
+    # code point range and its associated values.
+    def load_file_cp(version, file)
+      load_file(version, 'ucd', file) do |range_str, *values|
+        match = range_str.match(/\A(?<begin>[0-9a-fA-F]+)(?:\.\.(?<end>[0-9a-fA-F]+))?\z/)
+
+        raise "Invalid range format in #{file}: #{range_str}" unless match
+
+        begin_cp = match[:begin].to_i(16)
+        end_cp = match[:end]&.to_i(16) || begin_cp
+
+        yield (begin_cp..end_cp), *values
+      end
     end
   end
 end

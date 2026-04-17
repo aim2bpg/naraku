@@ -7,11 +7,12 @@ AllCops:
     - 'Rakefile'
     - 'build_config.rb'
     - 'ruby-prototype/**/*.rb'
+    - 'tools/**/*.rb'
   Exclude:
     - 'submodules/**/*'
+    - 'test/**/*'
     - 'build/**/*'
     - '.ruby-lsp/**/*'
-    - 'tests/**/*'
     - 'mrbgems/mruby-naraku/mrblib/**/*'
     - 'mrbgems/mruby-naraku/mrbgem.rake'
     - 'ruby-prototype/lib/mruby-scripts/**/*'
@@ -42,6 +43,9 @@ Metrics/CyclomaticComplexity:
 
 Metrics/PerceivedComplexity:
   Max: 16
+
+Naming/MethodParameterName:
+  MinNameLength: 2
 
 Style/Documentation:
   Enabled: false

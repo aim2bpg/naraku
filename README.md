@@ -58,7 +58,7 @@ bundle exec rake naraku:test_mruby_verbose
 
 - Prototype code is placed under `ruby-prototype/`.
   - Library code: `ruby-prototype/lib`
-  - Tests: `ruby-prototype/tests`
+  - Tests: `ruby-prototype/test`
 
 Bundler setup (project root):
 

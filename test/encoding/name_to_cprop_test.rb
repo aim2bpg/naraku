@@ -1,5 +1,5 @@
 module Encoding
-  class TestNameToCprop < Mtest::Test
+  class NameToCpropTest < Mtest::Test
     def test_ignore_case
       cprop = Naraku::Encoding.name_to_cprop('NEWLINE')
       assert_equal cprop, Naraku::Encoding.name_to_cprop('newline')

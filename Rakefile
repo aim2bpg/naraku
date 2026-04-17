@@ -10,44 +10,44 @@ UNICODE_RUBY_SOURCES = FileList['tools/unicode/*.rb'].to_a.freeze
 
 GENERATED_HEADER_RULES = {
   'include/naraku_cprop_names.h' => {
-    deps: ['tools/gen-cprop-names.rb', *UNICODE_RUBY_SOURCES],
-    command: "ruby tools/gen-cprop-names.rb --header #{UNICODE_VERSION} > include/naraku_cprop_names.h",
+    deps: ['tools/gen_cprop_names.rb', *UNICODE_RUBY_SOURCES],
+    command: "ruby tools/gen_cprop_names.rb --header #{UNICODE_VERSION} > include/naraku_cprop_names.h",
   },
   'src/.gen/name2cprop.gen.h' => {
-    deps: ['tools/gen-cprop-names.rb', *UNICODE_RUBY_SOURCES],
-    command: "ruby tools/gen-cprop-names.rb #{UNICODE_VERSION} > src/.gen/name2cprop.gen.h",
+    deps: ['tools/gen_cprop_names.rb', *UNICODE_RUBY_SOURCES],
+    command: "ruby tools/gen_cprop_names.rb #{UNICODE_VERSION} > src/.gen/name2cprop.gen.h",
   },
   'src/.gen/cprop_range_ascii.gen.h' => {
-    deps: ['tools/gen-cprop-range.rb', *UNICODE_RUBY_SOURCES],
-    command: "ruby tools/gen-cprop-range.rb #{UNICODE_VERSION} --ascii > src/.gen/cprop_range_ascii.gen.h",
+    deps: ['tools/gen_cprop_range.rb', *UNICODE_RUBY_SOURCES],
+    command: "ruby tools/gen_cprop_range.rb #{UNICODE_VERSION} --ascii > src/.gen/cprop_range_ascii.gen.h",
   },
   'src/.gen/case_map_ascii.gen.h' => {
-    deps: ['tools/gen-case-map.rb', *UNICODE_RUBY_SOURCES],
-    command: "ruby tools/gen-case-map.rb #{UNICODE_VERSION} --ascii > src/.gen/case_map_ascii.gen.h",
+    deps: ['tools/gen_case_map.rb', *UNICODE_RUBY_SOURCES],
+    command: "ruby tools/gen_case_map.rb #{UNICODE_VERSION} --ascii > src/.gen/case_map_ascii.gen.h",
   },
   'src/.gen/cprop_range_unicode.gen.h' => {
-    deps: ['tools/gen-cprop-range.rb', *UNICODE_RUBY_SOURCES],
-    command: "ruby tools/gen-cprop-range.rb #{UNICODE_VERSION} --unicode > src/.gen/cprop_range_unicode.gen.h",
+    deps: ['tools/gen_cprop_range.rb', *UNICODE_RUBY_SOURCES],
+    command: "ruby tools/gen_cprop_range.rb #{UNICODE_VERSION} --unicode > src/.gen/cprop_range_unicode.gen.h",
   },
   'src/.gen/case_map_unicode.gen.h' => {
-    deps: ['tools/gen-case-map.rb', *UNICODE_RUBY_SOURCES],
-    command: "ruby tools/gen-case-map.rb #{UNICODE_VERSION} --unicode > src/.gen/case_map_unicode.gen.h",
+    deps: ['tools/gen_case_map.rb', *UNICODE_RUBY_SOURCES],
+    command: "ruby tools/gen_case_map.rb #{UNICODE_VERSION} --unicode > src/.gen/case_map_unicode.gen.h",
   },
   'src/encoding/.gen/cprop_range_iso_8859_1.gen.h' => {
-    deps: ['tools/gen-cprop-range.rb', *UNICODE_RUBY_SOURCES],
-    command: "ruby tools/gen-cprop-range.rb #{UNICODE_VERSION} --single-byte ISO-8859-1 --prefix iso_8859_1 > src/encoding/.gen/cprop_range_iso_8859_1.gen.h",
+    deps: ['tools/gen_cprop_range.rb', *UNICODE_RUBY_SOURCES],
+    command: "ruby tools/gen_cprop_range.rb #{UNICODE_VERSION} --single-byte ISO-8859-1 --prefix iso_8859_1 > src/encoding/.gen/cprop_range_iso_8859_1.gen.h",
   },
   'src/encoding/.gen/case_map_iso_8859_1.gen.h' => {
-    deps: ['tools/gen-case-map.rb', *UNICODE_RUBY_SOURCES],
-    command: "ruby tools/gen-case-map.rb #{UNICODE_VERSION} --single-byte ISO-8859-1 --prefix iso_8859_1 > src/encoding/.gen/case_map_iso_8859_1.gen.h",
+    deps: ['tools/gen_case_map.rb', *UNICODE_RUBY_SOURCES],
+    command: "ruby tools/gen_case_map.rb #{UNICODE_VERSION} --single-byte ISO-8859-1 --prefix iso_8859_1 > src/encoding/.gen/case_map_iso_8859_1.gen.h",
   },
   'src/encoding/.gen/cprop_range_shift_jis.gen.h' => {
-    deps: ['tools/gen-cprop-range.rb', *UNICODE_RUBY_SOURCES],
-    command: "ruby tools/gen-cprop-range.rb #{UNICODE_VERSION} --multi-byte2 Shift_JIS --prefix shift_jis > src/encoding/.gen/cprop_range_shift_jis.gen.h",
+    deps: ['tools/gen_cprop_range.rb', *UNICODE_RUBY_SOURCES],
+    command: "ruby tools/gen_cprop_range.rb #{UNICODE_VERSION} --multi-byte2 Shift_JIS --prefix shift_jis > src/encoding/.gen/cprop_range_shift_jis.gen.h",
   },
   'src/encoding/.gen/case_map_shift_jis.gen.h' => {
-    deps: ['tools/gen-case-map.rb', *UNICODE_RUBY_SOURCES],
-    command: "ruby tools/gen-case-map.rb #{UNICODE_VERSION} --multi-byte2 Shift_JIS --prefix shift_jis > src/encoding/.gen/case_map_shift_jis.gen.h",
+    deps: ['tools/gen_case_map.rb', *UNICODE_RUBY_SOURCES],
+    command: "ruby tools/gen_case_map.rb #{UNICODE_VERSION} --multi-byte2 Shift_JIS --prefix shift_jis > src/encoding/.gen/case_map_shift_jis.gen.h",
   },
 }.freeze
 
@@ -105,12 +105,12 @@ namespace :naraku do
 
   desc 'Run mruby test suite'
   task test_mruby: :ensure_mruby do
-    sh 'bin/mruby tests/run_test.rb'
+    sh 'bin/mruby test/test_run.rb'
   end
 
   desc 'Run mruby test suite (verbose)'
   task test_mruby_verbose: :ensure_mruby do
-    sh 'bin/mruby tests/run_test.rb -v'
+    sh 'bin/mruby test/test_run.rb -v'
   end
 
   desc 'Format C source files'
@@ -135,9 +135,9 @@ end
 namespace :ruby_prototype do
   desc 'Run ruby-prototype tests'
   Minitest::TestTask.create(:test) do |t|
-    t.libs << 'ruby-prototype/tests'
+    t.libs << 'ruby-prototype/test'
     t.libs << 'ruby-prototype/lib'
-    t.test_globs = ['ruby-prototype/tests/test_*.rb']
+    t.test_globs = ['ruby-prototype/test/**/*_test.rb']
   end
 end
 

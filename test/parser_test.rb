@@ -1,5 +1,4 @@
-module Parser
-  class TestParser < Mtest::Test
+  class ParserTest < Mtest::Test
     def parse(pattern, encoding: Naraku::Encoding::UTF_8, **options)
       parser = Naraku::Parser.new(encoding, pattern, **options)
       node = parser.parse
@@ -1149,664 +1148,662 @@ module Parser
       assert_equal false, result[:allows_newline]
     end
 
-    # ========================================================================
-    #
-    # Combined patterns:
-    #
-    # ========================================================================
-
-    def test_combined_literal_quantifier_alt
-      # `ab*|cd+` should parse as alt(concat(a, b*), concat(c, d+))
-      result = parse('ab*|cd+')
-      assert_equal :alt, result[:type]
-      assert_equal 2, result[:children].length
-
-      left = result[:children][0]
-      assert_equal :concat, left[:type]
-      assert_equal 2, left[:children].length
-      assert_equal :literal, left[:children][0][:type]
-      assert_equal 'a', left[:children][0][:buf]
-      assert_equal :quantifier, left[:children][1][:type]
-
-      right = result[:children][1]
-      assert_equal :concat, right[:type]
-      assert_equal 2, right[:children].length
-      assert_equal :literal, right[:children][0][:type]
-      assert_equal 'c', right[:children][0][:buf]
-      assert_equal :quantifier, right[:children][1][:type]
-    end
-
-    def test_multiple_quantifiers
-      result = parse('a*{2}')
-      assert_equal :quantifier, result[:type]
-      assert_equal 2, result[:min]
-      assert_equal 2, result[:max]
-      assert_equal :greedy, result[:quantifier_type]
-
-      child = result[:child]
-      assert_equal :quantifier, child[:type]
-      assert_equal 0, child[:min]
-      assert_equal false, child[:has_max]
-      assert_equal nil, child[:max]
-      assert_equal :greedy, child[:quantifier_type]
-
-      child = child[:child]
-      assert_equal :literal, child[:type]
-      assert_equal 'a', child[:buf]
-    end
-
-    def test_assertion_in_concat
-      result = parse('^a$')
-      assert_equal :concat, result[:type]
-      assert_equal 3, result[:children].length
-      assert_equal :assertion, result[:children][0][:type]
-      assert_equal :begin_of_line, result[:children][0][:assertion_type]
-      assert_equal :literal, result[:children][1][:type]
-      assert_equal :assertion, result[:children][2][:type]
-      assert_equal :end_of_line, result[:children][2][:assertion_type]
-    end
-
-    # ========================================================================
-    #
-    # Groups:
-    #
-    # ========================================================================
-
-    def test_group_capturing
-      result = parse('(a)')
-      assert_equal :capture, result[:type]
-      assert_equal 1, result[:capture_num]
-      assert_equal :literal, result[:child][:type]
-      assert_equal 'a', result[:child][:buf]
-    end
-
-    def test_group_nested
-      result = parse('(a(b))')
-      assert_equal :capture, result[:type]
-      assert_equal 1, result[:capture_num]
-
-      child = result[:child]
-      assert_equal :concat, child[:type]
-      assert_equal 2, child[:children].length
-      assert_equal :literal, child[:children][0][:type]
-      assert_equal 'a', child[:children][0][:buf]
-
-      inner_group = child[:children][1]
-      assert_equal :capture, inner_group[:type]
-      assert_equal 2, inner_group[:capture_num]
-      assert_equal 'b', inner_group[:child][:buf]
-    end
-
-    def test_group_non_capturing
-      result = parse('(?:a)')
-      assert_equal :group, result[:type]
-      assert_equal :literal, result[:child][:type]
-      assert_equal 'a', result[:child][:buf]
-    end
-
-    def test_group_inline_options
-      result = parse('(?i:a)a')
-      assert_equal :concat, result[:type]
-      assert_equal 2, result[:children].length
-
-      group = result[:children][0]
-      assert_equal :group, group[:type]
-      assert_equal :literal, group[:child][:type]
-      assert_equal true, group[:child][:is_ignore_case]
-
-      literal = result[:children][1]
-      assert_equal :literal, literal[:type]
-      assert_equal 'a', literal[:buf]
-      assert_equal false, literal[:is_ignore_case]
-    end
-
-    def test_group_inline_option_I_is_sugar_for_iSA
-      result_i = parse('(?I:a)')
-      result_isa = parse('(?iSA:a)')
-      assert_equal result_isa[:child][:is_ignore_case], result_i[:child][:is_ignore_case]
-      assert_equal result_isa[:child][:fold_flags], result_i[:child][:fold_flags]
-    end
-
-    def test_group_inline_option_minus_I_is_same_as_minus_i
-      result_minus_i = parse('(?i-i:a)')
-      result_minus_I = parse('(?i-I:a)')
-      assert_equal result_minus_i[:child][:is_ignore_case], result_minus_I[:child][:is_ignore_case]
-      assert_equal false, result_minus_I[:child][:is_ignore_case]
-    end
-
-    def test_group_inline_option_minus_A_and_minus_T_are_allowed
-      result_i = parse('(?i:a)')
-      result_iat_minus_at = parse('(?iAT-AT:a)')
-      assert_equal result_i[:child][:is_ignore_case], result_iat_minus_at[:child][:is_ignore_case]
-      assert_equal result_i[:child][:fold_flags], result_iat_minus_at[:child][:fold_flags]
-    end
-
-    def test_undefined_group_option
-      assert_parse_error('(?z)', 'undefined group option', offset: 2, length: 1)
-    end
-
-    def test_non_boolean_group_option_in_negative_mode
-      assert_parse_error('(?-S:a)', 'group option is not boolean', offset: 3, length: 1)
-      assert_parse_error('(?-F:a)', 'group option is not boolean', offset: 3, length: 1)
-      assert_parse_error('(?-a:a)', 'group option is not boolean', offset: 3, length: 1)
-      assert_parse_error('(?-d:a)', 'group option is not boolean', offset: 3, length: 1)
-      assert_parse_error('(?-u:a)', 'group option is not boolean', offset: 3, length: 1)
-    end
-
-    def test_warning_for_redundant_minus_in_group_options
-      warnings = collect_parse_warnings('(?--i)')
-      assert_equal 1, warnings.length
-      assert_equal "redundant '-' in group options", warnings[0][:message]
-      assert_equal 3, warnings[0][:offset]
-      assert_equal 1, warnings[0][:length]
-    end
-
-    def test_group_named
-      result = parse('(?<name>a)')
-      assert_equal :capture, result[:type]
-      assert_equal true, result[:has_name]
-      assert_equal 'name', result[:name]
-      assert_equal 0, result[:capture_num]
-
-      result = parse("(?'name'a)")
-      assert_equal :capture, result[:type]
-      assert_equal true, result[:has_name]
-      assert_equal 'name', result[:name]
-      assert_equal 0, result[:capture_num]
-    end
-
-    def test_error_invalid_group_name
-      assert_parse_error('(?<-a>)', 'invalid group name', offset: 3, length: 2)
-      assert_parse_error('(?<1>a)', 'invalid group name', offset: 3, length: 1)
-      assert_parse_error("(?'1'a)", 'invalid group name', offset: 3, length: 1)
-    end
-
-    def test_error_empty_group_name
-      assert_parse_error('(?<>)', 'empty group name', offset: 3, length: 0)
-      assert_parse_error("(?'')", 'empty group name', offset: 3, length: 0)
-    end
-
-    def test_lookahead_positive
-      result = parse('(?=a)')
-      assert_equal :assertion, result[:type]
-      assert_equal :positive_lookahead, result[:assertion_type]
-      assert_equal :literal, result[:child][:type]
-      assert_equal 'a', result[:child][:buf]
-    end
-
-    def test_lookahead_negative
-      result = parse('(?!a)')
-      assert_equal :assertion, result[:type]
-      assert_equal :negative_lookahead, result[:assertion_type]
-      assert_equal :literal, result[:child][:type]
-      assert_equal 'a', result[:child][:buf]
-    end
-
-    def test_lookbehind_positive
-      result = parse('(?<=a)')
-      assert_equal :assertion, result[:type]
-      assert_equal :positive_lookbehind, result[:assertion_type]
-      assert_equal :literal, result[:child][:type]
-      assert_equal 'a', result[:child][:buf]
-    end
-
-    def test_lookbehind_negative
-      result = parse('(?<!a)')
-      assert_equal :assertion, result[:type]
-      assert_equal :negative_lookbehind, result[:assertion_type]
-      assert_equal :literal, result[:child][:type]
-      assert_equal 'a', result[:child][:buf]
-    end
-
-    def test_atomic_group
-      result = parse('(?>a)')
-      assert_equal :atomic, result[:type]
-      assert_equal :literal, result[:child][:type]
-      assert_equal 'a', result[:child][:buf]
-    end
-
-    def test_absence_group
-      result = parse('(?~a)')
-      assert_equal :absence, result[:type]
-      assert_equal :literal, result[:child][:type]
-      assert_equal 'a', result[:child][:buf]
-    end
-
-    def test_conditional
-      result = parse('(?(1)a|b)')
-      assert_equal :conditional, result[:type]
-      assert_equal :capture_num, result[:target_kind]
-      assert_equal 1, result[:capture_num]
-      assert_equal :literal, result[:yes_child][:type]
-      assert_equal 'a', result[:yes_child][:buf]
-      assert_equal :literal, result[:no_child][:type]
-      assert_equal 'b', result[:no_child][:buf]
-
-      # Conditional with only true branch
-      result = parse('(?(1)a)')
-      assert_equal :conditional, result[:type]
-      assert_equal :capture_num, result[:target_kind]
-      assert_equal 1, result[:capture_num]
-      assert_equal :literal, result[:yes_child][:type]
-      assert_equal 'a', result[:yes_child][:buf]
-      assert_equal nil, result[:no_child]
-    end
-
-    def test_conditional_with_depth
-      result = parse('(?(1+1)a|b)')
-      assert_equal :conditional, result[:type]
-      assert_equal :capture_num, result[:target_kind]
-      assert_equal 1, result[:capture_num]
-      assert_equal true, result[:has_depth]
-      assert_equal 1, result[:depth]
-      assert_equal :literal, result[:yes_child][:type]
-      assert_equal 'a', result[:yes_child][:buf]
-      assert_equal :literal, result[:no_child][:type]
-      assert_equal 'b', result[:no_child][:buf]
-    end
-
-    def test_conditional_named
-      result = parse('(?(<name>)a|b)')
-      assert_equal :conditional, result[:type]
-      assert_equal :name, result[:target_kind]
-      assert_equal true, result[:has_name]
-      assert_equal 'name', result[:name]
-      assert_equal nil, result[:capture_num]
-      assert_equal :literal, result[:yes_child][:type]
-      assert_equal 'a', result[:yes_child][:buf]
-      assert_equal :literal, result[:no_child][:type]
-      assert_equal 'b', result[:no_child][:buf]
-
-      result = parse(%q{(?('name')a|b)})
-      assert_equal :conditional, result[:type]
-      assert_equal :name, result[:target_kind]
-      assert_equal true, result[:has_name]
-      assert_equal 'name', result[:name]
-      assert_equal nil, result[:capture_num]
-      assert_equal :literal, result[:yes_child][:type]
-      assert_equal 'a', result[:yes_child][:buf]
-      assert_equal :literal, result[:no_child][:type]
-      assert_equal 'b', result[:no_child][:buf]
-    end
-
-    def test_conditional_incomplete
-      assert_parse_error('(?(1', 'incomplete group specifier', offset: 0, length: 4)
-    end
-
-    def test_conditional_invalid_capture_number
-      assert_parse_error('(?(0)a|b)', 'invalid conditional capture number', offset: 3, length: 1)
-    end
-
-    def test_conditional_errors
-      assert_parse_error('(?(<>)a|b)', 'empty group name', offset: 4, length: 0)
-      assert_parse_error('(?(x)a|b)', 'incomplete group specifier', offset: 0, length: 3)
-      assert_parse_error('(?(<name)a)', 'incomplete group specifier', offset: 0, length: 11)
-      assert_parse_error('(?(1)a', 'invalid conditional group', offset: 6, length: 0)
-      assert_parse_error('(?(1)a|b', 'invalid conditional group', offset: 8, length: 0)
-    end
-
-    def test_unclosed_group
-      assert_parse_error('(', 'unterminated group: missing closing parenthesis', offset: 1, length: 0)
-      assert_parse_error('(abc', 'unterminated group: missing closing parenthesis', offset: 4, length: 0)
-    end
-
-    def test_unmatched_close_paren
-      assert_parse_error(')', 'unmatched close parenthesis', offset: 0, length: 1)
-      assert_parse_error('abc)', 'unmatched close parenthesis', offset: 3, length: 1)
-    end
-
-    def test_incomplete_group_specifier
-      assert_parse_error('(?', 'incomplete group specifier', offset: 0, length: 2)
-    end
-
-    # ========================================================================
-    #
-    # Character classes:
-    #
-    # ========================================================================
-
-    def test_char_class
-      result = parse('[abc]')
-      assert_equal :char_class, result[:type]
-      assert_equal true, result[:is_positive]
-      assert_equal 1, result[:unions].length
-      assert_equal 3, result[:unions][0][:items].length
-      assert_equal :code, result[:unions][0][:items][0][:type]
-      assert_equal 97, result[:unions][0][:items][0][:code]
-      assert_equal :code, result[:unions][0][:items][1][:type]
-      assert_equal 98, result[:unions][0][:items][1][:code]
-      assert_equal :code, result[:unions][0][:items][2][:type]
-      assert_equal 99, result[:unions][0][:items][2][:code]
-
-      result = parse('[\\d\\w]')
-      assert_equal :char_class, result[:type]
-      assert_equal :char_type, result[:unions][0][:items][0][:type]
-      assert_equal true, result[:unions][0][:items][0][:is_positive]
-      assert_equal :digit, result[:unions][0][:items][0][:char_type]
-      assert_equal :char_type, result[:unions][0][:items][1][:type]
-      assert_equal true, result[:unions][0][:items][1][:is_positive]
-      assert_equal :word, result[:unions][0][:items][1][:char_type]
-
-      result = parse('[\\p{Lu}]')
-      assert_equal :char_class, result[:type]
-      assert_equal :char_prop, result[:unions][0][:items][0][:type]
-      assert_equal true, result[:unions][0][:items][0][:is_positive]
-      assert_equal Naraku::Encoding.name_to_cprop('Lu'), result[:unions][0][:items][0][:cprop]
-    end
-
-    def test_char_class_negated
-      result = parse('[^abc]')
-      assert_equal :char_class, result[:type]
-      assert_equal false, result[:is_positive]
-      assert_equal 3, result[:unions][0][:items].length
-      assert_equal :code, result[:unions][0][:items][0][:type]
-      assert_equal 97, result[:unions][0][:items][0][:code]
-    end
-
-    def test_char_class_range
-      result = parse('[a-z]')
-      assert_equal :char_class, result[:type]
-      assert_equal :range, result[:unions][0][:items][0][:type]
-      assert_equal 97, result[:unions][0][:items][0][:begin_code]
-      assert_equal 122, result[:unions][0][:items][0][:end_code]
-
-      result = parse('[a-z0-9]')
-      assert_equal :char_class, result[:type]
-      assert_equal :range, result[:unions][0][:items][0][:type]
-      assert_equal :range, result[:unions][0][:items][1][:type]
-
-      result = parse('[-a]')
-      assert_equal :char_class, result[:type]
-      assert_equal :code, result[:unions][0][:items][0][:type]
-      assert_equal 45, result[:unions][0][:items][0][:code]
-
-      result = parse('[a-]')
-      assert_equal :char_class, result[:type]
-      assert_equal :code, result[:unions][0][:items][1][:type]
-      assert_equal 45, result[:unions][0][:items][1][:code]
-    end
-
-    def test_char_class_nested
-      result = parse('[[ab]]')
-      assert_equal :char_class, result[:type]
-      assert_equal :nested_char_class, result[:unions][0][:items][0][:type]
-      assert_equal true, result[:unions][0][:items][0][:is_positive]
-      assert_equal :code, result[:unions][0][:items][0][:unions][0][:items][0][:type]
-      assert_equal 97, result[:unions][0][:items][0][:unions][0][:items][0][:code]
-
-      result = parse('[[^a]&&[ab]]')
-      assert_equal :char_class, result[:type]
-      assert_equal 2, result[:unions].length
-      assert_equal :nested_char_class, result[:unions][0][:items][0][:type]
-      assert_equal false, result[:unions][0][:items][0][:is_positive]
-    end
-
-    def test_char_class_intersection
-      result = parse('[a&&b]')
-      assert_equal :char_class, result[:type]
-      assert_equal 2, result[:unions].length
-      assert_equal :code, result[:unions][0][:items][0][:type]
-      assert_equal 97, result[:unions][0][:items][0][:code]
-      assert_equal :code, result[:unions][1][:items][0][:type]
-      assert_equal 98, result[:unions][1][:items][0][:code]
-
-      result = parse('[a&&b&&c]')
-      assert_equal :char_class, result[:type]
-      assert_equal 3, result[:unions].length
-      assert_equal :code, result[:unions][2][:items][0][:type]
-      assert_equal 99, result[:unions][2][:items][0][:code]
-    end
-
-    def test_char_class_posix
-      result = parse('[[:digit:]]')
-      assert_equal :char_class, result[:type]
-      assert_equal :posix_char_class, result[:unions][0][:items][0][:type]
-      assert_equal true, result[:unions][0][:items][0][:is_positive]
-      assert_equal :digit, result[:unions][0][:items][0][:posix_char_class]
-
-      result = parse('[[:^digit:]]')
-      assert_equal :char_class, result[:type]
-      assert_equal :posix_char_class, result[:unions][0][:items][0][:type]
-      assert_equal false, result[:unions][0][:items][0][:is_positive]
-      assert_equal :digit, result[:unions][0][:items][0][:posix_char_class]
-    end
-
-    def test_char_class_errors
-      assert_parse_error('[', 'unterminated character class', offset: 1, length: 0)
-      assert_parse_error('[-', 'unterminated character class', offset: 2, length: 0)
-      assert_parse_error('[&', 'unterminated character class', offset: 2, length: 0)
-      assert_parse_error('[]', 'empty character class', offset: 0, length: 2)
-      assert_parse_error('[z-a]', 'character class range out of order', offset: 1, length: 3)
-      assert_parse_error('[\\d-\\w]', 'invalid character class range', offset: 1, length: 2)
-      assert_parse_error('[a-\\d]', 'invalid character class range', offset: 3, length: 2)
-      assert_parse_error('[a-\\p{Lu}]', 'invalid character class range', offset: 3, length: 6)
-      assert_parse_error('[[:digit:', 'unterminated character class', offset: 9, length: 0)
-      assert_parse_error('[[:^:]]', 'empty POSIX character class name', offset: 4, length: 0)
-      assert_parse_error('[[:foo:]]', 'invalid POSIX character class name', offset: 3, length: 3)
-      assert_parse_error('[[:^foo:]]', 'invalid POSIX character class name', offset: 4, length: 3)
-      assert_parse_error('[[:digitx:]]', 'invalid POSIX character class name', offset: 3, length: 6)
-    end
-
-    def test_char_class_warnings
-      warnings = collect_parse_warnings('[a-b-c]')
-      assert_equal 1, warnings.length
-      assert_equal 'literal `-` in character class', warnings[0][:message]
-      assert_equal 4, warnings[0][:offset]
-      assert_equal 1, warnings[0][:length]
-
-      warnings = collect_parse_warnings('[]a]')
-      assert_equal 1, warnings.length
-      assert_equal 'literal `]` in character class', warnings[0][:message]
-      assert_equal 1, warnings[0][:offset]
-      assert_equal 1, warnings[0][:length]
-
-      warnings = collect_parse_warnings('[--a]')
-      assert_equal 1, warnings.length
-      assert_equal 'literal `-` at beginning of character class', warnings[0][:message]
-      assert_equal 1, warnings[0][:offset]
-      assert_equal 1, warnings[0][:length]
-
-      warnings = collect_parse_warnings('[ --]')
-      assert_equal 1, warnings.length
-      assert_equal 'literal `-` at end of character class', warnings[0][:message]
-      assert_equal 3, warnings[0][:offset]
-      assert_equal 1, warnings[0][:length]
-
-      assert_equal [], collect_parse_warnings('[-a-z]')
-      assert_equal [], collect_parse_warnings('[a-z-]')
-    end
-
-    def test_char_class_span
-      result = parse('[a-z]')
-      assert_equal :char_class, result[:type]
-      assert_equal 0, result[:span_offset]
-      assert_equal 5, result[:span_length]
-
-      union = result[:unions][0]
-      assert_equal 1, union[:span_offset]
-      assert_equal 3, union[:span_length]
-
-      item = union[:items][0]
-      assert_equal :range, item[:type]
-      assert_equal 1, item[:span_offset]
-      assert_equal 3, item[:span_length]
-    end
-
-    # ========================================================================
-    #
-    # Back references:
-    #
-    # ========================================================================
-
-    def test_back_ref_number
-      result = parse('\1')
-      assert_equal :back_ref, result[:type]
-      assert_equal :capture_num, result[:target_kind]
-      assert_equal false, result[:has_name]
-      assert_equal 1, result[:capture_num]
-
-      result = parse('\k<1>')
-      assert_equal :back_ref, result[:type]
-      assert_equal :capture_num, result[:target_kind]
-      assert_equal false, result[:has_name]
-      assert_equal 1, result[:capture_num]
-
-      # Relative back-reference
-      result = parse('()\k<-1>')
-      assert_equal :concat, result[:type]
-      assert_equal 2, result[:children].length
-      assert_equal :back_ref, result[:children][1][:type]
-      assert_equal :capture_num, result[:children][1][:target_kind]
-      assert_equal 1, result[:children][1][:capture_num]
-    end
-
-    def test_back_ref_named
-      result = parse('\k<name>')
-      assert_equal :back_ref, result[:type]
-      assert_equal :name, result[:target_kind]
-      assert_equal true, result[:has_name]
-      assert_equal 'name', result[:name]
-      assert_equal nil, result[:capture_num]
-
-      result = parse(%q{\k'name'})
-      assert_equal :back_ref, result[:type]
-      assert_equal :name, result[:target_kind]
-      assert_equal true, result[:has_name]
-      assert_equal 'name', result[:name]
-      assert_equal nil, result[:capture_num]
-
-      # With depth
-      result = parse('\k<name+1>')
-      assert_equal :back_ref, result[:type]
-      assert_equal :name, result[:target_kind]
-      assert_equal true, result[:has_name]
-      assert_equal 'name', result[:name]
-      assert_equal nil, result[:capture_num]
-      assert_equal true, result[:has_depth]
-      assert_equal 1, result[:depth]
-
-      result = parse('\k<name-1>')
-      assert_equal :back_ref, result[:type]
-      assert_equal :name, result[:target_kind]
-      assert_equal true, result[:has_name]
-      assert_equal 'name', result[:name]
-      assert_equal nil, result[:capture_num]
-      assert_equal true, result[:has_depth]
-      assert_equal(-1, result[:depth])
-    end
-
-    def test_back_ref_literal
-      result = parse('\k')
-      assert_equal :literal, result[:type]
-      assert_equal 'k', result[:buf]
-
-      result = parse('\ka')
-      assert_equal :literal, result[:type]
-      assert_equal 'ka', result[:buf]
-    end
-
-    def test_bare_back_ref_with_custom_limit
-      result = parse('\9', bare_back_ref_max_num_limit: 8)
-      assert_equal :literal, result[:type]
-      assert_equal '9', result[:buf]
-    end
-
-    def test_error_capture_number_out_of_range
-      # In \k<-1>, the error is reported at > (offset 5)
-      assert_parse_error('\k<-1>', 'capture number is out of range', offset: 3, length: 2)
-      assert_parse_error('\g<-1>', 'capture number is out of range', offset: 3, length: 2)
-    end
-
-    def test_error_incomplete_back_ref
-      assert_parse_error('\k<', 'incomplete back reference', offset: 0, length: 3)
-      assert_parse_error('\k<name', 'incomplete back reference', offset: 0, length: 7)
-      assert_parse_error(%q{\k'name}, 'incomplete back reference', offset: 0, length: 7)
-    end
-
-    def test_error_incomplete_capture_depth
-      assert_parse_error('\k<name+', 'incomplete capture depth', offset: 7, length: 1)
-      assert_parse_error('\k<name-', 'incomplete capture depth', offset: 7, length: 1)
-    end
-
-    def test_error_capture_depth_too_large
-      assert_parse_error('\k<name+1001>', 'capture depth is too large', offset: 8, length: 4)
-      assert_parse_error('\k<name+3>', 'capture depth is too large', offset: 8, length: 1, max_capture_depth_limit: 2)
-    end
-
-    def test_error_capture_number_too_large
-      assert_parse_error('\k<10000001>', 'capture number is too large', offset: 3, length: 8)
-      assert_parse_error('\g<10000001>', 'capture number is too large', offset: 3, length: 8)
-      assert_parse_error('\k<11>', 'capture number is too large', offset: 3, length: 2, back_ref_max_num_limit: 10)
-    end
-
-    def test_error_invalid_back_ref
-      assert_parse_error('\k<0>', 'invalid back reference', offset: 3, length: 1)
-    end
-
-    def test_error_too_many_capture_groups_with_custom_limit
-      assert_parse_error('(a)(b)', 'too many capture groups', offset: 3, length: 1, max_capture_num_limit: 1)
-    end
-
-    def test_error_parse_depth_limit_exceeded
-      assert_parse_error('a', 'parse depth limit exceeded', offset: 1, length: 0, max_parse_depth_limit: 1)
-    end
-
-    # ========================================================================
-    #
-    # Sub-expression calls:
-    #
-    # ========================================================================
-
-    def test_subexp_call
-      result = parse('\g<1>')
-      assert_equal :call, result[:type]
-      assert_equal :capture_num, result[:target_kind]
-      assert_equal false, result[:has_name]
-      assert_equal 1, result[:capture_num]
-
-      result = parse('\g<0>')
-      assert_equal :call, result[:type]
-      assert_equal :root, result[:target_kind]
-      assert_equal false, result[:has_name]
-      assert_equal nil, result[:capture_num]
-
-      result = parse('\g<name>')
-      assert_equal :call, result[:type]
-      assert_equal :name, result[:target_kind]
-      assert_equal true, result[:has_name]
-      assert_equal 'name', result[:name]
-      assert_equal nil, result[:capture_num]
-
-      result = parse(%q{\g'name'})
-      assert_equal :call, result[:type]
-      assert_equal :name, result[:target_kind]
-      assert_equal true, result[:has_name]
-      assert_equal 'name', result[:name]
-      assert_equal nil, result[:capture_num]
-
-      # Relative call
-      result = parse('()\g<-1>')
-      assert_equal :concat, result[:type]
-      assert_equal 2, result[:children].length
-      assert_equal :call, result[:children][1][:type]
-      assert_equal :capture_num, result[:children][1][:target_kind]
-      assert_equal 1, result[:children][1][:capture_num]
-    end
-
-    def test_subexp_call_literal
-      result = parse('\g')
-      assert_equal :literal, result[:type]
-      assert_equal 'g', result[:buf]
-
-      result = parse('\ga')
-      assert_equal :literal, result[:type]
-      assert_equal 'ga', result[:buf]
-    end
-
-    def test_error_incomplete_subexp_call
-      assert_parse_error('\g<', 'incomplete sub-expression call', offset: 0, length: 3)
-      assert_parse_error('\g<name', 'incomplete sub-expression call', offset: 0, length: 7)
-      assert_parse_error(%q{\g'name}, 'incomplete sub-expression call', offset: 0, length: 7)
-    end
+  # ========================================================================
+  #
+  # Groups:
+  #
+  # ========================================================================
+
+  def test_group_capturing
+    result = parse('(a)')
+    assert_equal :capture, result[:type]
+    assert_equal 1, result[:capture_num]
+    assert_equal :literal, result[:child][:type]
+    assert_equal 'a', result[:child][:buf]
+  end
+
+  def test_group_nested
+    result = parse('(a(b))')
+    assert_equal :capture, result[:type]
+    assert_equal 1, result[:capture_num]
+
+    child = result[:child]
+    assert_equal :concat, child[:type]
+    assert_equal 2, child[:children].length
+    assert_equal :literal, child[:children][0][:type]
+    assert_equal 'a', child[:children][0][:buf]
+
+  inner_group = child[:children][1]
+  assert_equal :capture, inner_group[:type]
+  assert_equal 2, inner_group[:capture_num]
+  assert_equal 'b', inner_group[:child][:buf]
+end
+
+  def test_group_non_capturing
+    result = parse('(?:a)')
+    assert_equal :group, result[:type]
+    assert_equal :literal, result[:child][:type]
+    assert_equal 'a', result[:child][:buf]
+  end
+
+  def test_group_inline_options
+    result = parse('(?i:a)a')
+    assert_equal :concat, result[:type]
+    assert_equal 2, result[:children].length
+
+    group = result[:children][0]
+    assert_equal :group, group[:type]
+    assert_equal :literal, group[:child][:type]
+    assert_equal true, group[:child][:is_ignore_case]
+
+    literal = result[:children][1]
+    assert_equal :literal, literal[:type]
+    assert_equal 'a', literal[:buf]
+    assert_equal false, literal[:is_ignore_case]
+  end
+
+  def test_group_inline_option_I_is_sugar_for_iSA
+    result_i = parse('(?I:a)')
+    result_isa = parse('(?iSA:a)')
+    assert_equal result_isa[:child][:is_ignore_case], result_i[:child][:is_ignore_case]
+    assert_equal result_isa[:child][:fold_flags], result_i[:child][:fold_flags]
+  end
+
+  def test_group_inline_option_minus_I_is_same_as_minus_i
+    result_minus_i = parse('(?i-i:a)')
+    result_minus_I = parse('(?i-I:a)')
+    assert_equal result_minus_i[:child][:is_ignore_case], result_minus_I[:child][:is_ignore_case]
+    assert_equal false, result_minus_I[:child][:is_ignore_case]
+  end
+
+  def test_group_inline_option_minus_A_and_minus_T_are_allowed
+    result_i = parse('(?i:a)')
+    result_iat_minus_at = parse('(?iAT-AT:a)')
+    assert_equal result_i[:child][:is_ignore_case], result_iat_minus_at[:child][:is_ignore_case]
+    assert_equal result_i[:child][:fold_flags], result_iat_minus_at[:child][:fold_flags]
+  end
+
+  def test_undefined_group_option
+    assert_parse_error('(?z)', 'undefined group option', offset: 2, length: 1)
+  end
+
+  def test_non_boolean_group_option_in_negative_mode
+    assert_parse_error('(?-S:a)', 'group option is not boolean', offset: 3, length: 1)
+    assert_parse_error('(?-F:a)', 'group option is not boolean', offset: 3, length: 1)
+    assert_parse_error('(?-a:a)', 'group option is not boolean', offset: 3, length: 1)
+    assert_parse_error('(?-d:a)', 'group option is not boolean', offset: 3, length: 1)
+    assert_parse_error('(?-u:a)', 'group option is not boolean', offset: 3, length: 1)
+  end
+
+  def test_warning_for_redundant_minus_in_group_options
+    warnings = collect_parse_warnings('(?--i)')
+    assert_equal 1, warnings.length
+    assert_equal "redundant '-' in group options", warnings[0][:message]
+    assert_equal 3, warnings[0][:offset]
+    assert_equal 1, warnings[0][:length]
+  end
+
+  def test_group_named
+    result = parse('(?<name>a)')
+    assert_equal :capture, result[:type]
+    assert_equal true, result[:has_name]
+    assert_equal 'name', result[:name]
+    assert_equal 0, result[:capture_num]
+
+    result = parse("(?'name'a)")
+    assert_equal :capture, result[:type]
+    assert_equal true, result[:has_name]
+    assert_equal 'name', result[:name]
+    assert_equal 0, result[:capture_num]
+  end
+
+  def test_error_invalid_group_name
+    assert_parse_error('(?<-a>)', 'invalid group name', offset: 3, length: 2)
+    assert_parse_error('(?<1>a)', 'invalid group name', offset: 3, length: 1)
+    assert_parse_error("(?'1'a)", 'invalid group name', offset: 3, length: 1)
+  end
+
+  def test_error_empty_group_name
+    assert_parse_error('(?<>)', 'empty group name', offset: 3, length: 0)
+    assert_parse_error("(?'')", 'empty group name', offset: 3, length: 0)
+  end
+
+  def test_lookahead_positive
+    result = parse('(?=a)')
+    assert_equal :assertion, result[:type]
+    assert_equal :positive_lookahead, result[:assertion_type]
+    assert_equal :literal, result[:child][:type]
+    assert_equal 'a', result[:child][:buf]
+  end
+
+  def test_lookahead_negative
+    result = parse('(?!a)')
+    assert_equal :assertion, result[:type]
+    assert_equal :negative_lookahead, result[:assertion_type]
+    assert_equal :literal, result[:child][:type]
+    assert_equal 'a', result[:child][:buf]
+  end
+
+  def test_lookbehind_positive
+    result = parse('(?<=a)')
+    assert_equal :assertion, result[:type]
+    assert_equal :positive_lookbehind, result[:assertion_type]
+    assert_equal :literal, result[:child][:type]
+    assert_equal 'a', result[:child][:buf]
+  end
+
+  def test_lookbehind_negative
+    result = parse('(?<!a)')
+    assert_equal :assertion, result[:type]
+    assert_equal :negative_lookbehind, result[:assertion_type]
+    assert_equal :literal, result[:child][:type]
+    assert_equal 'a', result[:child][:buf]
+  end
+
+  def test_atomic_group
+    result = parse('(?>a)')
+    assert_equal :atomic, result[:type]
+    assert_equal :literal, result[:child][:type]
+    assert_equal 'a', result[:child][:buf]
+  end
+
+  def test_absence_group
+    result = parse('(?~a)')
+    assert_equal :absence, result[:type]
+    assert_equal :literal, result[:child][:type]
+    assert_equal 'a', result[:child][:buf]
+  end
+
+  def test_conditional
+    result = parse('(?(1)a|b)')
+    assert_equal :conditional, result[:type]
+    assert_equal :capture_num, result[:target_kind]
+    assert_equal 1, result[:capture_num]
+    assert_equal :literal, result[:yes_child][:type]
+    assert_equal 'a', result[:yes_child][:buf]
+    assert_equal :literal, result[:no_child][:type]
+    assert_equal 'b', result[:no_child][:buf]
+
+    # Conditional with only true branch
+    result = parse('(?(1)a)')
+    assert_equal :conditional, result[:type]
+    assert_equal :capture_num, result[:target_kind]
+    assert_equal 1, result[:capture_num]
+    assert_equal :literal, result[:yes_child][:type]
+    assert_equal 'a', result[:yes_child][:buf]
+    assert_equal nil, result[:no_child]
+  end
+
+  def test_conditional_with_depth
+    result = parse('(?(1+1)a|b)')
+    assert_equal :conditional, result[:type]
+    assert_equal :capture_num, result[:target_kind]
+    assert_equal 1, result[:capture_num]
+    assert_equal true, result[:has_depth]
+    assert_equal 1, result[:depth]
+    assert_equal :literal, result[:yes_child][:type]
+    assert_equal 'a', result[:yes_child][:buf]
+    assert_equal :literal, result[:no_child][:type]
+    assert_equal 'b', result[:no_child][:buf]
+  end
+
+  def test_conditional_named
+    result = parse('(?(<name>)a|b)')
+    assert_equal :conditional, result[:type]
+    assert_equal :name, result[:target_kind]
+    assert_equal true, result[:has_name]
+    assert_equal 'name', result[:name]
+    assert_equal nil, result[:capture_num]
+    assert_equal :literal, result[:yes_child][:type]
+    assert_equal 'a', result[:yes_child][:buf]
+    assert_equal :literal, result[:no_child][:type]
+    assert_equal 'b', result[:no_child][:buf]
+
+    result = parse(%q{(?('name')a|b)})
+    assert_equal :conditional, result[:type]
+    assert_equal :name, result[:target_kind]
+    assert_equal true, result[:has_name]
+    assert_equal 'name', result[:name]
+    assert_equal nil, result[:capture_num]
+    assert_equal :literal, result[:yes_child][:type]
+    assert_equal 'a', result[:yes_child][:buf]
+    assert_equal :literal, result[:no_child][:type]
+    assert_equal 'b', result[:no_child][:buf]
+  end
+
+  def test_conditional_incomplete
+    assert_parse_error('(?(1', 'incomplete group specifier', offset: 0, length: 4)
+  end
+
+  def test_conditional_invalid_capture_number
+    assert_parse_error('(?(0)a|b)', 'invalid conditional capture number', offset: 3, length: 1)
+  end
+
+  def test_conditional_errors
+    assert_parse_error('(?(<>)a|b)', 'empty group name', offset: 4, length: 0)
+    assert_parse_error('(?(x)a|b)', 'incomplete group specifier', offset: 0, length: 3)
+    assert_parse_error('(?(<name)a)', 'incomplete group specifier', offset: 0, length: 11)
+    assert_parse_error('(?(1)a', 'invalid conditional group', offset: 6, length: 0)
+    assert_parse_error('(?(1)a|b', 'invalid conditional group', offset: 8, length: 0)
+  end
+
+  def test_unclosed_group
+    assert_parse_error('(', 'unterminated group: missing closing parenthesis', offset: 1, length: 0)
+    assert_parse_error('(abc', 'unterminated group: missing closing parenthesis', offset: 4, length: 0)
+  end
+
+  def test_unmatched_close_paren
+    assert_parse_error(')', 'unmatched close parenthesis', offset: 0, length: 1)
+    assert_parse_error('abc)', 'unmatched close parenthesis', offset: 3, length: 1)
+  end
+
+  def test_incomplete_group_specifier
+    assert_parse_error('(?', 'incomplete group specifier', offset: 0, length: 2)
+  end
+
+  # ========================================================================
+  #
+  # Character classes:
+  #
+  # ========================================================================
+
+  def test_char_class
+    result = parse('[abc]')
+    assert_equal :char_class, result[:type]
+    assert_equal true, result[:is_positive]
+    assert_equal 1, result[:unions].length
+    assert_equal 3, result[:unions][0][:items].length
+    assert_equal :code, result[:unions][0][:items][0][:type]
+    assert_equal 97, result[:unions][0][:items][0][:code]
+    assert_equal :code, result[:unions][0][:items][1][:type]
+    assert_equal 98, result[:unions][0][:items][1][:code]
+    assert_equal :code, result[:unions][0][:items][2][:type]
+    assert_equal 99, result[:unions][0][:items][2][:code]
+
+    result = parse('[\\d\\w]')
+    assert_equal :char_class, result[:type]
+    assert_equal :char_type, result[:unions][0][:items][0][:type]
+    assert_equal true, result[:unions][0][:items][0][:is_positive]
+    assert_equal :digit, result[:unions][0][:items][0][:char_type]
+    assert_equal :char_type, result[:unions][0][:items][1][:type]
+    assert_equal true, result[:unions][0][:items][1][:is_positive]
+    assert_equal :word, result[:unions][0][:items][1][:char_type]
+
+    result = parse('[\\p{Lu}]')
+    assert_equal :char_class, result[:type]
+    assert_equal :char_prop, result[:unions][0][:items][0][:type]
+    assert_equal true, result[:unions][0][:items][0][:is_positive]
+    assert_equal Naraku::Encoding.name_to_cprop('Lu'), result[:unions][0][:items][0][:cprop]
+  end
+
+  def test_char_class_negated
+    result = parse('[^abc]')
+    assert_equal :char_class, result[:type]
+    assert_equal false, result[:is_positive]
+    assert_equal 3, result[:unions][0][:items].length
+    assert_equal :code, result[:unions][0][:items][0][:type]
+    assert_equal 97, result[:unions][0][:items][0][:code]
+  end
+
+  def test_char_class_range
+    result = parse('[a-z]')
+    assert_equal :char_class, result[:type]
+    assert_equal :range, result[:unions][0][:items][0][:type]
+    assert_equal 97, result[:unions][0][:items][0][:begin_code]
+    assert_equal 122, result[:unions][0][:items][0][:end_code]
+
+    result = parse('[a-z0-9]')
+    assert_equal :char_class, result[:type]
+    assert_equal :range, result[:unions][0][:items][0][:type]
+    assert_equal :range, result[:unions][0][:items][1][:type]
+
+    result = parse('[-a]')
+    assert_equal :char_class, result[:type]
+    assert_equal :code, result[:unions][0][:items][0][:type]
+    assert_equal 45, result[:unions][0][:items][0][:code]
+
+    result = parse('[a-]')
+    assert_equal :char_class, result[:type]
+    assert_equal :code, result[:unions][0][:items][1][:type]
+    assert_equal 45, result[:unions][0][:items][1][:code]
+  end
+
+  def test_char_class_nested
+    result = parse('[[ab]]')
+    assert_equal :char_class, result[:type]
+    assert_equal :nested_char_class, result[:unions][0][:items][0][:type]
+    assert_equal true, result[:unions][0][:items][0][:is_positive]
+    assert_equal :code, result[:unions][0][:items][0][:unions][0][:items][0][:type]
+    assert_equal 97, result[:unions][0][:items][0][:unions][0][:items][0][:code]
+
+    result = parse('[[^a]&&[ab]]')
+    assert_equal :char_class, result[:type]
+    assert_equal 2, result[:unions].length
+    assert_equal :nested_char_class, result[:unions][0][:items][0][:type]
+    assert_equal false, result[:unions][0][:items][0][:is_positive]
+  end
+
+  def test_char_class_intersection
+    result = parse('[a&&b]')
+    assert_equal :char_class, result[:type]
+    assert_equal 2, result[:unions].length
+    assert_equal :code, result[:unions][0][:items][0][:type]
+    assert_equal 97, result[:unions][0][:items][0][:code]
+    assert_equal :code, result[:unions][1][:items][0][:type]
+    assert_equal 98, result[:unions][1][:items][0][:code]
+
+    result = parse('[a&&b&&c]')
+    assert_equal :char_class, result[:type]
+    assert_equal 3, result[:unions].length
+    assert_equal :code, result[:unions][2][:items][0][:type]
+    assert_equal 99, result[:unions][2][:items][0][:code]
+  end
+
+  def test_char_class_posix
+    result = parse('[[:digit:]]')
+    assert_equal :char_class, result[:type]
+    assert_equal :posix_char_class, result[:unions][0][:items][0][:type]
+    assert_equal true, result[:unions][0][:items][0][:is_positive]
+    assert_equal :digit, result[:unions][0][:items][0][:posix_char_class]
+
+    result = parse('[[:^digit:]]')
+    assert_equal :char_class, result[:type]
+    assert_equal :posix_char_class, result[:unions][0][:items][0][:type]
+    assert_equal false, result[:unions][0][:items][0][:is_positive]
+    assert_equal :digit, result[:unions][0][:items][0][:posix_char_class]
+  end
+
+  def test_char_class_errors
+    assert_parse_error('[', 'unterminated character class', offset: 1, length: 0)
+    assert_parse_error('[-', 'unterminated character class', offset: 2, length: 0)
+    assert_parse_error('[&', 'unterminated character class', offset: 2, length: 0)
+    assert_parse_error('[]', 'empty character class', offset: 0, length: 2)
+    assert_parse_error('[z-a]', 'character class range out of order', offset: 1, length: 3)
+    assert_parse_error('[\\d-\\w]', 'invalid character class range', offset: 1, length: 2)
+    assert_parse_error('[a-\\d]', 'invalid character class range', offset: 3, length: 2)
+    assert_parse_error('[a-\\p{Lu}]', 'invalid character class range', offset: 3, length: 6)
+    assert_parse_error('[[:digit:', 'unterminated character class', offset: 9, length: 0)
+    assert_parse_error('[[:^:]]', 'empty POSIX character class name', offset: 4, length: 0)
+    assert_parse_error('[[:foo:]]', 'invalid POSIX character class name', offset: 3, length: 3)
+    assert_parse_error('[[:^foo:]]', 'invalid POSIX character class name', offset: 4, length: 3)
+    assert_parse_error('[[:digitx:]]', 'invalid POSIX character class name', offset: 3, length: 6)
+  end
+
+  def test_char_class_warnings
+    warnings = collect_parse_warnings('[a-b-c]')
+    assert_equal 1, warnings.length
+    assert_equal 'literal `-` in character class', warnings[0][:message]
+    assert_equal 4, warnings[0][:offset]
+    assert_equal 1, warnings[0][:length]
+
+    warnings = collect_parse_warnings('[]a]')
+    assert_equal 1, warnings.length
+    assert_equal 'literal `]` in character class', warnings[0][:message]
+    assert_equal 1, warnings[0][:offset]
+    assert_equal 1, warnings[0][:length]
+
+    warnings = collect_parse_warnings('[--a]')
+    assert_equal 1, warnings.length
+    assert_equal 'literal `-` at beginning of character class', warnings[0][:message]
+    assert_equal 1, warnings[0][:offset]
+    assert_equal 1, warnings[0][:length]
+
+    warnings = collect_parse_warnings('[ --]')
+    assert_equal 1, warnings.length
+    assert_equal 'literal `-` at end of character class', warnings[0][:message]
+    assert_equal 3, warnings[0][:offset]
+    assert_equal 1, warnings[0][:length]
+
+    assert_equal [], collect_parse_warnings('[-a-z]')
+    assert_equal [], collect_parse_warnings('[a-z-]')
+  end
+
+  def test_char_class_span
+    result = parse('[a-z]')
+    assert_equal :char_class, result[:type]
+    assert_equal 0, result[:span_offset]
+    assert_equal 5, result[:span_length]
+
+    union = result[:unions][0]
+    assert_equal 1, union[:span_offset]
+    assert_equal 3, union[:span_length]
+
+    item = union[:items][0]
+    assert_equal :range, item[:type]
+    assert_equal 1, item[:span_offset]
+    assert_equal 3, item[:span_length]
+  end
+
+  # ========================================================================
+  #
+  # Back references:
+  #
+  # ========================================================================
+
+  def test_back_ref_number
+    result = parse('\1')
+    assert_equal :back_ref, result[:type]
+    assert_equal :capture_num, result[:target_kind]
+    assert_equal false, result[:has_name]
+    assert_equal 1, result[:capture_num]
+
+    result = parse('\k<1>')
+    assert_equal :back_ref, result[:type]
+    assert_equal :capture_num, result[:target_kind]
+    assert_equal false, result[:has_name]
+    assert_equal 1, result[:capture_num]
+
+    # Relative back-reference
+    result = parse('()\k<-1>')
+    assert_equal :concat, result[:type]
+    assert_equal 2, result[:children].length
+    assert_equal :back_ref, result[:children][1][:type]
+    assert_equal :capture_num, result[:children][1][:target_kind]
+    assert_equal 1, result[:children][1][:capture_num]
+  end
+
+  def test_back_ref_named
+    result = parse('\k<name>')
+    assert_equal :back_ref, result[:type]
+    assert_equal :name, result[:target_kind]
+    assert_equal true, result[:has_name]
+    assert_equal 'name', result[:name]
+    assert_equal nil, result[:capture_num]
+
+    result = parse(%q{\k'name'})
+    assert_equal :back_ref, result[:type]
+    assert_equal :name, result[:target_kind]
+    assert_equal true, result[:has_name]
+    assert_equal 'name', result[:name]
+    assert_equal nil, result[:capture_num]
+
+    # With depth
+    result = parse('\k<name+1>')
+    assert_equal :back_ref, result[:type]
+    assert_equal :name, result[:target_kind]
+    assert_equal true, result[:has_name]
+    assert_equal 'name', result[:name]
+    assert_equal nil, result[:capture_num]
+    assert_equal true, result[:has_depth]
+    assert_equal 1, result[:depth]
+
+    result = parse('\k<name-1>')
+    assert_equal :back_ref, result[:type]
+    assert_equal :name, result[:target_kind]
+    assert_equal true, result[:has_name]
+    assert_equal 'name', result[:name]
+    assert_equal nil, result[:capture_num]
+    assert_equal true, result[:has_depth]
+    assert_equal(-1, result[:depth])
+  end
+
+  def test_back_ref_literal
+    result = parse('\k')
+    assert_equal :literal, result[:type]
+    assert_equal 'k', result[:buf]
+
+    result = parse('\ka')
+    assert_equal :literal, result[:type]
+    assert_equal 'ka', result[:buf]
+  end
+
+  def test_bare_back_ref_with_custom_limit
+    result = parse('\9', bare_back_ref_max_num_limit: 8)
+    assert_equal :literal, result[:type]
+    assert_equal '9', result[:buf]
+  end
+
+  def test_error_capture_number_out_of_range
+    assert_parse_error('\k<-1>', 'capture number is out of range', offset: 3, length: 2)
+    assert_parse_error('\g<-1>', 'capture number is out of range', offset: 3, length: 2)
+  end
+
+  def test_error_incomplete_back_ref
+    assert_parse_error('\k<', 'incomplete back reference', offset: 0, length: 3)
+    assert_parse_error('\k<name', 'incomplete back reference', offset: 0, length: 7)
+    assert_parse_error(%q{\k'name}, 'incomplete back reference', offset: 0, length: 7)
+  end
+
+  def test_error_incomplete_capture_depth
+    assert_parse_error('\k<name+', 'incomplete capture depth', offset: 7, length: 1)
+    assert_parse_error('\k<name-', 'incomplete capture depth', offset: 7, length: 1)
+  end
+
+  def test_error_capture_depth_too_large
+    assert_parse_error('\k<name+1001>', 'capture depth is too large', offset: 8, length: 4)
+    assert_parse_error('\k<name+3>', 'capture depth is too large', offset: 8, length: 1, max_capture_depth_limit: 2)
+  end
+
+  def test_error_capture_number_too_large
+    assert_parse_error('\k<10000001>', 'capture number is too large', offset: 3, length: 8)
+    assert_parse_error('\g<10000001>', 'capture number is too large', offset: 3, length: 8)
+    assert_parse_error('\k<11>', 'capture number is too large', offset: 3, length: 2, back_ref_max_num_limit: 10)
+  end
+
+  def test_error_invalid_back_ref
+    assert_parse_error('\k<0>', 'invalid back reference', offset: 3, length: 1)
+  end
+
+  def test_error_too_many_capture_groups_with_custom_limit
+    assert_parse_error('(a)(b)', 'too many capture groups', offset: 3, length: 1, max_capture_num_limit: 1)
+  end
+
+  def test_error_parse_depth_limit_exceeded
+    assert_parse_error('a', 'parse depth limit exceeded', offset: 1, length: 0, max_parse_depth_limit: 1)
+  end
+
+  # ========================================================================
+  #
+  # Sub-expression calls:
+  #
+  # ========================================================================
+
+  def test_subexp_call
+    result = parse('\g<1>')
+    assert_equal :call, result[:type]
+    assert_equal :capture_num, result[:target_kind]
+    assert_equal false, result[:has_name]
+    assert_equal 1, result[:capture_num]
+
+    result = parse('\g<0>')
+    assert_equal :call, result[:type]
+    assert_equal :root, result[:target_kind]
+    assert_equal false, result[:has_name]
+    assert_equal nil, result[:capture_num]
+
+    result = parse('\g<name>')
+    assert_equal :call, result[:type]
+    assert_equal :name, result[:target_kind]
+    assert_equal true, result[:has_name]
+    assert_equal 'name', result[:name]
+    assert_equal nil, result[:capture_num]
+
+    result = parse(%q{\g'name'})
+    assert_equal :call, result[:type]
+    assert_equal :name, result[:target_kind]
+    assert_equal true, result[:has_name]
+    assert_equal 'name', result[:name]
+    assert_equal nil, result[:capture_num]
+
+    # Relative call
+    result = parse('()\g<-1>')
+    assert_equal :concat, result[:type]
+    assert_equal 2, result[:children].length
+    assert_equal :call, result[:children][1][:type]
+    assert_equal :capture_num, result[:children][1][:target_kind]
+    assert_equal 1, result[:children][1][:capture_num]
+  end
+
+  def test_subexp_call_literal
+    result = parse('\g')
+    assert_equal :literal, result[:type]
+    assert_equal 'g', result[:buf]
+
+    result = parse('\ga')
+    assert_equal :literal, result[:type]
+    assert_equal 'ga', result[:buf]
+  end
+
+  def test_error_incomplete_subexp_call
+    assert_parse_error('\g<', 'incomplete sub-expression call', offset: 0, length: 3)
+    assert_parse_error('\g<name', 'incomplete sub-expression call', offset: 0, length: 7)
+    assert_parse_error(%q{\g'name}, 'incomplete sub-expression call', offset: 0, length: 7)
+  end
+
+  # ========================================================================
+  #
+  # Combined patterns:
+  #
+  # ========================================================================
+
+  def test_combined_literal_quantifier_alt
+    # `ab*|cd+` should parse as alt(concat(a, b*), concat(c, d+))
+    result = parse('ab*|cd+')
+    assert_equal :alt, result[:type]
+    assert_equal 2, result[:children].length
+
+    left = result[:children][0]
+    assert_equal :concat, left[:type]
+    assert_equal 2, left[:children].length
+    assert_equal :literal, left[:children][0][:type]
+    assert_equal 'a', left[:children][0][:buf]
+    assert_equal :quantifier, left[:children][1][:type]
+
+    right = result[:children][1]
+    assert_equal :concat, right[:type]
+    assert_equal 2, right[:children].length
+    assert_equal :literal, right[:children][0][:type]
+    assert_equal 'c', right[:children][0][:buf]
+    assert_equal :quantifier, right[:children][1][:type]
+  end
+
+  def test_multiple_quantifiers
+    result = parse('a*{2}')
+    assert_equal :quantifier, result[:type]
+    assert_equal 2, result[:min]
+    assert_equal 2, result[:max]
+    assert_equal :greedy, result[:quantifier_type]
+
+    child = result[:child]
+    assert_equal :quantifier, child[:type]
+    assert_equal 0, child[:min]
+    assert_equal false, child[:has_max]
+    assert_equal nil, child[:max]
+    assert_equal :greedy, child[:quantifier_type]
+
+    child = child[:child]
+    assert_equal :literal, child[:type]
+    assert_equal 'a', child[:buf]
+  end
+
+  def test_assertion_in_concat
+    result = parse('^a$')
+    assert_equal :concat, result[:type]
+    assert_equal 3, result[:children].length
+    assert_equal :assertion, result[:children][0][:type]
+    assert_equal :begin_of_line, result[:children][0][:assertion_type]
+    assert_equal :literal, result[:children][1][:type]
+    assert_equal :assertion, result[:children][2][:type]
+    assert_equal :end_of_line, result[:children][2][:assertion_type]
   end
 end

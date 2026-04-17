@@ -381,18 +381,18 @@ opt.on('--ascii', 'Generate cprop bits for ASCII (0x00..0x7F)') { mode = :ascii 
 opt.on('--unicode', 'Generate cprop bits for Unicode') { mode = :unicode }
 opt.on('--single-byte ENC_NAME', 'Generate cprop bits for a single byte encoding') do
   mode = :single_byte
-  enc_name = _1
+  enc_name = it
 end
 opt.on('--multi-byte2 ENC_NAME', 'Generate cprop bits for a multi-byte encoding (for max 2 bytes encoding; e.g., Shift_JIS)') do
   mode = :multi_byte2
-  enc_name = _1
+  enc_name = it
 end
 opt.on('--multi-byte-full ENC_NAME', 'Generate cprop bits for a multi-byte encoding (for max 4 bytes encoding; e.g., GB18030)') do
   mode = :multi_byte_full
-  enc_name = _1
+  enc_name = it
 end
 opt.on('--prefix PREFIX', 'Prefix for the generated variable names') do
-  prefix = _1
+  prefix = it
 end
 
 opt.parse!(ARGV)

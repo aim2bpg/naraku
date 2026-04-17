@@ -1,4 +1,4 @@
-require_relative './ucd'
+require_relative 'ucd'
 
 # Supported Unicode properties:
 #
@@ -25,20 +25,20 @@ module Unicode
     NON_STANDARD_CPROP_NAMES = %w[
       NEWLINE Alpha Blank Cntrl Digit Graph Lower Print XPosixPunct Space Upper XDigit Word Alnum ASCII Punct
       Any Assigned
-    ]
+    ].freeze
 
     def self.normalize_name(name)
       # This follows the normalization rules for property and value names in UTS #18.
-      # 
+      #
       # > Matching of Binary, Enumerated, Catalog, and Name values must follow the
       # > Matching Rules from [UAX44] with one exception: implementations are not
       # > required to ignore an initial prefix string of "is" in property values.
       #
       # The "Matching Rules from [UAX44]" refers to the following normalization steps:
-      # 
+      #
       # > Ignore case, whitespace, underscore ('_'), hyphens, and any initial prefix
       # > string "is".
-      # 
+      #
       # See https://www.unicode.org/reports/tr18/#RL1.2 and https://www.unicode.org/reports/tr44/#UAX44-LM3.
 
       name.downcase(:fold).gsub(/[- _]+/, '')
@@ -62,9 +62,7 @@ module Unicode
       end
 
       def possible_names
-        unless value_name
-          return [name] + prop_name_aliases + other_names
-        end
+        return [name] + prop_name_aliases + other_names unless value_name
 
         names = [prop_name, *prop_name_aliases].flat_map do |prop_name|
           [value_name, *value_name_aliases].map do |value_name|
@@ -163,7 +161,7 @@ module Unicode
           name:,
           category: 'Non Standard Character Properties',
           range_set:,
-          prop_name: name,
+          prop_name: name
         )
       end
 
@@ -185,8 +183,8 @@ module Unicode
         value_name = value_name.gsub(/[ -]/, '_')
         names = [value_name]
         names += @prop_value_aliases_inv['Block'][value_name] || []
-        names.map! { CpropCatalog.normalize_name(_1) }.uniq!
-        add_cprop_pv('Block', value_name, range_set, names.map { "In_#{_1}" })
+        names.map! { CpropCatalog.normalize_name(it) }.uniq!
+        add_cprop_pv('Block', value_name, range_set, names.map { "In_#{it}" })
       end
 
       @ages.each do |value_name, range_set|
@@ -224,8 +222,8 @@ module Unicode
         range_set = @non_standards[name]
         add_cprop(
           name:,
-          range_set: range_set,
-          prop_name: name,
+          range_set:,
+          prop_name: name
         )
       end
     end
@@ -235,7 +233,7 @@ module Unicode
       value_name_aliases = @prop_value_aliases_inv['General_Category'][value_name] || []
       value_name_aliases << value_name
       # These aliases are conflict with non-standard character types, so we need to exclude them.
-      value_name_aliases -= ['digit', 'cntrl', 'punct']
+      value_name_aliases -= %w[digit cntrl punct]
       add_cprop_pv('General_Category', value_name, range_set, value_name_aliases)
     end
 
@@ -263,7 +261,7 @@ module Unicode
 
     def add_cprop_p(prop_name, range_set, category:)
       prop_name_aliases = @prop_aliases_inv[prop_name] || []
-      prop_name_aliases -= ['space', 'Alpha', 'Lower', 'Upper']
+      prop_name_aliases -= %w[space Alpha Lower Upper]
       add_cprop(
         name: prop_name,
         category:,
@@ -278,8 +276,8 @@ module Unicode
 
     def add_cprop(name:, category:, range_set:, prop_name:, prop_name_aliases: [], value_name: nil, value_name_aliases: [], other_names: [])
       id = @id
-      prop_name, *prop_name_aliases = [prop_name, *prop_name_aliases].uniq { CpropCatalog.normalize_name(_1) }
-      value_name, *value_name_aliases = [value_name, *value_name_aliases].uniq { CpropCatalog.normalize_name(_1) }
+      prop_name, *prop_name_aliases = [prop_name, *prop_name_aliases].uniq { CpropCatalog.normalize_name(it) }
+      value_name, *value_name_aliases = [value_name, *value_name_aliases].uniq { CpropCatalog.normalize_name(it) }
       @cprops << Cprop.new(
         name:,
         id:,

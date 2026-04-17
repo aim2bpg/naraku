@@ -1,5 +1,4 @@
-module Parser
-  class TestPostprocess < Mtest::Test
+  class PostprocessTest < Mtest::Test
     def assert_postprocess_error(pattern, message, offset:, length:)
       parser = Naraku::Parser.new(Naraku::Encoding::UTF_8, pattern)
       root = parser.parse
@@ -151,4 +150,3 @@ module Parser
       assert_postprocess_error('\g<2>(a)', 'undefined sub-expression call', offset: 0, length: 5)
     end
   end
-end

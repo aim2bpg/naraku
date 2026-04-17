@@ -42,7 +42,7 @@ def gen_ascii(case_map)
   puts '    uint32_t* folded_codes'
   puts ') {'
   puts '  if (folded_codes != NULL) {'
-  puts '    folded_codes[0] = ascii_fold_map[code];'
+  puts '    folded_codes[0] = code <= 0x7F ? ascii_fold_map[code] : code;'
   puts '  }'
   puts '  return 1;'
   puts '}'
@@ -108,14 +108,14 @@ def gen_unicode(case_map)
     fold_full: 'FF',
     lower: 'L',
     title: 'T',
-    upper: 'U'
+    upper: 'U',
   }
   special_flags = {
     fold_full: 'SFF',
     swap: 'SS',
     title: 'ST',
     upper: 'SU',
-    upper_title: 'SUT'
+    upper_title: 'SUT',
   }
 
   special_array = []
