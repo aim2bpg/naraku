@@ -16,6 +16,9 @@ AllCops:
     - 'mrbgems/mruby-naraku/mrbgem.rake'
     - 'ruby-prototype/lib/mruby-scripts/**/*'
 
+Layout/FirstHashElementIndentation:
+  EnforcedStyle: consistent
+
 Layout/LineLength:
   Max: 160
 

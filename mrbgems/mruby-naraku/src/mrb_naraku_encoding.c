@@ -193,9 +193,6 @@ static mrb_value mrb_naraku_encoding_get_case_fold(mrb_state* mrb, mrb_value sel
 
   uint32_t folded_codes[NK_ENC_MAX_FOLDED_CODES];
   size_t folded_codes_len = nk_enc_get_case_fold(enc, (nk_fold_flag_t)flags, (uint32_t)code, folded_codes);
-  if (folded_codes_len == 0) {
-    return mrb_nil_value();
-  }
 
   mrb_value ary = mrb_ary_new_capa(mrb, folded_codes_len);
   for (size_t i = 0; i < folded_codes_len; i++) {

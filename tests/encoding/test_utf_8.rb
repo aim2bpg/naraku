@@ -130,6 +130,10 @@ module Encoding
       # "I" (0x49) => "i" (0x69) / "ı" (0x131)
       assert_equal [0x69], E.case_fold(0x49)
       assert_equal [0x131], E.case_fold(0x49, :turkish_azeri)
+
+      # `ascii_only` option:
+      assert_equal [0x61], E.case_fold(0x41, :ascii_only)
+      assert_equal [0xC4], E.case_fold(0xC4, :ascii_only)
     end
 
     def test_expand_case_unfold
