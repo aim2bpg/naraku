@@ -764,6 +764,10 @@ static const char* assertion_type_sym_name(nk_assertion_type_t type) {
       return "word_boundary";
     case NK_ASSERTION_TYPE_NON_WORD_BOUNDARY:
       return "non_word_boundary";
+    case NK_ASSERTION_TYPE_ASCII_WORD_BOUNDARY:
+      return "ascii_word_boundary";
+    case NK_ASSERTION_TYPE_NON_ASCII_WORD_BOUNDARY:
+      return "non_ascii_word_boundary";
     case NK_ASSERTION_TYPE_POSITIVE_LOOKAHEAD:
       return "positive_lookahead";
     case NK_ASSERTION_TYPE_NEGATIVE_LOOKAHEAD:

@@ -269,6 +269,18 @@ class ParserTest < Mtest::Test
     assert_equal :non_word_boundary, result[:assertion_type]
   end
 
+  def test_assertion_ascii_word_boundary
+    result = parse('\b', posix_char_class_is_ascii_only: true)
+    assert_equal :assertion, result[:type]
+    assert_equal :ascii_word_boundary, result[:assertion_type]
+  end
+
+  def test_assertion_non_ascii_word_boundary
+    result = parse('\B', posix_char_class_is_ascii_only: true)
+    assert_equal :assertion, result[:type]
+    assert_equal :non_ascii_word_boundary, result[:assertion_type]
+  end
+
   def test_assertion_begin_of_string
     result = parse('\A')
     assert_equal :assertion, result[:type]
@@ -1203,17 +1215,19 @@ class ParserTest < Mtest::Test
   end
 
   def test_group_inline_option_captital_i_is_sugar
-    result_i = parse('(?I:a)')
-    result_isa = parse('(?iSA:a)')
-    assert_equal result_isa[:child][:is_ignore_case], result_i[:child][:is_ignore_case]
-    assert_equal result_isa[:child][:fold_flags], result_i[:child][:fold_flags]
+    result_i = parse('(?I:[a])')
+    result_ivsa = parse('(?ivSA:[a])')
+    assert_equal result_ivsa[:child][:is_ignore_case], result_i[:child][:is_ignore_case]
+    assert_equal result_ivsa[:child][:is_strict], result_i[:child][:is_strict]
+    assert_equal result_ivsa[:child][:fold_flags], result_i[:child][:fold_flags]
   end
 
   def test_group_inline_option_minus_capital_i_is_same_as_minus_small_i
-    result_minus_i = parse('(?i-i:a)')
-    result_minus_capital_i = parse('(?i-I:a)')
-    assert_equal result_minus_i[:child][:is_ignore_case], result_minus_capital_i[:child][:is_ignore_case]
-    assert_equal false, result_minus_capital_i[:child][:is_ignore_case]
+    result_minus_iv = parse('(?iv-iv:[a])')
+    result_minus_capital_i = parse('(?iv-I:[a])')
+    assert_equal result_minus_iv[:child][:is_ignore_case], result_minus_capital_i[:child][:is_ignore_case]
+    assert_equal result_minus_iv[:child][:is_strict], result_minus_capital_i[:child][:is_strict]
+    assert_equal result_minus_iv[:child][:fold_flags], result_minus_capital_i[:child][:fold_flags]
   end
 
   def test_group_inline_option_minus_capital_a_and_minus_capital_t

@@ -251,6 +251,9 @@ module Mtest
       end
     end
 
+    # TODO: Rewrite `assert_timeout` as `assert_linear_time` that asserts the block runs in linear time with
+    # respect to the input size, by running the block with different input sizes and checking the time differences.
+
     def assert_timeout(seconds, message = nil, &)
       message ||= "Expected block to finish within #{seconds} seconds"
 

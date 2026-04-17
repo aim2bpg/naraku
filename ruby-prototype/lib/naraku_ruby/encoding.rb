@@ -15,7 +15,7 @@ module NarakuRuby
     end
 
     def expand_case_unfold(bytes, *fold_flags)
-      nodes = [:match]
+      nodes = [{ type: :match }]
 
       lasts = [
         0,

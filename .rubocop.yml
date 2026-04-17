@@ -61,7 +61,7 @@ Naming/ClassAndModuleCamelCase:
     - 'test/encoding/*'
 
 Naming/MethodParameterName:
-  MinNameLength: 2
+  Enabled: false
 
 Style/Documentation:
   Enabled: false

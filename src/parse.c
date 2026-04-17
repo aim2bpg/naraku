@@ -2012,10 +2012,12 @@ static nk_error_t lex_impl(nk_parser_t* parser, token_t* out_token) {
                       parser->pattern_bytes += width;
                       if (is_positive) {
                         out_token->data.option.is_ignore_case = true;
+                        out_token->data.option.char_class_is_strict = true;
                         out_token->data.option.fold_flags &= (nk_fold_flag_t)~NK_FOLD_FULL;
                         out_token->data.option.fold_flags |= NK_FOLD_ASCII_ONLY;
                       } else {
                         out_token->data.option.is_ignore_case = false;
+                        out_token->data.option.char_class_is_strict = false;
                       }
                       break;
                     case '-':
@@ -2094,11 +2096,15 @@ static nk_error_t lex_impl(nk_parser_t* parser, token_t* out_token) {
           // Assertions:
           case 'b':
             out_token->type = TK_ASSERTION;
-            out_token->data.assertion.type = NK_ASSERTION_TYPE_WORD_BOUNDARY;
+            out_token->data.assertion.type = parser->posix_char_class_is_ascii_only
+                                               ? NK_ASSERTION_TYPE_ASCII_WORD_BOUNDARY
+                                               : NK_ASSERTION_TYPE_WORD_BOUNDARY;
             return NK_SUCCESS;
           case 'B':
             out_token->type = TK_ASSERTION;
-            out_token->data.assertion.type = NK_ASSERTION_TYPE_NON_WORD_BOUNDARY;
+            out_token->data.assertion.type = parser->posix_char_class_is_ascii_only
+                                               ? NK_ASSERTION_TYPE_NON_ASCII_WORD_BOUNDARY
+                                               : NK_ASSERTION_TYPE_NON_WORD_BOUNDARY;
             return NK_SUCCESS;
           case 'A':
             out_token->type = TK_ASSERTION;

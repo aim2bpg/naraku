@@ -1,14 +1,20 @@
 # frozen_string_literal: true
 
 module NarakuRuby
-  class CharClassBuilderError < StandardError
-    attr_reader :offset, :length
-
+  class CharClassBuildError < StandardError
     def initialize(message, offset:, length:)
-      super(message)
+      span = if offset
+               length.zero? ? " (at offset #{offset})" : " (at span #{offset}..#{offset + length})"
+             else
+               ''
+             end
+      super("#{message}#{span}")
+
       @offset = offset
       @length = length
     end
+
+    attr_reader :offset, :length
   end
 
   class CharClassBuilder
@@ -36,7 +42,7 @@ module NarakuRuby
       word: 'Word',
     }.freeze
 
-    BuildState = Struct.new(:char_class, :expanded_strings, keyword_init: true)
+    BuildState = Struct.new(:char_class, :expanded_strings, :ascii_case_fold_tracking, keyword_init: true)
 
     def initialize(node)
       @node = node
@@ -44,34 +50,30 @@ module NarakuRuby
     end
 
     def build
-      raise build_error('node must be :char_class', @node) unless node_type(@node) == :char_class
+      raise ArgumentError, 'node must be :char_class, :char_type, or :char_prop' unless %i[char_class char_type char_prop].include?(@node[:type])
 
-      strict = fetch_bool(@node, :is_strict)
-      ignore_case = fetch_bool(@node, :is_ignore_case)
-      fold_flags = fetch_fold_flags(@node)
-      track_ascii = ignore_case && !strict
+      @strict = @node[:is_strict] || false
+      @is_ignore_case = @node[:is_ignore_case]
+      @fold_flags = @node[:fold_flags]
+      @track_ascii = @is_ignore_case && !@strict
 
-      state, ascii_state = build_char_class_core(
-        unions: fetch_array(@node, :unions),
-        is_positive: fetch_bool(@node, :is_positive),
-        strict:,
-        ignore_case:,
-        fold_flags:,
-        source_node: @node,
-        track_ascii:
-      )
+      state =
+        if @node[:type] == :char_class
+          build_char_class_core(
+            unions: @node[:unions],
+            is_positive: @track_ascii ? true : @node[:is_positive],
+            source_node: @node
+          )
+        else
+          build_item(@node)
+        end
 
-      unless strict || !ignore_case
-        state = apply_case_fold(state, fold_flags)
-        state =
-          if fetch_bool(@node, :is_positive)
-            BuildState.new(
-              char_class: state.char_class,
-              expanded_strings: filter_expanded_strings(state.expanded_strings, ascii_state.char_class)
-            )
-          else
-            BuildState.new(char_class: state.char_class, expanded_strings: Set.new)
-          end
+      if @track_ascii
+        state = apply_case_fold(
+          state,
+          allow_multi_expand: @node[:is_positive]
+        )
+        state = negate_state(state) if (@node[:type] == :char_class) && !@node[:is_positive]
       end
 
       [state.char_class, state.expanded_strings]
@@ -79,79 +81,57 @@ module NarakuRuby
 
     private
 
-    def build_char_class_core(unions:, is_positive:, strict:, ignore_case:, fold_flags:, source_node:, track_ascii:)
+    def build_char_class_core(unions:, is_positive:, source_node:)
       union_states = []
-      ascii_union_states = []
 
       unions.each do |union_node|
-        union_state, ascii_union_state = build_union(
-          union_node,
-          strict:,
-          ignore_case:,
-          fold_flags:,
-          track_ascii:
-        )
+        union_state = build_union(union_node)
         union_states << union_state
-        ascii_union_states << ascii_union_state
       end
 
       state = union_states.empty? ? empty_state : union_states[0]
-      ascii_state = ascii_union_states.empty? ? empty_state : ascii_union_states[0]
 
       union_states[1..]&.each do |next_state|
-        if strict && ignore_case
-          state = apply_case_fold(state, fold_flags)
-          next_state = apply_case_fold(next_state, fold_flags)
+        if @strict && @is_ignore_case
+          state = apply_case_fold(state)
+          next_state = apply_case_fold(next_state)
         end
         state = intersect_states(state, next_state)
       end
 
-      ascii_union_states[1..]&.each do |next_ascii_state|
-        ascii_state = intersect_states(ascii_state, next_ascii_state)
-      end
-
       unless is_positive
-        if strict && ignore_case
-          state = apply_case_fold(state, fold_flags)
+        if @strict && @is_ignore_case
+          state = apply_case_fold(state)
           raise build_error('cannot negate character class after multi-character case fold expansion', source_node) if state.expanded_strings.any?
         end
         state = negate_state(state)
-        ascii_state = negate_state(ascii_state)
       end
 
-      state = apply_case_fold(state, fold_flags) if strict && ignore_case
+      state = apply_case_fold(state) if @strict && @is_ignore_case
 
-      [state, ascii_state]
+      state
     end
 
-    def build_union(union_node, strict:, ignore_case:, fold_flags:, track_ascii:)
-      items = fetch_array(union_node, :items)
+    def build_union(union_node)
+      items = union_node[:items]
       state = empty_state
-      ascii_state = empty_state
 
       items.each do |item_node|
-        item_state, item_ascii_state = build_item(
-          item_node,
-          strict:,
-          ignore_case:,
-          fold_flags:,
-          track_ascii:
-        )
+        item_state = build_item(item_node)
         state = union_states(state, item_state)
-        ascii_state = union_states(ascii_state, item_ascii_state)
       end
 
-      [state, ascii_state]
+      state
     end
 
-    def build_item(item_node, strict:, ignore_case:, fold_flags:, track_ascii:)
-      state = case node_type(item_node)
+    def build_item(item_node)
+      state = case item_node[:type]
               when :code
-                code = fetch_int(item_node, :code)
+                code = item_node[:code]
                 BuildState.new(char_class: CharClass.new([code..code]), expanded_strings: Set.new)
               when :range
                 BuildState.new(
-                  char_class: CharClass.new([fetch_int(item_node, :begin_code)..fetch_int(item_node, :end_code)]),
+                  char_class: CharClass.new([item_node[:begin_code]..item_node[:end_code]]),
                   expanded_strings: Set.new
                 )
               when :char_type
@@ -162,59 +142,63 @@ module NarakuRuby
                 BuildState.new(char_class: char_class_from_posix_class_node(item_node), expanded_strings: Set.new)
               when :nested_char_class
                 build_char_class_core(
-                  unions: fetch_array(item_node, :unions),
-                  is_positive: fetch_bool(item_node, :is_positive),
-                  strict:,
-                  ignore_case:,
-                  fold_flags:,
-                  source_node: item_node,
-                  track_ascii:
-                ).first
+                  unions: item_node[:unions],
+                  is_positive: item_node[:is_positive],
+                  source_node: item_node
+                )
               else
-                raise build_error("unsupported char class item type: #{node_type(item_node).inspect}", item_node)
+                raise build_error("unsupported char class item type: #{item_node[:type].inspect}", item_node)
               end
 
-      ascii_state = if track_ascii && skip_ascii_case_fold_tracking?(item_node)
-                      empty_state
-                    else
-                      duplicate_state(state)
-                    end
-      [state, ascii_state]
+      ascii_case_fold_tracking =
+        if @track_ascii
+          if skip_ascii_case_fold_tracking?(item_node)
+            CharClass.new
+          else
+            CharClass.new(state.char_class.ranges)
+          end
+        end
+
+      BuildState.new(
+        char_class: state.char_class,
+        expanded_strings: state.expanded_strings,
+        ascii_case_fold_tracking:
+      )
     end
 
     def char_class_from_char_type_node(node)
-      char_type = fetch_symbol(node, :char_type)
+      char_type = node[:char_type]
       cprop_name = CHAR_TYPE_TO_CPROP[char_type]
       raise build_error("unsupported char_type: #{char_type.inspect}", node) if cprop_name.nil?
 
       char_class = CharClass.new(NarakuRuby.cprop_code_range(cprop_name))
-      char_class = char_class.intersect(CharClass.new([0..CharClass::ASCII_MAX])) if fetch_bool(node, :is_ascii_only)
-      fetch_bool(node, :is_positive) ? char_class : char_class.negate
+      char_class = char_class.intersect(CharClass.new([0..CharClass::ASCII_MAX])) if node[:is_ascii_only]
+      node[:is_positive] ? char_class : char_class.negate
     end
 
     def char_class_from_char_prop_node(node)
-      char_class = CharClass.new(NarakuRuby.cprop_code_range(fetch_node_value(node, :cprop)))
-      fetch_bool(node, :is_positive) ? char_class : char_class.negate
+      char_class = CharClass.new(NarakuRuby.cprop_code_range(node[:cprop]))
+      node[:is_positive] ? char_class : char_class.negate
     end
 
     def char_class_from_posix_class_node(node)
-      posix_class = fetch_symbol(node, :posix_char_class)
+      posix_class = node[:posix_char_class]
       cprop_name = POSIX_CLASS_TO_CPROP[posix_class]
       raise build_error("unsupported posix_char_class: #{posix_class.inspect}", node) if cprop_name.nil?
 
       char_class = CharClass.new(NarakuRuby.cprop_code_range(cprop_name))
-      char_class = char_class.intersect(CharClass.new([0..CharClass::ASCII_MAX])) if fetch_bool(node, :is_ascii_only)
-      fetch_bool(node, :is_positive) ? char_class : char_class.negate
+      char_class = char_class.intersect(CharClass.new([0..CharClass::ASCII_MAX])) if node[:is_ascii_only]
+      node[:is_positive] ? char_class : char_class.negate
     end
 
     def skip_ascii_case_fold_tracking?(item_node)
-      case node_type(item_node)
+      case item_node[:type]
       when :posix_char_class
-        fetch_bool(item_node, :is_ascii_only) || %i[ascii word].include?(fetch_symbol(item_node, :posix_char_class))
+        item_node[:is_ascii_only] || %i[ascii word].include?(item_node[:posix_char_class])
       when :char_prop
-        ascii_cprop?(fetch_node_value(item_node, :cprop))
+        ascii_cprop?(item_node[:cprop])
       when :char_type
-        fetch_symbol(item_node, :char_type) == :word
+        item_node[:char_type] == :word
       else
         false
       end
@@ -224,93 +208,111 @@ module NarakuRuby
       @ascii_cprop_cache[cprop] ||= (NarakuRuby.cprop_code_range(cprop) == [0..CharClass::ASCII_MAX])
     end
 
-    def apply_case_fold(state, fold_flags)
-      folded_char_class, expanded_from_char_class = state.char_class.case_fold(*fold_flags)
+    def apply_case_fold(state, allow_multi_expand: true)
+      folded_char_class = CharClass.new(state.char_class.ranges)
+      expanded_strings = state.expanded_strings.dup
+      ascii_case_fold_tracking = state.ascii_case_fold_tracking
+
+      NarakuRuby.iterate_case_fold(@fold_flags).each do |entry|
+        code = entry[:code]
+        next unless state.char_class.include?(code)
+
+        folded_codes = entry[:folded_codes]
+        if folded_codes.length > 1
+          expanded_strings.add(folded_codes.pack('U*')) if allow_multi_expand
+          next
+        end
+
+        folded_char_class.add(folded_codes[0])
+      end
+
+      unfolded_char_class = CharClass.new(folded_char_class.ranges)
+      NarakuRuby.iterate_case_fold(@fold_flags).each do |entry|
+        code = entry[:code]
+        folded_codes = entry[:folded_codes]
+        if folded_codes.length > 1
+          unfolded_char_class.add(entry[:code]) if expanded_strings.include?(folded_codes.pack('U*'))
+          next
+        end
+
+        folded_code = folded_codes[0]
+        if code > CharClass::ASCII_MAX && folded_code <= CharClass::ASCII_MAX && ascii_case_fold_tracking && !ascii_case_fold_tracking.include?(folded_code)
+          next
+        end
+
+        unfolded_char_class.add(code) if folded_char_class.include?(folded_code)
+      end
+
       BuildState.new(
-        char_class: folded_char_class,
-        expanded_strings: state.expanded_strings | expanded_from_char_class
+        char_class: unfolded_char_class,
+        expanded_strings:,
+        ascii_case_fold_tracking:
       )
     end
 
-    def filter_expanded_strings(expanded_strings, ascii_case_fold_char_class)
-      expanded_strings.select do |string|
-        string.codepoints.none? do |code|
-          code <= CharClass::ASCII_MAX && !ascii_case_fold_char_class.include?(code)
-        end
+    def ascii_tracked_multi_expand?(folded_codes, ascii_case_fold_tracking)
+      tracking = ascii_case_fold_tracking || CharClass.new
+      folded_codes.none? do |code|
+        code <= CharClass::ASCII_MAX && !tracking.include?(code)
       end
     end
 
     def union_states(left, right)
       BuildState.new(
         char_class: left.char_class.union(right.char_class),
-        expanded_strings: left.expanded_strings | right.expanded_strings
+        expanded_strings: left.expanded_strings | right.expanded_strings,
+        ascii_case_fold_tracking: union_ascii_case_fold_tracking(
+          left.ascii_case_fold_tracking,
+          right.ascii_case_fold_tracking
+        )
       )
     end
 
     def intersect_states(left, right)
       BuildState.new(
         char_class: left.char_class.intersect(right.char_class),
-        expanded_strings: left.expanded_strings & right.expanded_strings
+        expanded_strings: left.expanded_strings & right.expanded_strings,
+        ascii_case_fold_tracking: intersect_ascii_case_fold_tracking(
+          left.ascii_case_fold_tracking,
+          right.ascii_case_fold_tracking
+        )
       )
     end
 
     def negate_state(state)
-      BuildState.new(char_class: state.char_class.negate, expanded_strings: Set.new)
-    end
-
-    def duplicate_state(state)
       BuildState.new(
-        char_class: CharClass.new(state.char_class.ranges),
-        expanded_strings: state.expanded_strings.dup
+        char_class: state.char_class.negate,
+        expanded_strings: Set.new,
+        ascii_case_fold_tracking: state.ascii_case_fold_tracking&.negate
       )
     end
 
+    def union_ascii_case_fold_tracking(left, right)
+      return nil if left.nil? && right.nil?
+      return CharClass.new(right.ranges) if left.nil?
+      return CharClass.new(left.ranges) if right.nil?
+
+      left.union(right)
+    end
+
+    def intersect_ascii_case_fold_tracking(left, right)
+      return nil if left.nil? || right.nil?
+
+      left.intersect(right)
+    end
+
     def empty_state
-      BuildState.new(char_class: CharClass.new, expanded_strings: Set.new)
-    end
-
-    def node_type(node)
-      fetch_symbol(node, :type)
-    end
-
-    def fetch_symbol(node, key)
-      value = fetch_node_value(node, key)
-      value.is_a?(String) ? value.to_sym : value
-    end
-
-    def fetch_int(node, key)
-      value = fetch_node_value(node, key)
-      raise build_error("node key #{key} must be Integer", node) unless value.is_a?(Integer)
-
-      value
-    end
-
-    def fetch_bool(node, key)
-      !!fetch_node_value(node, key)
-    end
-
-    def fetch_array(node, key)
-      value = fetch_node_value(node, key)
-      raise build_error("node key #{key} must be Array", node) unless value.is_a?(Array)
-
-      value
-    end
-
-    def fetch_fold_flags(node)
-      Array(fetch_node_value(node, :fold_flags)).map { |flag| flag.is_a?(String) ? flag.to_sym : flag }
-    end
-
-    def fetch_node_value(node, key)
-      return node[key] if node.key?(key)
-      return node[key.to_s] if node.key?(key.to_s)
-
-      raise build_error("missing node key: #{key}", node)
+      BuildState.new(
+        char_class: CharClass.new,
+        expanded_strings: Set.new,
+        ascii_case_fold_tracking: @track_ascii ? CharClass.new : nil
+      )
     end
 
     def build_error(message, node)
-      offset = node[:span_offset] || node['span_offset'] || 0
-      length = node[:span_length] || node['span_length'] || 0
-      CharClassBuilderError.new(message, offset:, length:)
+      offset = node[:span_offset]
+      length = node[:span_length]
+      CharClassBuildError.new(message, offset:, length:)
     end
   end
 end

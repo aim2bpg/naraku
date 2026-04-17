@@ -335,18 +335,20 @@ struct nk_call_node {
  * Enumeration of assertion types (e.g., `^`, `$`, `\b`, `(?=...)`).
  */
 typedef enum {
-  NK_ASSERTION_TYPE_BEGIN_OF_LINE = 0,     // `^`
-  NK_ASSERTION_TYPE_END_OF_LINE,           // `$`
-  NK_ASSERTION_TYPE_BEGIN_OF_STRING,       // `\A`
-  NK_ASSERTION_TYPE_END_OF_STRING_STRICT,  // `\z`
-  NK_ASSERTION_TYPE_END_OF_STRING_LOOSE,   // `\Z`
-  NK_ASSERTION_TYPE_BEGIN_OF_MATCHING,     // `\G`
-  NK_ASSERTION_TYPE_WORD_BOUNDARY,         // `\b`
-  NK_ASSERTION_TYPE_NON_WORD_BOUNDARY,     // `\B`
-  NK_ASSERTION_TYPE_POSITIVE_LOOKAHEAD,    // `(?=...)`
-  NK_ASSERTION_TYPE_NEGATIVE_LOOKAHEAD,    // `(?!...)`
-  NK_ASSERTION_TYPE_POSITIVE_LOOKBEHIND,   // `(?<=...)`
-  NK_ASSERTION_TYPE_NEGATIVE_LOOKBEHIND,   // `(?<!...)`
+  NK_ASSERTION_TYPE_BEGIN_OF_LINE = 0,        // `^`
+  NK_ASSERTION_TYPE_END_OF_LINE,              // `$`
+  NK_ASSERTION_TYPE_BEGIN_OF_STRING,          // `\A`
+  NK_ASSERTION_TYPE_END_OF_STRING_STRICT,     // `\z`
+  NK_ASSERTION_TYPE_END_OF_STRING_LOOSE,      // `\Z`
+  NK_ASSERTION_TYPE_BEGIN_OF_MATCHING,        // `\G`
+  NK_ASSERTION_TYPE_WORD_BOUNDARY,            // `\b`
+  NK_ASSERTION_TYPE_NON_WORD_BOUNDARY,        // `\B`
+  NK_ASSERTION_TYPE_ASCII_WORD_BOUNDARY,      // `\b` (with `a` flag)
+  NK_ASSERTION_TYPE_NON_ASCII_WORD_BOUNDARY,  // `\B` (with `a` flag)
+  NK_ASSERTION_TYPE_POSITIVE_LOOKAHEAD,       // `(?=...)`
+  NK_ASSERTION_TYPE_NEGATIVE_LOOKAHEAD,       // `(?!...)`
+  NK_ASSERTION_TYPE_POSITIVE_LOOKBEHIND,      // `(?<=...)`
+  NK_ASSERTION_TYPE_NEGATIVE_LOOKBEHIND,      // `(?<!...)`
 } nk_assertion_type_t;
 
 /**

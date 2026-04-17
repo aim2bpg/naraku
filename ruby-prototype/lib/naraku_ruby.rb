@@ -52,9 +52,10 @@ module NarakuRuby
   def self.parse_bridge
     @parse_bridge ||= MRubyBridge.new(
       script_path: File.expand_path('./mruby-scripts/parse.rb', __dir__),
-      use_cache: false
+      use_cache: true
     )
   end
+  private_class_method :parse_bridge
 
   def self.encoding_bridge
     @encoding_bridge ||= MRubyBridge.new(
@@ -81,3 +82,4 @@ end
 require_relative 'naraku_ruby/encoding'
 require_relative 'naraku_ruby/char_class'
 require_relative 'naraku_ruby/char_class_builder'
+require_relative 'naraku_ruby/dfa'
