@@ -143,12 +143,12 @@ namespace :ruby_prototype do
   end
 
   BENCHMARK_DIR = 'ruby-prototype/benchmark'
-  BENCHMARK_RESULTS_DIR = "#{BENCHMARK_DIR}/results"
+  BENCHMARK_RESULTS_DIR = "#{BENCHMARK_DIR}/results".freeze
 
   BENCHMARK_RUBY_FLAGS = {
     'plain' => [],
-    'yjit'  => ['--yjit'],
-    'zjit'  => ['--zjit'],
+    'yjit' => ['--yjit'],
+    'zjit' => ['--zjit'],
   }.freeze
 
   BENCHMARK_SUITES = %w[synthetic corpus].freeze
