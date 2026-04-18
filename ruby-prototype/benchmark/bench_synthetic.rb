@@ -76,6 +76,7 @@ def run_synthetic_benchmarks
 
     dfa = BenchHelper.compile_dfa(pattern)
     full_dfa = bcase[:full_dfa_compare] ? BenchHelper.compile_dfa(pattern, full_dfa: true) : nil
+    full_dfa_eval = bcase[:full_dfa_compare] ? BenchHelper.compile_dfa(pattern, full_dfa: true, eval: true) : nil
     re = Regexp.new(pattern)
 
     puts "\n--- #{bcase[:label]} ---"
@@ -86,6 +87,7 @@ def run_synthetic_benchmarks
 
       x.report('NarakuRuby::DFA#match?') { inputs.each { |s| dfa.match?(s) } } if dfa
       x.report('NarakuRuby::DFA#match? (full_dfa)') { inputs.each { |s| full_dfa.match?(s) } } if full_dfa
+      x.report('NarakuRuby::DFA#match? (full_dfa+eval)') { inputs.each { |s| full_dfa_eval.match?(s) } } if full_dfa_eval
       x.report('Regexp#match?') { inputs.each { |s| re.match?(s) } }
 
       x.compare!

@@ -112,7 +112,7 @@ module NarakuRuby
 
       DEBUG = false
 
-      def initialize(states:, initial_state:, num_capture_groups:, num_check_ids:, full_dfa: false)
+      def initialize(states:, initial_state:, num_capture_groups:, num_check_ids:, full_dfa: false, full_dfa_eval: false)
         @states = states
         @initial_state = initial_state
         @num_capture_groups = num_capture_groups
@@ -127,7 +127,12 @@ module NarakuRuby
         @full_dfa_other_transitions = nil
         @full_dfa_matching = nil
         @full_dfa_start_index = nil
-        build_full_dfa_without_caps if full_dfa
+        @full_dfa_codes = nil
+        @full_dfa_eval_matcher = nil
+        if full_dfa
+          build_full_dfa_without_caps
+          build_full_dfa_eval_matcher if full_dfa_eval
+        end
       end
 
       attr_reader :states, :initial_state
@@ -304,7 +309,14 @@ module NarakuRuby
       end
 
       def run_without_caps_full_dfa(string, start_pos)
-        code_points = string.ascii_only? ? string.bytes : string.codepoints
+        if string.ascii_only?
+          return @full_dfa_eval_matcher.call(string, start_pos) if @full_dfa_eval_matcher
+
+          return run_without_caps_full_dfa_ascii(string, start_pos)
+        end
+
+        code_points = string.codepoints
+
         state_index = @full_dfa_start_index
         pos = start_pos
 
@@ -312,6 +324,27 @@ module NarakuRuby
           return true if @full_dfa_matching[state_index]
 
           code = code_points[pos]
+          transition_index = @full_dfa_transition_codes[code]
+          state_index = if transition_index
+                          @full_dfa_transitions[state_index][transition_index]
+                        else
+                          @full_dfa_other_transitions[state_index]
+                        end
+          pos += 1
+        end
+
+        @full_dfa_matching[state_index]
+      end
+
+      def run_without_caps_full_dfa_ascii(string, start_pos)
+        state_index = @full_dfa_start_index
+        pos = start_pos
+        length = string.bytesize
+
+        while pos < length
+          return true if @full_dfa_matching[state_index]
+
+          code = string.getbyte(pos)
           transition_index = @full_dfa_transition_codes[code]
           state_index = if transition_index
                           @full_dfa_transitions[state_index][transition_index]
@@ -416,6 +449,7 @@ module NarakuRuby
         return unless full_dfa_compatible?
 
         codes = @states.filter_map { |state| state.code if state.op == :code }.uniq.sort
+        @full_dfa_codes = codes
         transition_codes = {}
         codes.each_with_index { |code, index| transition_codes[code] = index }
 
@@ -456,6 +490,53 @@ module NarakuRuby
         @full_dfa_other_transitions = other_transitions.freeze
         @full_dfa_matching = matching.freeze
         @full_dfa_start_index = 0
+      end
+
+      def build_full_dfa_eval_matcher
+        return unless @full_dfa_transitions
+        return if @full_dfa_transitions.empty?
+
+        # Keep generated code size bounded to avoid excessive compile overhead.
+        return if @full_dfa_transitions.length > 512
+        return if @full_dfa_codes.length > 256
+
+        lines = []
+        lines << "lambda do |string, start_pos|"
+        lines << "  state_index = #{@full_dfa_start_index}"
+        lines << "  pos = start_pos"
+        lines << "  limit = string.bytesize"
+        lines << "  while pos < limit"
+        lines << "    case state_index"
+
+        @full_dfa_transitions.each_with_index do |row, state_index|
+          lines << "    when #{state_index}"
+          if @full_dfa_matching[state_index]
+            lines << "      return true"
+            next
+          end
+          lines << "      code = string.getbyte(pos)"
+          lines << "      state_index = case code"
+          row.each_with_index do |next_state_index, code_index|
+            lines << "      when #{@full_dfa_codes[code_index]} then #{next_state_index}"
+          end
+          lines << "      else #{@full_dfa_other_transitions[state_index]}"
+          lines << "      end"
+          lines << "      pos += 1"
+        end
+
+        lines << "    else"
+        lines << "      raise \"invalid full_dfa state index: \#{state_index}\""
+        lines << "    end"
+        lines << "  end"
+        lines << "  case state_index"
+        @full_dfa_matching.each_with_index do |is_match, state_index|
+          lines << "  when #{state_index} then true" if is_match
+        end
+        lines << "  else false"
+        lines << "  end"
+        lines << "end"
+
+        @full_dfa_eval_matcher = eval(lines.join("\n"), binding, __FILE__, __LINE__)
       end
 
       def add_full_dfa_state(state_key_to_index, state_sets, transitions, other_transitions, matching, queue, states, code_size)

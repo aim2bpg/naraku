@@ -17,6 +17,15 @@ SUITE_LABELS = {
 
 MODES = %w[plain yjit zjit].freeze
 
+def latest_result_for(data, mode, suite, label)
+  results = data.dig(mode, suite) || []
+  results.reverse_each.find { |r| r['label'] == label }
+end
+
+def entries_for(data, mode, suite, label)
+  latest_result_for(data, mode, suite, label)&.dig('entries') || []
+end
+
 def format_ips(val)
   val = val.to_f
   if val >= 1_000_000
@@ -95,8 +104,8 @@ all_suites.each do |suite|
     lines << "### #{label}"
     lines << ''
 
-    pattern = present_modes.filter_map { |m| data.dig(m, suite)&.find { |r| r['label'] == label }&.dig('pattern') }.first
-    description = present_modes.filter_map { |m| data.dig(m, suite)&.find { |r| r['label'] == label }&.dig('description') }.first
+    pattern = present_modes.filter_map { |m| latest_result_for(data, m, suite, label)&.dig('pattern') }.first
+    description = present_modes.filter_map { |m| latest_result_for(data, m, suite, label)&.dig('description') }.first
 
     lines << "> **Pattern**: `#{pattern}`" if pattern
     lines << ">\n> #{description}" if description
@@ -106,21 +115,22 @@ all_suites.each do |suite|
     lines << '|---|---:|---|'
 
     all_names = present_modes.flat_map do |m|
-      (data.dig(m, suite)&.find { |r| r['label'] == label }&.dig('entries') || []).map { |e| e['name'] }
+      entries_for(data, m, suite, label).map { |e| e['name'] }
     end.uniq
 
     # Find the DFA baseline in plain mode for this specific test case.
     # The name usually includes 'NarakuRuby::DFA' or 'NarakuRuby.parse'.
-    dfa_name = all_names.find { |n| n.include?('NarakuRuby') }
+    dfa_name = all_names.find { |n| n == 'NarakuRuby::DFA#match?' } ||
+      all_names.find { |n| n.include?('NarakuRuby') }
     dfa_plain_ips = nil
     if dfa_name
-      entries_plain = data.dig('plain', suite)&.find { |r| r['label'] == label }&.dig('entries') || []
+      entries_plain = entries_for(data, 'plain', suite, label)
       dfa_plain_ips = entries_plain.find { |e| e['name'] == dfa_name }&.dig('ips')
     end
 
     all_names.each do |name|
       present_modes.each do |mode|
-        entries = data.dig(mode, suite)&.find { |r| r['label'] == label }&.dig('entries') || []
+        entries = entries_for(data, mode, suite, label)
         entry   = entries.find { |e| e['name'] == name }
         next unless entry # skip if this name/mode combo doesn't exist
 

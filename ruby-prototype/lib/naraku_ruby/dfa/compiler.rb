@@ -82,9 +82,10 @@ module NarakuRuby
     end
 
     class Compiler
-      def initialize(context, full_dfa: false)
+      def initialize(context, full_dfa: false, full_dfa_eval: false)
         @context = context
         @full_dfa = full_dfa
+        @full_dfa_eval = full_dfa_eval
 
         @states = []
         @next_check_id = 0
@@ -108,7 +109,8 @@ module NarakuRuby
           initial_state:,
           num_capture_groups: parser_info[:num_capture_groups],
           num_check_ids: @next_check_id,
-          full_dfa: @full_dfa
+          full_dfa: @full_dfa,
+          full_dfa_eval: @full_dfa_eval
         )
       end
 

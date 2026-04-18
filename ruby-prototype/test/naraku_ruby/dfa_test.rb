@@ -247,8 +247,10 @@ module NarakuRuby
       patterns.each do |pattern|
         regular = NarakuRuby::DFA.compile(pattern)
         full_dfa = NarakuRuby::DFA.compile(pattern, full_dfa: true)
+        full_dfa_eval = NarakuRuby::DFA.compile(pattern, full_dfa: true, eval: true)
         samples.each do |sample|
           assert_equal regular.match?(sample), full_dfa.match?(sample), "pattern=#{pattern.inspect} sample=#{sample.inspect}"
+          assert_equal regular.match?(sample), full_dfa_eval.match?(sample), "pattern=#{pattern.inspect} sample=#{sample.inspect} (full_dfa+eval)"
         end
       end
     end
