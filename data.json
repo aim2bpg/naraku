@@ -1,0 +1,12 @@
+[
+  {
+    "name": "test",
+    "central_tendency": 37989570.87972272,
+    "ips": 37989570.87972272,
+    "error": 171739,
+    "stddev": 171739,
+    "microseconds": 1084926.0,
+    "iterations": 41215031,
+    "cycles": 3746821
+  }
+]

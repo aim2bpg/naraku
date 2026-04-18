@@ -16,6 +16,8 @@ AllCops:
     - 'build/**/*'
     - '.ruby-lsp/**/*'
     - 'ruby-prototype/lib/mruby-scripts/**/*'
+    - 'ruby-prototype/benchmark/data/**/*'
+    - 'ruby-prototype/benchmark/results/**/*'
 
 Layout/FirstHashElementIndentation:
   EnforcedStyle: consistent

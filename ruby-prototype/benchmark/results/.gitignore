@@ -1,0 +1,4 @@
+# ベンチマーク計測結果は VCS に含めない
+*.json
+report.md
+.tmp_*.json

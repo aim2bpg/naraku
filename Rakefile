@@ -1,8 +1,10 @@
 # frozen_string_literal: true
 
 require 'bundler/setup'
+require 'fileutils'
 require 'minitest/test_task'
 require 'rake/file_utils'
+require 'rbconfig'
 
 UNICODE_VERSION = '17.0.0'
 MRUBY_CONFIG = ENV.fetch('MRUBY_CONFIG', '../../build_config.rb')
@@ -139,6 +141,62 @@ namespace :ruby_prototype do
     t.libs << 'ruby-prototype/lib'
     t.test_globs = ['ruby-prototype/test/**/*_test.rb']
   end
+
+  BENCHMARK_DIR = 'ruby-prototype/benchmark'
+  BENCHMARK_RESULTS_DIR = "#{BENCHMARK_DIR}/results"
+
+  BENCHMARK_RUBY_FLAGS = {
+    'plain' => [],
+    'yjit'  => ['--yjit'],
+    'zjit'  => ['--zjit'],
+  }.freeze
+
+  BENCHMARK_SUITES = %w[synthetic corpus].freeze
+
+  namespace :benchmark do
+    # ── JIT モードごとの単独タスク ─────────────────────────────
+    BENCHMARK_RUBY_FLAGS.each do |mode, flags|
+      desc "Run all benchmark suites with #{mode.upcase}"
+      task mode.to_sym do
+        ruby_bin = RbConfig.ruby
+        FileUtils.mkdir_p(BENCHMARK_RESULTS_DIR)
+        FileUtils.rm_f("#{BENCHMARK_RESULTS_DIR}/#{mode}.json")
+
+        BENCHMARK_SUITES.each do |suite|
+          bench_file = "#{BENCHMARK_DIR}/bench_#{suite}.rb"
+          sh([ruby_bin, *flags, bench_file].join(' '))
+        end
+      end
+    end
+
+    # ── レポート生成のみ ──────────────────────────────────────
+    desc 'Generate Markdown report from existing JSON results'
+    task :report do
+      sh "#{RbConfig.ruby} #{BENCHMARK_DIR}/generate_report.rb"
+    end
+
+    # ── 個別スイート用 (追加の柔軟性のため) ──────────────────
+    BENCHMARK_SUITES.each do |suite|
+      namespace suite.to_sym do
+        BENCHMARK_RUBY_FLAGS.each do |mode, flags|
+          desc "Run #{suite} benchmark suite with #{mode.upcase}"
+          task mode.to_sym do
+            ruby_bin = RbConfig.ruby
+            FileUtils.mkdir_p(BENCHMARK_RESULTS_DIR)
+            sh([ruby_bin, *flags, "#{BENCHMARK_DIR}/bench_#{suite}.rb"].join(' '))
+          end
+        end
+      end
+    end
+  end
+
+  desc 'Run all benchmarks (plain + yjit + zjit) and generate report'
+  task benchmark: %w[
+    ruby_prototype:benchmark:plain
+    ruby_prototype:benchmark:yjit
+    ruby_prototype:benchmark:zjit
+    ruby_prototype:benchmark:report
+  ]
 end
 
 namespace :ruby do
