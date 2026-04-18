@@ -25,8 +25,8 @@ module BenchHelper
   TIME_SEC   = 5
 
   # Compiles DFA program. Returns nil if compilation fails.
-  def self.compile_dfa(pattern)
-    NarakuRuby::DFA.compile(pattern)
+  def self.compile_dfa(pattern, full_dfa: false)
+    NarakuRuby::DFA.compile(pattern, full_dfa:)
   rescue StandardError => e
     warn "  [SKIP] DFA compile error for #{pattern.inspect}: #{e.message}"
     nil

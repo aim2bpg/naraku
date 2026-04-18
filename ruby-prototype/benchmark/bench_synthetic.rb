@@ -21,6 +21,13 @@ SYNTHETIC_CASES = [
     label: 'repetition: greedy a+b',
     pattern: 'a+b',
     inputs: (["#{'a' * 100}b"] * 1000) + (['x' * 100] * 500),
+    full_dfa_compare: true,
+  },
+  {
+    label: 'repetition: ambiguous (a|a)+b',
+    pattern: '(a|a)+b',
+    inputs: (["#{'a' * 100}b"] * 1000) + (['x' * 100] * 500),
+    full_dfa_compare: true,
   },
   {
     label: 'capture: email-like',
@@ -68,7 +75,8 @@ def run_synthetic_benchmarks
     inputs  = bcase[:inputs]
 
     dfa = BenchHelper.compile_dfa(pattern)
-    re  = Regexp.new(pattern)
+    full_dfa = bcase[:full_dfa_compare] ? BenchHelper.compile_dfa(pattern, full_dfa: true) : nil
+    re = Regexp.new(pattern)
 
     puts "\n--- #{bcase[:label]} ---"
     puts "    pattern: #{pattern.inspect}  inputs: #{inputs.length} strings"
@@ -77,6 +85,7 @@ def run_synthetic_benchmarks
       x.config(warmup: BenchHelper::WARMUP_SEC, time: BenchHelper::TIME_SEC)
 
       x.report('NarakuRuby::DFA#match?') { inputs.each { |s| dfa.match?(s) } } if dfa
+      x.report('NarakuRuby::DFA#match? (full_dfa)') { inputs.each { |s| full_dfa.match?(s) } } if full_dfa
       x.report('Regexp#match?') { inputs.each { |s| re.match?(s) } }
 
       x.compare!

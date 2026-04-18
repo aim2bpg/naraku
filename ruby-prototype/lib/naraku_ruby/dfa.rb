@@ -6,8 +6,9 @@ require_relative 'dfa/program'
 module NarakuRuby
   module DFA
     def self.compile(context, **parser_options)
+      full_dfa = parser_options.delete(:full_dfa) { false }
       context = NarakuRuby.parse(context, postprocess: true, **parser_options) if context.is_a?(String)
-      Compiler.new(context).compile
+      Compiler.new(context, full_dfa:).compile
     end
 
     def self.match(context, string, pos = 0, **parser_options)

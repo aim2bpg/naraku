@@ -112,7 +112,7 @@ module NarakuRuby
 
       DEBUG = false
 
-      def initialize(states:, initial_state:, num_capture_groups:, num_check_ids:)
+      def initialize(states:, initial_state:, num_capture_groups:, num_check_ids:, full_dfa: false)
         @states = states
         @initial_state = initial_state
         @num_capture_groups = num_capture_groups
@@ -122,6 +122,12 @@ module NarakuRuby
 
         @word_char_class = @ascii_word_char_class = nil
         @word_ascii_table = @ascii_word_ascii_table = nil
+        @full_dfa_transition_codes = nil
+        @full_dfa_transitions = nil
+        @full_dfa_other_transitions = nil
+        @full_dfa_matching = nil
+        @full_dfa_start_index = nil
+        build_full_dfa_without_caps if full_dfa
       end
 
       attr_reader :states, :initial_state
@@ -199,7 +205,7 @@ module NarakuRuby
                 next
               end
             when :char_class
-              unless state.char_class.fast_include?(code)
+              unless char_class_include?(state, code)
                 Thread.release(thread)
                 next
               end
@@ -247,6 +253,8 @@ module NarakuRuby
       end
 
       def run_without_caps(string, start_pos)
+        return run_without_caps_full_dfa(string, start_pos) if @full_dfa_transitions
+
         code_points = string.ascii_only? ? string.bytes : string.codepoints
 
         show_states if DEBUG
@@ -270,7 +278,7 @@ module NarakuRuby
             when :code
               next unless state.code == code
             when :char_class
-              next unless state.char_class.fast_include?(code)
+              next unless char_class_include?(state, code)
             when :dot
               next unless code != 0x0A || state.newline
             else
@@ -293,6 +301,27 @@ module NarakuRuby
         end
 
         threads.any? { |state| state.op == :match }
+      end
+
+      def run_without_caps_full_dfa(string, start_pos)
+        code_points = string.ascii_only? ? string.bytes : string.codepoints
+        state_index = @full_dfa_start_index
+        pos = start_pos
+
+        while pos < code_points.length
+          return true if @full_dfa_matching[state_index]
+
+          code = code_points[pos]
+          transition_index = @full_dfa_transition_codes[code]
+          state_index = if transition_index
+                          @full_dfa_transitions[state_index][transition_index]
+                        else
+                          @full_dfa_other_transitions[state_index]
+                        end
+          pos += 1
+        end
+
+        @full_dfa_matching[state_index]
       end
 
       def epsilon_closure_with_caps(code_points, start_pos, pos, state, keep_pos, caps, epsilon_bits, visited_marks, visit_token, next_threads)
@@ -373,6 +402,131 @@ module NarakuRuby
         else
           raise "unexpected state: #{state}"
         end
+      end
+
+      def char_class_include?(state, code)
+        if code <= 0x7F
+          state.ascii_table[code]
+        else
+          state.char_class.fast_include?(code)
+        end
+      end
+
+      def build_full_dfa_without_caps
+        return unless full_dfa_compatible?
+
+        codes = @states.filter_map { |state| state.code if state.op == :code }.uniq.sort
+        transition_codes = {}
+        codes.each_with_index { |code, index| transition_codes[code] = index }
+
+        state_key_to_index = {}
+        state_sets = []
+        transitions = []
+        other_transitions = []
+        matching = []
+        queue = []
+
+        start_states = epsilon_closure_for_state_set_without_caps([@initial_state])
+        start_key = build_state_set_key(start_states)
+        state_key_to_index[start_key] = 0
+        state_sets << start_states
+        transitions << Array.new(codes.length, 0)
+        other_transitions << 0
+        matching << start_states.any? { |state| state.op == :match }
+        queue << 0
+
+        while queue.any?
+          index = queue.shift
+          from_states = state_sets[index]
+
+          codes.each_with_index do |code, code_index|
+            next_states = epsilon_closure_for_state_set_without_caps(states_after_code(from_states, code))
+            next_index = add_full_dfa_state(state_key_to_index, state_sets, transitions, other_transitions, matching, queue, next_states, codes.length)
+            transitions[index][code_index] = next_index
+          end
+
+          next_states = epsilon_closure_for_state_set_without_caps(states_after_other(from_states))
+          other_transitions[index] = add_full_dfa_state(
+            state_key_to_index, state_sets, transitions, other_transitions, matching, queue, next_states, codes.length
+          )
+        end
+
+        @full_dfa_transition_codes = transition_codes.freeze
+        @full_dfa_transitions = transitions.map(&:freeze).freeze
+        @full_dfa_other_transitions = other_transitions.freeze
+        @full_dfa_matching = matching.freeze
+        @full_dfa_start_index = 0
+      end
+
+      def add_full_dfa_state(state_key_to_index, state_sets, transitions, other_transitions, matching, queue, states, code_size)
+        key = build_state_set_key(states)
+        existing = state_key_to_index[key]
+        return existing if existing
+
+        index = state_sets.length
+        state_key_to_index[key] = index
+        state_sets << states
+        transitions << Array.new(code_size, 0)
+        other_transitions << 0
+        matching << states.any? { |state| state.op == :match }
+        queue << index
+        index
+      end
+
+      def states_after_code(states, code)
+        entries = []
+        states.each do |state|
+          case state.op
+          when :code
+            entries << state.next if state.code == code
+          when :match
+            return [state]
+          end
+        end
+        entries << @initial_state
+        entries
+      end
+
+      def states_after_other(states)
+        entries = []
+        states.each do |state|
+          case state.op
+          when :code
+            # no-op: `other` excludes all literal code transitions
+          when :match
+            return [state]
+          end
+        end
+        entries << @initial_state
+        entries
+      end
+
+      def epsilon_closure_for_state_set_without_caps(entry_states)
+        visited_marks = Array.new(@num_check_ids, 0)
+        visit_token = 1
+        next_states = []
+        entry_states.each do |state|
+          next unless state
+
+          epsilon_closure_without_caps([], 0, 0, state, 0, visited_marks, visit_token, next_states)
+        end
+        next_states
+      end
+
+      def full_dfa_compatible?
+        @states.all? do |state|
+          case state.op
+          when :match, :code, :jump, :split, :cap_begin, :cap_end, :keep, :check_visited, :mark_epsilon, :check_epsilon
+            true
+          else
+            false
+          end
+        end
+      end
+
+      def build_state_set_key(states)
+        ids = states.filter_map(&:id).uniq.sort
+        ids.pack('N*')
       end
 
       def match_assertion?(assertion_type, code_points, start_pos, pos)

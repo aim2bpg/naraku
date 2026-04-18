@@ -240,6 +240,19 @@ module NarakuRuby
       refute_match '(?iFS:[ß])', 'ss'
     end
 
+    def test_full_dfa_match_is_consistent_for_simple_non_capture_patterns
+      patterns = ['a+b', '(a|a)+b']
+      samples = ['', 'b', 'ab', 'aaab', 'aaaaac', 'zaaabz']
+
+      patterns.each do |pattern|
+        regular = NarakuRuby::DFA.compile(pattern)
+        full_dfa = NarakuRuby::DFA.compile(pattern, full_dfa: true)
+        samples.each do |sample|
+          assert_equal regular.match?(sample), full_dfa.match?(sample), "pattern=#{pattern.inspect} sample=#{sample.inspect}"
+        end
+      end
+    end
+
     private
 
     def assert_match_data_like_ruby(pattern, string, regexp_options: 0, parser_options: {})

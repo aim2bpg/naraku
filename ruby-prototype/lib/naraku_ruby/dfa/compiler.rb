@@ -5,6 +5,7 @@ module NarakuRuby
       :op,
       :code,           # for `:code`
       :char_class,     # for `:char_class`
+      :ascii_table,    # for `:char_class` fast-path
       :newline,        # for `:dot`
       :assertion_type, # for `:assertion`
       :cap_num,        # for `:cap_begin` and `:cap_end`
@@ -81,8 +82,9 @@ module NarakuRuby
     end
 
     class Compiler
-      def initialize(context)
+      def initialize(context, full_dfa: false)
         @context = context
+        @full_dfa = full_dfa
 
         @states = []
         @next_check_id = 0
@@ -101,7 +103,13 @@ module NarakuRuby
         cap_end_state.next = match_state
 
         parser_info = @context[:parser_info]
-        Program.new(states: @states, initial_state:, num_capture_groups: parser_info[:num_capture_groups], num_check_ids: @next_check_id)
+        Program.new(
+          states: @states,
+          initial_state:,
+          num_capture_groups: parser_info[:num_capture_groups],
+          num_check_ids: @next_check_id,
+          full_dfa: @full_dfa
+        )
       end
 
       private
@@ -475,7 +483,7 @@ module NarakuRuby
       def emit_char_class(char_class)
         check_id = @next_check_id
         @next_check_id += 1
-        emit(:char_class, char_class:, check_id:)
+        emit(:char_class, char_class:, ascii_table: build_ascii_table(char_class), check_id:)
       end
 
       def emit_dot(newline)
@@ -518,11 +526,15 @@ module NarakuRuby
         emit(:match, check_id:)
       end
 
-      def emit(op, code: nil, char_class: nil, newline: nil, cap_num: nil, assertion_type: nil, check_id: nil, next: nil, split_next: nil)
+      def emit(op, code: nil, char_class: nil, ascii_table: nil, newline: nil, cap_num: nil, assertion_type: nil, check_id: nil, next: nil, split_next: nil)
         id = @states.length
-        state = State.new(id:, op:, code:, char_class:, newline:, cap_num:, assertion_type:, check_id:, next:, split_next:)
+        state = State.new(id:, op:, code:, char_class:, ascii_table:, newline:, cap_num:, assertion_type:, check_id:, next:, split_next:)
         @states << state
         state
+      end
+
+      def build_ascii_table(char_class)
+        Array.new(0x80) { |code| char_class.fast_include?(code) }.freeze
       end
 
       def compile_error(message, node)
