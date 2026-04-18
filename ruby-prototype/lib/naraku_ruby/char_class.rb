@@ -16,7 +16,10 @@ module NarakuRuby
 
     def include?(code)
       validate_codepoint!(code)
+      fast_include?(code)
+    end
 
+    def fast_include?(code)
       left = 0
       right = @ranges.length - 1
       while left <= right

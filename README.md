@@ -72,6 +72,21 @@ Run Ruby prototype tests:
 bundle exec rake ruby_prototype:test
 ```
 
+Run DFA profiling (outputs under `ruby-prototype/benchmark/results/profiles`):
+
+```sh
+bundle exec rake ruby_prototype:benchmark:profile
+```
+
+Compare two benchmark JSON files:
+
+```sh
+bundle exec ruby ruby-prototype/benchmark/compare_results.rb \
+  ruby-prototype/benchmark/results/plain.before.json \
+  ruby-prototype/benchmark/results/plain.json \
+  --name-before=before --name-after=after
+```
+
 Lint:
 
 ```sh

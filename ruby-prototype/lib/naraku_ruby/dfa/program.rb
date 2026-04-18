@@ -47,21 +47,66 @@ module NarakuRuby
     class Program
       Thread = Struct.new(:state, :keep_pos, :caps)
 
-      class BitSet
-        def initialize
-          @bits = 0
+      class Thread
+        POOL = []
+
+        def self.alloc(state, keep_pos, caps)
+          if POOL.empty?
+            new(state, keep_pos, caps)
+          else
+            instance = POOL.pop
+            instance.state = state
+            instance.keep_pos = keep_pos
+            instance.caps = caps
+            instance
+          end
         end
 
-        def include?(n)
-          @bits.allbits?(1 << n)
+        def self.release(instance)
+          POOL << instance
+        end
+      end
+
+      class Caps
+        def initialize(data, shared: false)
+          @data = data
+          @shared = shared
         end
 
-        def add(n)
-          @bits |= 1 << n
+        def [](index)
+          @data[index]
         end
 
-        def clear
-          @bits = 0
+        def fork
+          @shared = true
+          self.class.new(@data, shared: true)
+        end
+
+        def set_cap_begin(cap_num, pos)
+          ensure_writable!
+          begin_index = cap_num * 2
+          @data[begin_index] = pos
+          @data[begin_index + 1] = -1
+        end
+
+        def set_cap_end(cap_num, pos)
+          ensure_writable!
+          @data[(cap_num * 2) + 1] = pos
+        end
+
+        def materialize(keep_pos)
+          ensure_writable!
+          @data[0] = keep_pos
+          @data
+        end
+
+        private
+
+        def ensure_writable!
+          return unless @shared
+
+          @data = @data.dup
+          @shared = false
         end
       end
 
@@ -72,8 +117,11 @@ module NarakuRuby
         @initial_state = initial_state
         @num_capture_groups = num_capture_groups
         @num_check_ids = num_check_ids
+        @caps_size = (@num_capture_groups + 1) * 2
+        @empty_caps = Array.new(@caps_size, -1).freeze
 
         @word_char_class = @ascii_word_char_class = nil
+        @word_ascii_table = @ascii_word_ascii_table = nil
       end
 
       attr_reader :states, :initial_state
@@ -86,24 +134,29 @@ module NarakuRuby
       end
 
       def match(string, pos = 0)
-        caps = run(string, pos)
+        caps = run_with_caps(string, pos)
         caps ? MatchData.new(string, caps) : nil
       end
 
       def match?(string, pos = 0)
-        !!match(string, pos)
+        run_without_caps(string, pos)
       end
 
       private
 
-      def run(string, start_pos)
-        code_points = string.codepoints
+      def run_with_caps(string, start_pos)
+        code_points = string.ascii_only? ? string.bytes : string.codepoints
 
         show_states if DEBUG
 
         threads = []
-        visited = BitSet.new
-        epsilon_closure(code_points, start_pos, start_pos, @initial_state, start_pos, [-1] * ((@num_capture_groups + 1) * 2), 0, visited, threads)
+        next_threads = []
+        visited_marks = Array.new(@num_check_ids, 0)
+        visit_token = 1
+        epsilon_closure_with_caps(
+          code_points, start_pos, start_pos, @initial_state, start_pos,
+          Caps.new(@empty_caps.dup), 0, visited_marks, visit_token, threads
+        )
 
         best_keep_pos = nil
         best_caps = nil
@@ -119,32 +172,59 @@ module NarakuRuby
 
           break if threads.any? && threads.first.state.op == :match && better_caps?(threads.first.caps, best_caps)
 
-          next_threads = []
-          visited.clear
+          code = code_points[pos]
+          visit_token += 1
+          has_match_thread = false
           threads.each do |thread|
-            case thread.state.op
-            in :match
-              next if visited.include?(thread.state.check_id)
+            state = thread.state
+            if has_match_thread
+              Thread.release(thread)
+              next
+            end
+
+            case state.op
+            when :match
+              if visited_marks[state.check_id] == visit_token
+                Thread.release(thread)
+                next
+              end
 
               next_threads << thread
-              visited.add(thread.state.check_id)
+              visited_marks[state.check_id] = visit_token
+              has_match_thread = true
               next
-            in :code
-              next unless thread.state.code == code_points[pos]
-            in :char_class
-              next unless thread.state.char_class.include?(code_points[pos])
-            in :dot
-              next unless code_points[pos] != 0x0A || thread.state.newline
+            when :code
+              unless state.code == code
+                Thread.release(thread)
+                next
+              end
+            when :char_class
+              unless state.char_class.fast_include?(code)
+                Thread.release(thread)
+                next
+              end
+            when :dot
+              unless code != 0x0A || state.newline
+                Thread.release(thread)
+                next
+              end
             else
               raise "unexpected state: #{state}"
             end
 
-            epsilon_closure(code_points, start_pos, pos + 1, thread.state.next, thread.keep_pos, thread.caps, 0, visited, next_threads)
+            Thread.release(thread)
+            epsilon_closure_with_caps(code_points, start_pos, pos + 1, state.next, thread.keep_pos, thread.caps, 0, visited_marks, visit_token, next_threads)
           end
 
-          epsilon_closure(code_points, start_pos, pos + 1, @initial_state, pos + 1, [-1] * ((@num_capture_groups + 1) * 2), 0, visited, next_threads)
+          unless has_match_thread
+            epsilon_closure_with_caps(
+              code_points, start_pos, pos + 1, @initial_state, pos + 1,
+              Caps.new(@empty_caps.dup), 0, visited_marks, visit_token, next_threads
+            )
+          end
 
-          threads = next_threads
+          threads, next_threads = next_threads, threads
+          next_threads.clear
           pos += 1
         end
 
@@ -163,48 +243,156 @@ module NarakuRuby
           break
         end
 
-        best_caps[0] = best_keep_pos if best_caps
-        best_caps
+        best_caps&.materialize(best_keep_pos)
       end
 
-      def epsilon_closure(code_points, start_pos, pos, state, keep_pos, caps, epsilon_bits, visited, next_threads)
-        case state.op
-        in :match | :code | :char_class | :dot
-          return if visited.include?(state.check_id)
+      def run_without_caps(string, start_pos)
+        code_points = string.ascii_only? ? string.bytes : string.codepoints
 
-          visited.add(state.check_id)
-          next_threads << Thread.new(state, keep_pos, caps)
-        in :jump
-          epsilon_closure(code_points, start_pos, pos, state.next, keep_pos, caps, epsilon_bits, visited, next_threads)
-        in :split
-          epsilon_closure(code_points, start_pos, pos, state.next, keep_pos, caps.dup, epsilon_bits, visited, next_threads)
-          epsilon_closure(code_points, start_pos, pos, state.split_next, keep_pos, caps, epsilon_bits, visited, next_threads)
-        in :cap_begin
-          caps[state.cap_num * 2] = pos
-          caps[(state.cap_num * 2) + 1] = -1
-          epsilon_closure(code_points, start_pos, pos, state.next, keep_pos, caps, epsilon_bits, visited, next_threads)
-        in :cap_end
-          caps[(state.cap_num * 2) + 1] = pos
-          epsilon_closure(code_points, start_pos, pos, state.next, keep_pos, caps, epsilon_bits, visited, next_threads)
-        in :keep
-          epsilon_closure(code_points, start_pos, pos, state.next, pos, caps, epsilon_bits, visited, next_threads)
-        in :assertion
+        show_states if DEBUG
+
+        threads = []
+        next_threads = []
+        visited_marks = Array.new(@num_check_ids, 0)
+        visit_token = 1
+        return true if epsilon_closure_without_caps(code_points, start_pos, start_pos, @initial_state, start_pos, 0, visited_marks, visit_token, threads)
+
+        pos = start_pos
+        while pos < code_points.length
+          code = code_points[pos]
+          visit_token += 1
+          has_match_thread = false
+          threads.each do |thread|
+            state = thread.state
+            if has_match_thread
+              Thread.release(thread)
+              next
+            end
+
+            case state.op
+            when :match
+              if visited_marks[state.check_id] == visit_token
+                Thread.release(thread)
+                next
+              end
+
+              Thread.release(thread)
+              return true
+            when :code
+              unless state.code == code
+                Thread.release(thread)
+                next
+              end
+            when :char_class
+              unless state.char_class.fast_include?(code)
+                Thread.release(thread)
+                next
+              end
+            when :dot
+              unless code != 0x0A || state.newline
+                Thread.release(thread)
+                next
+              end
+            else
+              raise "unexpected state: #{state}"
+            end
+
+            Thread.release(thread)
+            return true if epsilon_closure_without_caps(
+              code_points, start_pos, pos + 1, state.next, thread.keep_pos, 0,
+              visited_marks, visit_token, next_threads
+            )
+          end
+
+          return true if !has_match_thread && epsilon_closure_without_caps(
+            code_points, start_pos, pos + 1, @initial_state, pos + 1, 0,
+            visited_marks, visit_token, next_threads
+          )
+
+          threads, next_threads = next_threads, threads
+          next_threads.clear
+          pos += 1
+        end
+
+        threads.any? { |thread| thread.state.op == :match }
+      end
+
+      def epsilon_closure_with_caps(code_points, start_pos, pos, state, keep_pos, caps, epsilon_bits, visited_marks, visit_token, next_threads)
+        case state.op
+        when :match, :code, :char_class, :dot
+          return if visited_marks[state.check_id] == visit_token
+
+          visited_marks[state.check_id] = visit_token
+          next_threads << Thread.alloc(state, keep_pos, caps)
+        when :jump
+          epsilon_closure_with_caps(code_points, start_pos, pos, state.next, keep_pos, caps, epsilon_bits, visited_marks, visit_token, next_threads)
+        when :split
+          epsilon_closure_with_caps(code_points, start_pos, pos, state.next, keep_pos, caps.fork, epsilon_bits, visited_marks, visit_token, next_threads)
+          epsilon_closure_with_caps(code_points, start_pos, pos, state.split_next, keep_pos, caps, epsilon_bits, visited_marks, visit_token, next_threads)
+        when :cap_begin
+          caps.set_cap_begin(state.cap_num, pos)
+          epsilon_closure_with_caps(code_points, start_pos, pos, state.next, keep_pos, caps, epsilon_bits, visited_marks, visit_token, next_threads)
+        when :cap_end
+          caps.set_cap_end(state.cap_num, pos)
+          epsilon_closure_with_caps(code_points, start_pos, pos, state.next, keep_pos, caps, epsilon_bits, visited_marks, visit_token, next_threads)
+        when :keep
+          epsilon_closure_with_caps(code_points, start_pos, pos, state.next, pos, caps, epsilon_bits, visited_marks, visit_token, next_threads)
+        when :assertion
           return unless match_assertion?(state.assertion_type, code_points, start_pos, pos)
 
-          epsilon_closure(code_points, start_pos, pos, state.next, keep_pos, caps, epsilon_bits, visited, next_threads)
-        in :check_visited
-          return if visited.include?(state.check_id)
+          epsilon_closure_with_caps(code_points, start_pos, pos, state.next, keep_pos, caps, epsilon_bits, visited_marks, visit_token, next_threads)
+        when :check_visited
+          return if visited_marks[state.check_id] == visit_token
 
-          epsilon_closure(code_points, start_pos, pos, state.next, keep_pos, caps, epsilon_bits, visited, next_threads)
-          visited.add(state.check_id)
-        in :mark_epsilon
+          epsilon_closure_with_caps(code_points, start_pos, pos, state.next, keep_pos, caps, epsilon_bits, visited_marks, visit_token, next_threads)
+          visited_marks[state.check_id] = visit_token
+        when :mark_epsilon
           epsilon_bits |= 1 << state.check_id
-          epsilon_closure(code_points, start_pos, pos, state.next, keep_pos, caps, epsilon_bits, visited, next_threads)
-        in :check_epsilon
+          epsilon_closure_with_caps(code_points, start_pos, pos, state.next, keep_pos, caps, epsilon_bits, visited_marks, visit_token, next_threads)
+        when :check_epsilon
           if epsilon_bits.nobits?(1 << state.check_id)
-            epsilon_closure(code_points, start_pos, pos, state.next, keep_pos, caps, epsilon_bits, visited, next_threads)
+            epsilon_closure_with_caps(code_points, start_pos, pos, state.next, keep_pos, caps, epsilon_bits, visited_marks, visit_token, next_threads)
           else
-            epsilon_closure(code_points, start_pos, pos, state.split_next, keep_pos, caps, epsilon_bits, visited, next_threads)
+            epsilon_closure_with_caps(code_points, start_pos, pos, state.split_next, keep_pos, caps, epsilon_bits, visited_marks, visit_token, next_threads)
+          end
+        else
+          raise "unexpected state: #{state}"
+        end
+      end
+
+      def epsilon_closure_without_caps(code_points, start_pos, pos, state, keep_pos, epsilon_bits, visited_marks, visit_token, next_threads)
+        case state.op
+        when :match, :code, :char_class, :dot
+          return false if visited_marks[state.check_id] == visit_token
+
+          visited_marks[state.check_id] = visit_token
+          next_threads << Thread.alloc(state, keep_pos, nil)
+          state.op == :match
+        when :jump, :cap_begin, :cap_end
+          epsilon_closure_without_caps(code_points, start_pos, pos, state.next, keep_pos, epsilon_bits, visited_marks, visit_token, next_threads)
+        when :split
+          epsilon_closure_without_caps(code_points, start_pos, pos, state.next, keep_pos, epsilon_bits, visited_marks, visit_token, next_threads) ||
+            epsilon_closure_without_caps(code_points, start_pos, pos, state.split_next, keep_pos, epsilon_bits, visited_marks, visit_token, next_threads)
+        when :keep
+          epsilon_closure_without_caps(code_points, start_pos, pos, state.next, pos, epsilon_bits, visited_marks, visit_token, next_threads)
+        when :assertion
+          return false unless match_assertion?(state.assertion_type, code_points, start_pos, pos)
+
+          epsilon_closure_without_caps(code_points, start_pos, pos, state.next, keep_pos, epsilon_bits, visited_marks, visit_token, next_threads)
+        when :check_visited
+          return false if visited_marks[state.check_id] == visit_token
+
+          matched = epsilon_closure_without_caps(code_points, start_pos, pos, state.next, keep_pos, epsilon_bits, visited_marks, visit_token, next_threads)
+          visited_marks[state.check_id] = visit_token
+          matched
+        when :mark_epsilon
+          epsilon_bits |= 1 << state.check_id
+          epsilon_closure_without_caps(code_points, start_pos, pos, state.next, keep_pos, epsilon_bits, visited_marks, visit_token, next_threads)
+        when :check_epsilon
+          if epsilon_bits.nobits?(1 << state.check_id)
+            epsilon_closure_without_caps(code_points, start_pos, pos, state.next, keep_pos, epsilon_bits, visited_marks, visit_token, next_threads)
+          else
+            epsilon_closure_without_caps(code_points, start_pos, pos, state.split_next, keep_pos, epsilon_bits, visited_marks, visit_token, next_threads)
           end
         else
           raise "unexpected state: #{state}"
@@ -217,41 +405,44 @@ module NarakuRuby
 
       def match_assertion?(assertion_type, code_points, start_pos, pos)
         case assertion_type
-        in :begin_of_line
+        when :begin_of_line
           pos.zero? || (code_points[pos - 1] == 0x0A && pos != code_points.length)
-        in :end_of_line
+        when :end_of_line
           pos == code_points.length || code_points[pos] == 0x0A
-        in :begin_of_string
+        when :begin_of_string
           pos.zero?
-        in :end_of_string_strict
+        when :end_of_string_strict
           pos == code_points.length
-        in :end_of_string_loose
+        when :end_of_string_loose
           pos == code_points.length || (pos == code_points.length - 1 && code_points[pos] == 0x0A)
-        in :begin_of_matching
+        when :begin_of_matching
           pos == start_pos
-        in :word_boundary
+        when :word_boundary
           prev_is_word = word_code?(code_points, pos - 1)
           curr_is_word = word_code?(code_points, pos)
           prev_is_word != curr_is_word
-        in :non_word_boundary
+        when :non_word_boundary
           prev_is_word = word_code?(code_points, pos - 1)
           curr_is_word = word_code?(code_points, pos)
           prev_is_word == curr_is_word
-        in :ascii_word_boundary
+        when :ascii_word_boundary
           prev_is_word = ascii_word_code?(code_points, pos - 1)
           curr_is_word = ascii_word_code?(code_points, pos)
           prev_is_word != curr_is_word
-        in :non_ascii_word_boundary
-          prev_is_word = ascii_word_code?(code_points, pos - 1)
-          curr_is_word = ascii_word_code?(code_points, pos)
-          prev_is_word == curr_is_word
+        when :non_ascii_word_boundary
+        prev_is_word = ascii_word_code?(code_points, pos - 1)
+        curr_is_word = ascii_word_code?(code_points, pos)
+        prev_is_word == curr_is_word
         end
       end
 
       def word_code?(code_points, pos)
         return false if pos.negative? || pos >= code_points.length
 
-        word_char_class.include?(code_points[pos])
+        code = code_points[pos]
+        return word_ascii_table[code] if code <= 0x7F
+
+        word_char_class.fast_include?(code)
       end
 
       def word_char_class
@@ -271,10 +462,17 @@ module NarakuRuby
         @word_char_class
       end
 
+      def word_ascii_table
+        return @word_ascii_table if @word_ascii_table
+
+        @word_ascii_table = build_ascii_table(word_char_class)
+      end
+
       def ascii_word_code?(code_points, pos)
         return false if pos.negative? || pos >= code_points.length
 
-        ascii_word_char_class.include?(code_points[pos])
+        code = code_points[pos]
+        code <= 0x7F && ascii_word_ascii_table[code]
       end
 
       def ascii_word_char_class
@@ -292,6 +490,16 @@ module NarakuRuby
         })
         @ascii_word_char_class, = builder.build
         @ascii_word_char_class
+      end
+
+      def ascii_word_ascii_table
+        return @ascii_word_ascii_table if @ascii_word_ascii_table
+
+        @ascii_word_ascii_table = build_ascii_table(ascii_word_char_class)
+      end
+
+      def build_ascii_table(char_class)
+        Array.new(0x80) { |code| char_class.include?(code) }.freeze
       end
     end
   end

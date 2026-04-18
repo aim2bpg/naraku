@@ -175,6 +175,11 @@ namespace :ruby_prototype do
       sh "#{RbConfig.ruby} #{BENCHMARK_DIR}/generate_report.rb"
     end
 
+    desc 'Profile DFA matcher hot paths (stackprof + memory_profiler)'
+    task :profile do
+      sh "#{RbConfig.ruby} #{BENCHMARK_DIR}/profile_dfa.rb"
+    end
+
     # ── 個別スイート用 (追加の柔軟性のため) ──────────────────
     BENCHMARK_SUITES.each do |suite|
       namespace suite.to_sym do

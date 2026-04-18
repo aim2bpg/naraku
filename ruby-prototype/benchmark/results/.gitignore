@@ -2,3 +2,5 @@
 *.json
 report.md
 .tmp_*.json
+*.diff.md
+profiles/
