@@ -107,7 +107,10 @@ module NarakuRuby
     end
 
     def test_returns_nil_when_no_match
-      assert_nil NarakuRuby::DFA.match('(a)(b)', 'zzz')
+      dfa_program = NarakuRuby::DFA.compile('(a)(b)')
+      dfa_match, dfa_match_p = assert_match_consistency(dfa_program, 'zzz', '(a)(b)')
+      assert_nil dfa_match
+      assert_equal false, dfa_match_p
     end
 
     def test_bulk_compatibility_on_supported_subset
@@ -246,14 +249,16 @@ module NarakuRuby
       dfa_program = NarakuRuby::DFA.compile(pattern, **parser_options)
       string.each do |s|
         ruby_match = ruby_regexp.match(s)
-        dfa_match = dfa_program.match(s)
+        dfa_match, dfa_match_p = assert_match_consistency(dfa_program, s, pattern)
 
         if ruby_match.nil?
           assert_nil dfa_match, "pattern=#{pattern.inspect} string=#{s.inspect}"
+          assert_equal false, dfa_match_p, "pattern=#{pattern.inspect} string=#{s.inspect}"
           next
         end
 
         refute_nil dfa_match, "pattern=#{pattern.inspect} string=#{s.inspect}"
+        assert_equal true, dfa_match_p, "pattern=#{pattern.inspect} string=#{s.inspect}"
         assert_equal ruby_match[0], dfa_match[0], "pattern=#{pattern.inspect} string=#{s.inspect}"
         assert_equal ruby_match.captures, dfa_match.captures, "pattern=#{pattern.inspect} string=#{s.inspect}"
 
@@ -272,12 +277,24 @@ module NarakuRuby
 
     def assert_match(pattern, string, parser_options: {})
       dfa_program = NarakuRuby::DFA.compile(pattern, postprocess: true, **parser_options)
-      assert dfa_program.match?(string), "expected pattern #{pattern.inspect} to match string #{string.inspect}"
+      dfa_match, dfa_match_p = assert_match_consistency(dfa_program, string, pattern)
+      refute_nil dfa_match, "expected pattern #{pattern.inspect} to match string #{string.inspect}"
+      assert dfa_match_p, "expected pattern #{pattern.inspect} to match string #{string.inspect}"
     end
 
     def refute_match(pattern, string, parser_options: {})
       dfa_program = NarakuRuby::DFA.compile(pattern, postprocess: true, **parser_options)
-      refute dfa_program.match?(string), "expected pattern #{pattern.inspect} to not match string #{string.inspect}"
+      dfa_match, dfa_match_p = assert_match_consistency(dfa_program, string, pattern)
+      assert_nil dfa_match, "expected pattern #{pattern.inspect} to not match string #{string.inspect}"
+      refute dfa_match_p, "expected pattern #{pattern.inspect} to not match string #{string.inspect}"
+    end
+
+    def assert_match_consistency(dfa_program, string, pattern)
+      dfa_match = dfa_program.match(string)
+      dfa_match_p = dfa_program.match?(string)
+      assert_equal !dfa_match.nil?, dfa_match_p,
+        "pattern=#{pattern.inspect} string=#{string.inspect} must be consistent between match and match?"
+      [dfa_match, dfa_match_p]
     end
 
     def build_random_patterns(rng, count:, depth:)
