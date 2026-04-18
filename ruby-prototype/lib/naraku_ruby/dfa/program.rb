@@ -169,26 +169,20 @@ module NarakuRuby
 
       def epsilon_closure(code_points, start_pos, pos, state, keep_pos, caps, epsilon_bits, visited, next_threads)
         case state.op
-        in :match
+        in :match | :code | :char_class | :dot
           return if visited.include?(state.check_id)
 
-          next_threads << Thread.new(state, keep_pos, caps.dup)
           visited.add(state.check_id)
-        in :code | :char_class | :dot
-          next_threads << Thread.new(state, keep_pos, caps.dup)
+          next_threads << Thread.new(state, keep_pos, caps)
         in :jump
           epsilon_closure(code_points, start_pos, pos, state.next, keep_pos, caps, epsilon_bits, visited, next_threads)
         in :split
-          epsilon_closure(code_points, start_pos, pos, state.next, keep_pos, caps, epsilon_bits, visited, next_threads)
+          epsilon_closure(code_points, start_pos, pos, state.next, keep_pos, caps.dup, epsilon_bits, visited, next_threads)
           epsilon_closure(code_points, start_pos, pos, state.split_next, keep_pos, caps, epsilon_bits, visited, next_threads)
         in :cap_begin
-          old_cap_begin = caps[state.cap_num * 2]
-          old_cap_end = caps[(state.cap_num * 2) + 1]
           caps[state.cap_num * 2] = pos
           caps[(state.cap_num * 2) + 1] = -1
           epsilon_closure(code_points, start_pos, pos, state.next, keep_pos, caps, epsilon_bits, visited, next_threads)
-          caps[state.cap_num * 2] = old_cap_begin
-          caps[(state.cap_num * 2) + 1] = old_cap_end
         in :cap_end
           caps[(state.cap_num * 2) + 1] = pos
           epsilon_closure(code_points, start_pos, pos, state.next, keep_pos, caps, epsilon_bits, visited, next_threads)

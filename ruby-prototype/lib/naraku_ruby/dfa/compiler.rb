@@ -8,7 +8,7 @@ module NarakuRuby
       :newline,        # for `:dot`
       :assertion_type, # for `:assertion`
       :cap_num,        # for `:cap_begin` and `:cap_end`
-      :check_id,       # for `:check_visited`, `:mark_epsilon`, `:check_epsilon`, and `:match`
+      :check_id,       # for `:check_visited`, `:mark_epsilon`, `:check_epsilon`, `:code`, `:char_class`, `:dot`, and `:match`
       :next,           # for any state except `:match`
       :split_next,     # for `:split`
       keyword_init: true
@@ -18,12 +18,12 @@ module NarakuRuby
       def to_s
         case op
         in :code
-          format('%s %s -> %03d', 'code', State.show_code(code), self.next.id)
+          format('%s %s (%d) -> %03d', 'code', State.show_code(code), check_id, self.next.id)
         in :dot
-          format('%s %s -> %03d', 'dot', newline.to_s, self.next.id)
+          format('%s %s (%d) -> %03d', 'dot', newline.to_s, check_id, self.next.id)
         in :char_class
           lines = []
-          lines << format('%s -> %03d', 'char_class', self.next.id)
+          lines << format('%s (%d) -> %03d', 'char_class', check_id, self.next.id)
           char_class.ranges.each do |range|
             lines << format('  %s..%s', State.show_code(range.begin), State.show_code(range.end))
           end
@@ -47,7 +47,7 @@ module NarakuRuby
         in :jump
           format('%s -> %03d', 'jump', self.next.id)
         in :match
-          format('%s %d', 'match', check_id)
+          format('%s (%d)', 'match', check_id)
         else
           format('unknown op: %s', op)
         end
@@ -467,15 +467,21 @@ module NarakuRuby
       end
 
       def emit_code(code)
-        emit(:code, code:)
+        check_id = @next_check_id
+        @next_check_id += 1
+        emit(:code, code:, check_id:)
       end
 
       def emit_char_class(char_class)
-        emit(:char_class, char_class:)
+        check_id = @next_check_id
+        @next_check_id += 1
+        emit(:char_class, char_class:, check_id:)
       end
 
       def emit_dot(newline)
-        emit(:dot, newline:)
+        check_id = @next_check_id
+        @next_check_id += 1
+        emit(:dot, newline:, check_id:)
       end
 
       def emit_assertion(assertion_type)
