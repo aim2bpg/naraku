@@ -1,7 +1,7 @@
 # Naraku
 
-*Naraku* (**奈落** in Japanese) is the *regular expression engine* and the *encoding foundation* for the **Ruby** programming language.
-It is a successor to Oniguruma (鬼車) and Onigmo (鬼雲).
+*Naraku* (**奈落** in Japanese) is the **Ruby-dedicated** regular expression engine.
+It is aimed to be a successor to Oniguruma (鬼車) and Onigmo (鬼雲).
 
 > Q. *Why is the name Naraku?*\
 > A. *Let's read **[Inuyasha](https://en.wikipedia.org/wiki/Inuyasha)***.
@@ -98,3 +98,9 @@ Format (C + Ruby):
 ```sh
 bundle exec rake format
 ```
+
+## License
+
+This project is licensed under the BSD License. See the [LICENSE](LICENSE) file for details.
+
+Some code snippets are derived from Oniguruma and Onigmo, which are also BSD-licensed. See the [COPYRIGHT](COPYRIGHT) file for details.
