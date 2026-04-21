@@ -19,7 +19,7 @@ MODES = %w[plain yjit zjit].freeze
 
 def latest_result_for(data, mode, suite, label)
   results = data.dig(mode, suite) || []
-  results.reverse_each.find { |r| r['label'] == label }
+  results.rfind { |r| r['label'] == label }
 end
 
 def entries_for(data, mode, suite, label)
@@ -121,7 +121,7 @@ all_suites.each do |suite|
     # Find the DFA baseline in plain mode for this specific test case.
     # The name usually includes 'NarakuRuby::DFA' or 'NarakuRuby.parse'.
     dfa_name = all_names.find { |n| n == 'NarakuRuby::DFA#match?' } ||
-      all_names.find { |n| n.include?('NarakuRuby') }
+               all_names.find { |n| n.include?('NarakuRuby') }
     dfa_plain_ips = nil
     if dfa_name
       entries_plain = entries_for(data, 'plain', suite, label)

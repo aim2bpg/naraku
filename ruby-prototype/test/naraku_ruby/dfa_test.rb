@@ -255,6 +255,39 @@ module NarakuRuby
       end
     end
 
+    def test_start_pos_is_codepoint_based_for_match_and_match_predicate
+      ascii_program = NarakuRuby::DFA.compile('ab')
+      ascii_match, ascii_match_p = assert_match_consistency(ascii_program, 'zzab', 'ab', pos: 2)
+      refute_nil ascii_match
+      assert_equal true, ascii_match_p
+      assert_equal 'ab', ascii_match[0]
+
+      ascii_nomatch, ascii_nomatch_p = assert_match_consistency(ascii_program, 'zzab', 'ab', pos: 3)
+      assert_nil ascii_nomatch
+      assert_equal false, ascii_nomatch_p
+
+      utf8_program = NarakuRuby::DFA.compile('b')
+      utf8_match, utf8_match_p = assert_match_consistency(utf8_program, 'aΩb', 'b', pos: 2)
+      refute_nil utf8_match
+      assert_equal true, utf8_match_p
+      assert_equal 'b', utf8_match[0]
+
+      utf8_nomatch, utf8_nomatch_p = assert_match_consistency(utf8_program, 'aΩb', 'b', pos: 3)
+      assert_nil utf8_nomatch
+      assert_equal false, utf8_nomatch_p
+    end
+
+    def test_raises_for_invalid_utf8_input
+      program = NarakuRuby::DFA.compile('.+')
+      invalid = "\xE3\x81".dup.force_encoding(::Encoding::UTF_8)
+
+      error = assert_raises(ArgumentError) { program.match?(invalid) }
+      assert_includes error.message, 'invalid byte sequence in UTF-8'
+
+      error = assert_raises(ArgumentError) { program.match(invalid) }
+      assert_includes error.message, 'invalid byte sequence in UTF-8'
+    end
+
     private
 
     def assert_match_data_like_ruby(pattern, string, regexp_options: 0, parser_options: {})
@@ -304,11 +337,11 @@ module NarakuRuby
       refute dfa_match_p, "expected pattern #{pattern.inspect} to not match string #{string.inspect}"
     end
 
-    def assert_match_consistency(dfa_program, string, pattern)
-      dfa_match = dfa_program.match(string)
-      dfa_match_p = dfa_program.match?(string)
+    def assert_match_consistency(dfa_program, string, pattern, pos: 0)
+      dfa_match = dfa_program.match(string, pos)
+      dfa_match_p = dfa_program.match?(string, pos)
       assert_equal !dfa_match.nil?, dfa_match_p,
-        "pattern=#{pattern.inspect} string=#{string.inspect} must be consistent between match and match?"
+                   "pattern=#{pattern.inspect} string=#{string.inspect} pos=#{pos.inspect} must be consistent between match and match?"
       [dfa_match, dfa_match_p]
     end
 
