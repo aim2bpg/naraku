@@ -103,4 +103,4 @@ bundle exec rake format
 
 This project is licensed under the BSD License. See the [LICENSE](LICENSE) file for details.
 
-Some code snippets are derived from Oniguruma and Onigmo, which are also BSD-licensed. See the [COPYRIGHT](COPYRIGHT) file for details.
+Some code snippets are derived from Oniguruma, Onigmo and Ruby, which are also BSD-licensed. See the [COPYRIGHT](COPYRIGHT) file for details.
