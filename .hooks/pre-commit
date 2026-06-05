@@ -8,8 +8,12 @@ if [ -d "$HOME/.rbenv/bin" ]; then
   eval "$(rbenv init -)"
 fi
 
-# Lint check
-bundle exec rake lint
+# Lint check (skip gracefully if gems are not installed)
+if bundle check > /dev/null 2>&1; then
+  bundle exec rake lint
+else
+  echo "pre-commit: gems not installed, skipping lint (run 'bundle install')"
+fi
 
 # Secret scan
 if command -v gitleaks &>/dev/null; then
