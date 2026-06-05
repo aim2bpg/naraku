@@ -42,6 +42,7 @@ Metrics/ClassLength:
   Exclude:
     - 'test/**/*'
     - 'ruby-prototype/test/**/*'
+    - 'ruby-prototype/lib/naraku_ruby/dfa/program.rb'
 
 Metrics/CyclomaticComplexity:
   Max: 50
@@ -54,6 +55,8 @@ Metrics/ModuleLength:
 
 Metrics/ParameterLists:
   Max: 10
+  Exclude:
+    - 'ruby-prototype/lib/naraku_ruby/dfa/program.rb'
 
 Metrics/PerceivedComplexity:
   Max: 50

@@ -4,6 +4,16 @@ require 'optparse'
 
 require_relative 'unicode/cprop_catalog'
 
+def range_cond(r)
+  if r.begin == r.end
+    "code == 0x#{r.begin.to_s(16).upcase}"
+  elsif r.begin.zero?
+    "code <= 0x#{r.end.to_s(16).upcase}"
+  else
+    "code >= 0x#{r.begin.to_s(16).upcase} && code <= 0x#{r.end.to_s(16).upcase}"
+  end
+end
+
 def gen_ascii(cat)
   codes = (0x00..0x7F).to_a
   print 'static uint16_t ascii_cprop_bits[128] = {'
@@ -52,11 +62,7 @@ def gen_ascii(cat)
 
     puts "    case NK_CPROP_#{cprop.constant_name}:"
     range_set.each_range do |r|
-      if r.begin == r.end
-        puts "      if (code == 0x#{r.begin.to_s(16).upcase}) return true;"
-      else
-        puts "      if (code >= 0x#{r.begin.to_s(16).upcase} && code <= 0x#{r.end.to_s(16).upcase}) return true;"
-      end
+      puts "      if (#{range_cond(r)}) return true;"
     end
     puts '      break;'
   end
@@ -162,11 +168,7 @@ def gen_sb(cat, enc, prefix)
   puts '    return code <= 0xFF;'
   puts '  case NK_CPROP_ASSIGNED:'
   conv_range(valid_range_set, rev_map).each_range do |r|
-    if r.begin == r.end
-      puts "    if (code == 0x#{r.begin.to_s(16).upcase}) return true;"
-    else
-      puts "    if (code >= 0x#{r.begin.to_s(16).upcase} && code <= 0x#{r.end.to_s(16).upcase}) return true;"
-    end
+    puts "    if (#{range_cond(r)}) return true;"
   end
   puts '    break;'
 
@@ -178,11 +180,7 @@ def gen_sb(cat, enc, prefix)
 
     puts "  case NK_CPROP_#{cprop.constant_name}:"
     conv_range(range_set, rev_map).each_range do |r|
-      if r.begin == r.end
-        puts "    if (code == 0x#{r.begin.to_s(16).upcase}) return true;"
-      else
-        puts "    if (code >= 0x#{r.begin.to_s(16).upcase} && code <= 0x#{r.end.to_s(16).upcase}) return true;"
-      end
+      puts "    if (#{range_cond(r)}) return true;"
     end
     puts '    break;'
   end

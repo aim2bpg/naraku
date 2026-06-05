@@ -3069,7 +3069,7 @@ parse_char_class_union_impl(nk_parser_t* parser, token_t* tok, nk_char_class_uni
   }
 
   nk_char_class_item_t* begin_item = NULL;
-  token_t begin_tok;
+  token_t begin_tok = {0};
 
   while (tok->type != TK_CHAR_CLASS_CLOSE && tok->type != TK_CHAR_CLASS_INTERSECTION && tok->type != TK_END) {
     if (tok->type == TK_CHAR_CLASS_RANGE_HYPHEN) {
