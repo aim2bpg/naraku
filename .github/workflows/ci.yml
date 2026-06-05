@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+  pull_request:
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+
+jobs:
+  ruby:
+    name: Lint & Ruby prototype tests
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          bundler-cache: true
+
+      - run: bundle exec rake lint
+      - run: bundle exec rake ruby_prototype:test
+
+  build-test:
+    name: Build & mruby tests
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y build-essential bison gperf libssl-dev libgmp-dev
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          bundler-cache: true
+
+      - name: Cache UCD data
+        uses: actions/cache@v4
+        with:
+          path: data/
+          key: ucd-17.0.0
+
+      - name: Download UCD
+        run: ruby tools/download_ucd.rb 17.0.0
+
+      - name: Get mruby commit hash
+        id: mruby
+        run: echo "hash=$(git -C submodules/mruby rev-parse HEAD)" >> $GITHUB_OUTPUT
+
+      - name: Cache mruby build
+        uses: actions/cache@v4
+        with:
+          path: |
+            build/
+            submodules/mruby/build/
+          key: mruby-${{ steps.mruby.outputs.hash }}-${{ hashFiles('src/**', 'include/**', 'mrbgems/**', 'build_config.rb') }}
+          restore-keys: |
+            mruby-${{ steps.mruby.outputs.hash }}-
+
+      - run: bundle exec rake naraku:build_mruby
+      - run: bundle exec rake naraku:test_mruby

@@ -222,6 +222,16 @@ task lint: 'ruby:lint'
 desc 'Format C and Ruby source files'
 task format: ['naraku:format', 'ruby:format']
 
+desc 'Install git hooks from .hooks/'
+task :install_hooks do
+  Dir.glob('.hooks/*').each do |hook|
+    dest = ".git/hooks/#{File.basename(hook)}"
+    cp hook, dest
+    chmod 0o755, dest
+    puts "Installed #{dest}"
+  end
+end
+
 desc 'Show available Rake tasks'
 task :default do
   sh 'rake -T'
