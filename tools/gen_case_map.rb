@@ -233,6 +233,8 @@ def gen_unicode(case_map)
       .gsub(%r{/\*FALLTHROUGH\*/}, 'NARAKU_FALLTHROUGH;')
       .gsub('{-1}', '{-1, 0}')
       .gsub('offsetof', '(uint16_t)offsetof')
+      .gsub('register size_t len)', 'register size_t len __attribute__((unused)))')
+      .gsub(/^  return (asso_values.+);$/, '  return (unsigned int)(\1);')
   end
 
   puts fold_table_source
@@ -257,6 +259,8 @@ def gen_unicode(case_map)
       .gsub(%r{/\*FALLTHROUGH\*/}, 'NARAKU_FALLTHROUGH;')
       .gsub('{-1}', '{-1, 0}')
       .gsub('offsetof', '(uint16_t)offsetof')
+      .gsub('register size_t len)', 'register size_t len __attribute__((unused)))')
+      .gsub(/^  return (asso_values.+);$/, '  return (unsigned int)(\1);')
   end
 
   puts case_map_table_source
@@ -315,6 +319,8 @@ def gen_unicode(case_map)
         .gsub(%r{/\*FALLTHROUGH\*/}, 'NARAKU_FALLTHROUGH;')
         .gsub('{-1}', '{-1, 0}')
         .gsub('offsetof', '(uint16_t)offsetof')
+        .gsub('register size_t len)', 'register size_t len __attribute__((unused)))')
+        .gsub(/^  return (asso_values.+);$/, '  return (unsigned int)(\1);')
     end
 
     puts

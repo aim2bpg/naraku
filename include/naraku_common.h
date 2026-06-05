@@ -11,8 +11,8 @@
 #define NARAKU_EXPORTED_DATA __attribute__((__visibility__("default"))) extern
 #endif
 #else
-#define NARAKU_EXPORTED_FUNCTION
-#define NARAKU_EXPORTED_DATA
+#define NARAKU_EXPORTED_FUNCTION extern
+#define NARAKU_EXPORTED_DATA extern
 #endif
 #endif
 
