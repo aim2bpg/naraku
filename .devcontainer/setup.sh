@@ -66,7 +66,7 @@ add_if_missing 'export PATH="$HOME/.rbenv/bin:$PATH"'
 add_if_missing 'eval "$(rbenv init -)"'
 
 # --- Claude Code (optional) ---
-# Set INSTALL_CLAUDE_CODE=1 in devcontainer.json (remoteEnv) to install Claude Code (https://claude.ai/code).
-if [ "${INSTALL_CLAUDE_CODE:-0}" = "1" ] && ! command -v claude &>/dev/null; then
+# Set NARAKU_INSTALL_CLAUDE_CODE=1 in your shell profile to install Claude Code (https://claude.ai/code).
+if [ "${NARAKU_INSTALL_CLAUDE_CODE:-0}" = "1" ] && ! command -v claude &>/dev/null; then
   curl -fsSL https://claude.ai/install.sh | bash
 fi

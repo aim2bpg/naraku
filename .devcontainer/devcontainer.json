@@ -8,5 +8,8 @@
     "source=${localEnv:HOME}/.ssh,target=/home/vscode/.ssh,type=bind,consistency=cached,readonly",
     "source=${localEnv:HOME}/.rbenv,target=/home/vscode/.rbenv,type=bind,consistency=cached"
   ],
+  "remoteEnv": {
+    "NARAKU_INSTALL_CLAUDE_CODE": "${localEnv:NARAKU_INSTALL_CLAUDE_CODE}"
+  },
   "postCreateCommand": "bash .devcontainer/setup.sh"
 }

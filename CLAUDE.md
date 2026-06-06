@@ -57,9 +57,14 @@ This installs system packages, rbenv, Ruby, gems, downloads the Unicode Characte
 
 ### Claude Code (optional)
 
-**Dev Container:** add `"INSTALL_CLAUDE_CODE": "1"` to `remoteEnv` in your local
-`.devcontainer/devcontainer.json`. Keep this change local — do not commit it, as
-Claude Code is a personal tool preference.
+Add to your shell profile (`~/.bashrc` or `~/.zshrc`):
+
+```sh
+export NARAKU_INSTALL_CLAUDE_CODE=1
+```
+
+The variable name is project-scoped to avoid conflicts with other projects.
+Dev Container picks it up automatically via `remoteEnv`; manual setup via `setup.sh` also reads it.
 
 **Host (no Dev Container):** install directly and it works with no extra configuration:
 
