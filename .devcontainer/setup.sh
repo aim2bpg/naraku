@@ -66,7 +66,9 @@ add_if_missing 'export PATH="$HOME/.rbenv/bin:$PATH"'
 add_if_missing 'eval "$(rbenv init -)"'
 
 # --- Claude Code (optional) ---
-# Set NARAKU_INSTALL_CLAUDE_CODE=1 in your shell profile to install Claude Code (https://claude.ai/code).
-if [ "${NARAKU_INSTALL_CLAUDE_CODE:-0}" = "1" ] && ! command -v claude &>/dev/null; then
+# To install Claude Code (https://claude.ai/code), create a marker file at the
+# workspace root (gitignored, so it's local-only and scoped to this clone):
+#   touch .install-claude-code
+if [ -f "$WORKSPACE_ROOT/.install-claude-code" ] && ! command -v claude &>/dev/null; then
   curl -fsSL https://claude.ai/install.sh | bash
 fi

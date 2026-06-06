@@ -57,16 +57,18 @@ This installs system packages, rbenv, Ruby, gems, downloads the Unicode Characte
 
 ### Claude Code (optional)
 
-Add to your shell profile (`~/.bashrc` or `~/.zshrc`):
+To install [Claude Code](https://claude.ai/code) inside the Dev Container, create a
+marker file at the workspace root before (re)building:
 
 ```sh
-export NARAKU_INSTALL_CLAUDE_CODE=1
+touch .install-claude-code
 ```
 
-The variable name is project-scoped to avoid conflicts with other projects.
-Dev Container picks it up automatically via `remoteEnv`; manual setup via `setup.sh` also reads it.
+The file is gitignored and scoped to this clone, so it won't affect other
+projects or other checkouts. `setup.sh` checks for it and installs Claude Code
+if present.
 
-**Host (no Dev Container):** install directly and it works with no extra configuration:
+**Host (no Dev Container):** install directly:
 
 ```sh
 curl -fsSL https://claude.ai/install.sh | bash

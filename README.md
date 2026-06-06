@@ -28,12 +28,15 @@ If you use VS Code, you can get a fully configured environment in one step:
 
 Ruby, mruby, and all dependencies are installed automatically.
 
-To also install [Claude Code](https://claude.ai/code), add to your shell profile:
+To also install [Claude Code](https://claude.ai/code), create a marker file at
+the workspace root before (re)building the container:
 
 ```sh
-echo 'export NARAKU_INSTALL_CLAUDE_CODE=1' >> ~/.bashrc   # bash
-echo 'export NARAKU_INSTALL_CLAUDE_CODE=1' >> ~/.zshrc    # zsh
+touch .install-claude-code
 ```
+
+The file is gitignored and scoped to this clone, so it won't affect other
+projects or checkouts.
 
 ### Manual setup
 

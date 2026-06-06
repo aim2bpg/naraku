@@ -6,3 +6,5 @@ build_config.rb.lock
 /data/
 
 /vendor/
+
+/.install-claude-code
