@@ -65,7 +65,8 @@ add_if_missing() {
 add_if_missing 'export PATH="$HOME/.rbenv/bin:$PATH"'
 add_if_missing 'eval "$(rbenv init -)"'
 
-# --- Claude Code ---
-if ! command -v claude &>/dev/null; then
+# --- Claude Code (optional) ---
+# Set INSTALL_CLAUDE_CODE=1 in devcontainer.json (remoteEnv) to install Claude Code (https://claude.ai/code).
+if [ "${INSTALL_CLAUDE_CODE:-0}" = "1" ] && ! command -v claude &>/dev/null; then
   curl -fsSL https://claude.ai/install.sh | bash
 fi
