@@ -20,7 +20,8 @@ jobs:
       - uses: ruby/setup-ruby@v1
         with:
           ruby-version: '.ruby-version'
-          bundler-cache: true
+
+      - run: bundle install
 
       - run: bundle exec rake lint
       - run: bundle exec rake ruby_prototype:test
