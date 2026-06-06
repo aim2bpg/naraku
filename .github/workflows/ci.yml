@@ -21,7 +21,14 @@ jobs:
         with:
           ruby-version: '.ruby-version'
 
-      - run: bundle install
+      - name: Cache gems
+        id: gems-cache
+        uses: actions/cache@v5
+        with:
+          path: vendor/bundle
+          key: gems-${{ runner.os }}-ruby-${{ hashFiles('Gemfile.lock') }}
+
+      - run: bundle config set --local path vendor/bundle && bundle install
 
       - run: bundle exec rake lint
 
@@ -41,7 +48,15 @@ jobs:
       - uses: ruby/setup-ruby@v1
         with:
           ruby-version: '.ruby-version'
-          bundler-cache: true
+
+      - name: Cache gems
+        id: gems-cache
+        uses: actions/cache@v5
+        with:
+          path: vendor/bundle
+          key: gems-${{ runner.os }}-ruby-${{ hashFiles('Gemfile.lock') }}
+
+      - run: bundle config set --local path vendor/bundle && bundle install
 
       - name: Cache UCD data
         uses: actions/cache@v5
@@ -57,15 +72,15 @@ jobs:
         run: echo "hash=$(git -C submodules/mruby rev-parse HEAD)" >> $GITHUB_OUTPUT
 
       - name: Cache mruby build
+        id: mruby-cache
         uses: actions/cache@v5
         with:
           path: |
             build/
             submodules/mruby/build/
           key: mruby-${{ steps.mruby.outputs.hash }}-${{ hashFiles('src/**', 'include/**', 'mrbgems/**', 'build_config.rb') }}
-          restore-keys: |
-            mruby-${{ steps.mruby.outputs.hash }}-
 
       - run: bundle exec rake naraku:build_mruby
+        if: steps.mruby-cache.outputs.cache-hit != 'true'
       - run: bundle exec rake naraku:test_mruby
       - run: bundle exec rake ruby_prototype:test

@@ -4,3 +4,5 @@ build_config.rb.lock
 /src/encoding/.gen/
 
 /data/
+
+/vendor/
