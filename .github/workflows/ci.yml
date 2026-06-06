@@ -78,6 +78,7 @@ jobs:
           path: |
             build/
             submodules/mruby/build/
+            submodules/mruby/bin/
           key: mruby-${{ steps.mruby.outputs.hash }}-${{ hashFiles('src/**', 'include/**', 'mrbgems/**', 'build_config.rb') }}
 
       - run: bundle exec rake naraku:build_mruby
