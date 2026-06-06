@@ -55,6 +55,18 @@ bash .devcontainer/setup.sh
 
 This installs system packages, rbenv, Ruby, gems, downloads the Unicode Character Database (UCD 17.0.0), and builds mruby.
 
+### Claude Code (optional)
+
+**Dev Container:** add `"INSTALL_CLAUDE_CODE": "1"` to `remoteEnv` in your local
+`.devcontainer/devcontainer.json`. Keep this change local — do not commit it, as
+Claude Code is a personal tool preference.
+
+**Host (no Dev Container):** install directly and it works with no extra configuration:
+
+```sh
+curl -fsSL https://claude.ai/install.sh | bash
+```
+
 ## Build and test commands
 
 ```sh
@@ -83,17 +95,6 @@ chore: tooling, config, maintenance (no production code change)
 ```
 
 Examples from this project: `fix: correct report generator`, `feat: add benchmark`, `chore: format Rakefile`
-
-### Pull requests
-
-- **1 PR = 1 concern** — keep changes focused so the author can accept independently
-- Aim for fewer than 10 files and 300 lines changed per PR
-- All tests and lint must pass before requesting review:
-
-```sh
-bundle exec rake naraku:test_mruby
-bundle exec rake lint
-```
 
 ### Pre-commit hook
 

@@ -78,6 +78,24 @@ Naraku is a Ruby/Onigmo-compatible regular expression engine implemented in C.
 - Free C-side user data correctly in parser free hooks.
 - Parse errors exposed to Ruby should preserve `offset`/`length` from parser error span fields.
 
+## Code generation (tools/)
+
+Unicode character property headers are generated via `gperf`. The generators
+post-process gperf output to fix compatibility with the project's strict compiler
+flags (`-Wall -Werror -Wextra -Wconversion`):
+
+- `gen_cprop_names.rb`: fixes `unsigned int hval = len` narrowing conversion (gperf 3.1 / gcc)
+- `gen_case_map.rb`: fixes unused `len` parameter and `asso_values` sign-conversion warnings
+- `gen_cprop_range.rb`: avoids generating `code >= 0x0` for `uint32_t` types
+
+If codegen breaks after a gperf version upgrade, check the post-processing gsub chains in these files.
+
+## Compiler flags
+
+`-std=c99 -Wall -Werror -Wextra -Wpedantic -Wundef -Wconversion -Wno-missing-braces -fPIC -fvisibility=hidden -Wimplicit-fallthrough`
+
+Strict flags are intentional. Generated headers are post-processed to comply rather than suppressing warnings at the include site.
+
 ## Testing expectations
 
 - Add regression tests for every parser bug fix (especially span and boundary bugs).
