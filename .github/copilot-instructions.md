@@ -21,8 +21,8 @@ Naraku is a Ruby/Onigmo-compatible regular expression engine implemented in C.
   - `ruby-prototype/lib/mruby-scripts/`: scripts executed by mruby.
   - `ruby-prototype/lib/naraku_ruby/`: CRuby-side helper code for prototype workflow.
   - `ruby-prototype/test/`: prototype tests (run via top-level Rake task).
-- `tests/`
-  - mruby-based tests (entrypoint: `tests/run_test.rb`)
+- `test/`
+  - mruby-based tests (entrypoint: `test/test_run.rb`)
   - custom framework: `Mtest`
 
 ## Current implementation status
@@ -63,7 +63,7 @@ Naraku is a Ruby/Onigmo-compatible regular expression engine implemented in C.
 - For new parser errors/warnings:
   - update enums in `include/naraku_error.h`,
   - add message in `src/error.c`,
-  - add/adjust parser tests in `tests/test_parser.rb`.
+  - add/adjust parser tests in `test/parser_test.rb`.
 - Keep explicit boundary checks at call sites (`parser->pattern_bytes < parser->pattern_bytes_end`) where context-specific errors are required.
 - `peek()` includes a defensive end-of-pattern check as a fallback safety net.
 - When adding parsing branches that inspect a “next token” (options/groups/char-class/escapes), ensure end-of-pattern is handled before `peek()`/`consume()`.
