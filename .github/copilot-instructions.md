@@ -21,8 +21,8 @@ Naraku is a Ruby/Onigmo-compatible regular expression engine implemented in C.
   - `ruby-prototype/lib/mruby-scripts/`: scripts executed by mruby.
   - `ruby-prototype/lib/naraku_ruby/`: CRuby-side helper code for prototype workflow.
   - `ruby-prototype/test/`: prototype tests (run via top-level Rake task).
-- `tests/`
-  - mruby-based tests (entrypoint: `tests/run_test.rb`)
+- `test/`
+  - mruby-based tests (entrypoint: `test/test_run.rb`)
   - custom framework: `Mtest`
 
 ## Current implementation status
@@ -63,7 +63,7 @@ Naraku is a Ruby/Onigmo-compatible regular expression engine implemented in C.
 - For new parser errors/warnings:
   - update enums in `include/naraku_error.h`,
   - add message in `src/error.c`,
-  - add/adjust parser tests in `tests/test_parser.rb`.
+  - add/adjust parser tests in `test/parser_test.rb`.
 - Keep explicit boundary checks at call sites (`parser->pattern_bytes < parser->pattern_bytes_end`) where context-specific errors are required.
 - `peek()` includes a defensive end-of-pattern check as a fallback safety net.
 - When adding parsing branches that inspect a “next token” (options/groups/char-class/escapes), ensure end-of-pattern is handled before `peek()`/`consume()`.
@@ -77,6 +77,24 @@ Naraku is a Ruby/Onigmo-compatible regular expression engine implemented in C.
 - Keep Ruby Proc callbacks alive (e.g., warning callback stored on parser object) to avoid GC issues.
 - Free C-side user data correctly in parser free hooks.
 - Parse errors exposed to Ruby should preserve `offset`/`length` from parser error span fields.
+
+## Code generation (tools/)
+
+Unicode character property headers are generated via `gperf`. The generators
+post-process gperf output to fix compatibility with the project's strict compiler
+flags (`-Wall -Werror -Wextra -Wconversion`):
+
+- `gen_cprop_names.rb`: fixes `unsigned int hval = len` narrowing conversion (gperf 3.1 / gcc)
+- `gen_case_map.rb`: fixes unused `len` parameter and `asso_values` sign-conversion warnings
+- `gen_cprop_range.rb`: avoids generating `code >= 0x0` for `uint32_t` types
+
+If codegen breaks after a gperf version upgrade, check the post-processing gsub chains in these files.
+
+## Compiler flags
+
+`-std=c99 -Wall -Werror -Wextra -Wpedantic -Wundef -Wconversion -Wno-missing-braces -fPIC -fvisibility=hidden -Wimplicit-fallthrough`
+
+Strict flags are intentional. Generated headers are post-processed to comply rather than suppressing warnings at the include site.
 
 ## Testing expectations
 
