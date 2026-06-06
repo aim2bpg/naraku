@@ -4,3 +4,7 @@ build_config.rb.lock
 /src/encoding/.gen/
 
 /data/
+
+/vendor/
+
+/.install-claude-code

@@ -1,0 +1,87 @@
+name: CI
+
+on:
+  push:
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+  pull_request:
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+
+jobs:
+  ruby:
+    name: Lint
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '.ruby-version'
+
+      - name: Cache gems
+        id: gems-cache
+        uses: actions/cache@v5
+        with:
+          path: vendor/bundle
+          key: gems-${{ runner.os }}-ruby-${{ hashFiles('Gemfile.lock') }}
+
+      - run: bundle config set --local path vendor/bundle && bundle install
+
+      - run: bundle exec rake lint
+
+  build-test:
+    name: Build & mruby tests
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: true
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y build-essential bison gperf libssl-dev libgmp-dev
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '.ruby-version'
+
+      - name: Cache gems
+        id: gems-cache
+        uses: actions/cache@v5
+        with:
+          path: vendor/bundle
+          key: gems-${{ runner.os }}-ruby-${{ hashFiles('Gemfile.lock') }}
+
+      - run: bundle config set --local path vendor/bundle && bundle install
+
+      - name: Cache UCD data
+        uses: actions/cache@v5
+        with:
+          path: data/
+          key: ucd-17.0.0
+
+      - name: Download UCD
+        run: ruby tools/download_ucd.rb 17.0.0
+
+      - name: Get mruby commit hash
+        id: mruby
+        run: echo "hash=$(git -C submodules/mruby rev-parse HEAD)" >> $GITHUB_OUTPUT
+
+      - name: Cache mruby build
+        id: mruby-cache
+        uses: actions/cache@v5
+        with:
+          path: |
+            build/
+            submodules/mruby/build/
+            submodules/mruby/bin/
+          key: mruby-${{ steps.mruby.outputs.hash }}-${{ hashFiles('src/**', 'include/**', 'mrbgems/**', 'build_config.rb') }}
+
+      - run: bundle exec rake naraku:build_mruby
+        if: steps.mruby-cache.outputs.cache-hit != 'true'
+      - run: bundle exec rake naraku:test_mruby
+      - run: bundle exec rake ruby_prototype:test

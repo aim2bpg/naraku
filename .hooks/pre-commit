@@ -1,0 +1,21 @@
+#!/bin/sh
+set -e
+cd "$(git rev-parse --show-toplevel)"
+
+# Initialize rbenv if available
+if [ -d "$HOME/.rbenv/bin" ]; then
+  export PATH="$HOME/.rbenv/bin:$PATH"
+  eval "$(rbenv init -)"
+fi
+
+# Lint check (skip gracefully if gems are not installed)
+if bundle check > /dev/null 2>&1; then
+  bundle exec rake lint
+else
+  echo "pre-commit: gems not installed, skipping lint (run 'bundle install')"
+fi
+
+# Secret scan
+if command -v gitleaks &>/dev/null; then
+  gitleaks protect --staged --no-banner
+fi

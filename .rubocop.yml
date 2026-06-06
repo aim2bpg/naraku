@@ -14,6 +14,7 @@ AllCops:
   Exclude:
     - 'submodules/**/*'
     - 'build/**/*'
+    - 'vendor/**/*'
     - '.ruby-lsp/**/*'
     - 'ruby-prototype/lib/mruby-scripts/**/*'
     - 'ruby-prototype/benchmark/data/**/*'
