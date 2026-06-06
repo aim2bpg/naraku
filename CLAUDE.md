@@ -36,12 +36,14 @@ System packages required (Ubuntu/Debian):
 
 ```sh
 sudo apt-get install -y \
-  build-essential bison clang-format gperf \
+  build-essential bison clang clang-format gperf \
   libssl-dev libreadline-dev zlib1g-dev \
   libffi-dev libyaml-dev libgmp-dev
 ```
 
 **`gperf` is required** for generating Unicode character property lookup tables. Omitting it causes a silent build failure during `naraku:codegen`.
+
+**`clang` is required** for `naraku:build_mruby_asan` (the AddressSanitizer build), which links with `LD=clang`. Without it, the task fails with `clang: not found`.
 
 Ruby is managed via **rbenv**. The required version is in `.ruby-version`.
 

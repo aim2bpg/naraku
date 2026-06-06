@@ -6,7 +6,7 @@ WORKSPACE_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # --- System dependencies ---
 sudo apt-get update -qq
 sudo apt-get install -y \
-  build-essential bison clang-format gperf \
+  build-essential bison clang clang-format gperf \
   libssl-dev libreadline-dev zlib1g-dev \
   libffi-dev libyaml-dev libgmp-dev
 

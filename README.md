@@ -43,7 +43,7 @@ projects or checkouts.
 Install system dependencies:
 
 ```sh
-sudo apt-get install -y build-essential bison gperf
+sudo apt-get install -y build-essential bison clang gperf
 ```
 
 Install git hooks (runs lint automatically on commit):
