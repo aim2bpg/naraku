@@ -438,8 +438,16 @@ module Mtest
       options[:verbose]
     end
 
+    # Non-interactive outputs (e.g. CI logs, redirected files) don't process
+    # backspace as a cursor movement, so the `*` placeholder used to animate
+    # progress on a terminal would stay visible alongside the final result
+    # character instead of being overwritten by it.
+    def interactive?
+      @io.respond_to?(:tty?) && @io.tty?
+    end
+
     def on_test_start(class_name, method_name)
-      if show_dots?
+      if show_dots? && interactive?
         @io.print('*')
         @io.flush
       end
@@ -452,7 +460,7 @@ module Mtest
 
     def on_test_finish(result)
       if show_dots?
-        @io.print("\b#{result.colored_result_code}")
+        @io.print(interactive? ? "\b#{result.colored_result_code}" : result.colored_result_code)
         @num_wrote_dots += 1
         if (@num_wrote_dots % 100).zero?
           @io.puts
