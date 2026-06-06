@@ -12,7 +12,7 @@ on:
 
 jobs:
   ruby:
-    name: Lint & Ruby prototype tests
+    name: Lint
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -24,7 +24,6 @@ jobs:
       - run: bundle install
 
       - run: bundle exec rake lint
-      - run: bundle exec rake ruby_prototype:test
 
   build-test:
     name: Build & mruby tests
@@ -69,3 +68,4 @@ jobs:
 
       - run: bundle exec rake naraku:build_mruby
       - run: bundle exec rake naraku:test_mruby
+      - run: bundle exec rake ruby_prototype:test
