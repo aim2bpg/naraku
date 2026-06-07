@@ -76,6 +76,18 @@ if present.
 curl -fsSL https://claude.ai/install.sh | bash
 ```
 
+### GitHub CLI (gh)
+
+`gh` is installed automatically. Authenticate once after the container is created:
+
+```sh
+gh auth login
+```
+
+Follow the device flow — choose **SSH** as the Git protocol and **Login with a web browser**. Open `https://github.com/login/device`, enter the one-time code, and authentication completes. Verify with `gh auth status`.
+
+Credentials are stored in `~/.config/gh/hosts.yml`, which is bind-mounted from the host, so they survive container rebuilds.
+
 ## Build and test commands
 
 ```sh
