@@ -2,10 +2,11 @@
   "image": "mcr.microsoft.com/devcontainers/base:ubuntu24.04",
   "remoteUser": "vscode",
   "containerUser": "vscode",
-  "initializeCommand": "mkdir -p ${localEnv:HOME}/.claude ${localEnv:HOME}/.ssh",
+  "initializeCommand": "mkdir -p ${localEnv:HOME}/.claude ${localEnv:HOME}/.ssh ${localEnv:HOME}/.config/gh",
   "mounts": [
     "source=${localEnv:HOME}/.claude,target=/home/vscode/.claude,type=bind,consistency=cached",
     "source=${localEnv:HOME}/.ssh,target=/home/vscode/.ssh,type=bind,consistency=cached,readonly",
+    "source=${localEnv:HOME}/.config/gh,target=/home/vscode/.config/gh,type=bind,consistency=cached",
     "source=naraku-rbenv,target=/home/vscode/.rbenv,type=volume"
   ],
   "onCreateCommand": "sudo chown -R vscode:vscode /home/vscode/.rbenv",
