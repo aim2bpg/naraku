@@ -668,28 +668,49 @@ static nk_error_t search_impl(
   // For anchored patterns (\A), no new start threads will be injected past
   // position 0, so we can exit as soon as the active thread list is empty.
   while (curr_code != VM_NO_CHAR && (threads.len > 0 || !program->is_anchored) && !(vm.has_match && threads.len == 0)) {
-    // ASCII run scan: when exactly one thread is at an ASCII CHAR_CLASS state
-    // and the current character matches, fast-advance through the consecutive
-    // run to replace O(N) epsilon closures with O(1).
+    // ASCII run scan: when exactly one thread is at a single-character state
+    // (CHAR_CLASS or CODE) and the current character matches, fast-advance
+    // through the entire consecutive run to replace O(N) epsilon closures with
+    // O(1). CODE scan is guarded to loop-head states only (next is epsilon).
     if (threads.len == 1 && curr_code < 0x80u && !vm.has_match) {
       const nk_vm_state_t* scan_state = &program->states[threads.items[0].state_index];
+      size_t scan = 0;
+
       if (scan_state->op == NK_VM_OP_CHAR_CLASS) {
         const nk_vm_char_class_t* cc = &program->char_classes[scan_state->char_class_index];
         if ((cc->ascii_bits[curr_code >> 6] & ((uint64_t)1u << (curr_code & 63u))) != 0u) {
-          size_t scan = pos + 1;
+          scan = pos + 1;
           while (scan < subject_len && subject_bytes[scan] < 0x80u &&
                  (cc->ascii_bits[subject_bytes[scan] >> 6] & ((uint64_t)1u << (subject_bytes[scan] & 63u))) != 0u) {
             scan++;
           }
-          if (scan > pos + 1) {
-            pos = scan - 1;
-            curr_code = (uint32_t)subject_bytes[pos];
-            curr_width = 1;
-            err = decode_char(enc, subject_bytes + pos + 1, subject_bytes_end, &next_code, &next_width);
-            if (err != NK_SUCCESS) {
-              goto done;
+        }
+      } else if (scan_state->op == NK_VM_OP_CODE && curr_code == scan_state->code) {
+        // Only scan a consecutive run when the state's successor is an epsilon
+        // (non-consuming) state, indicating this is a loop-head (e.g., `a+`).
+        // If the next state is a consuming op, this CODE is part of a sequence
+        // like "foo" and scanning would incorrectly consume the wrong literal.
+        uint32_t next_idx = scan_state->next;
+        if (next_idx < (uint32_t)program->states_len) {
+          nk_vm_op_t next_op = program->states[next_idx].op;
+          if (next_op != NK_VM_OP_CODE && next_op != NK_VM_OP_CHAR_CLASS &&
+              next_op != NK_VM_OP_DOT && next_op != NK_VM_OP_MATCH) {
+            uint8_t code_byte = (uint8_t)scan_state->code;
+            scan = pos + 1;
+            while (scan < subject_len && subject_bytes[scan] == code_byte) {
+              scan++;
             }
           }
+        }
+      }
+
+      if (scan > pos + 1) {
+        pos = scan - 1;
+        curr_code = (uint32_t)subject_bytes[pos];
+        curr_width = 1;
+        err = decode_char(enc, subject_bytes + pos + 1, subject_bytes_end, &next_code, &next_width);
+        if (err != NK_SUCCESS) {
+          goto done;
         }
       }
     }
