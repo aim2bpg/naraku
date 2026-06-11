@@ -46,12 +46,18 @@ nk_error_t nk_name_to_cprop(
 }
 
 bool code_in_code_range(uint32_t code, size_t range_count, const uint32_t* range_intervals) {
+  if (range_count == 0) {
+    return false;
+  }
   size_t left = 0, right = range_count - 1;
   while (left <= right) {
     size_t mid = left + (right - left) / 2;
     uint32_t range_start = range_intervals[mid * 2];
     uint32_t range_end = range_intervals[mid * 2 + 1];
     if (code < range_start) {
+      if (mid == 0) {
+        return false;
+      }
       right = mid - 1;
     } else if (code > range_end) {
       left = mid + 1;
