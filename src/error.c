@@ -131,6 +131,27 @@ const uint8_t* nk_error_message(nk_error_t err) {
       return (const uint8_t*)"invalid character property name";
     case NK_ERR_UNSUPPORTED_CHAR_PROPERTY:
       return (const uint8_t*)"unsupported character property";
+    // Regex compiler-related errors:
+    case NK_ERR_UNSUPPORTED_FEATURE:
+      return (const uint8_t*)"unsupported feature in this version";
+    case NK_ERR_UNSUPPORTED_IGNORE_CASE:
+      return (const uint8_t*)"ignore-case matching is not supported in this version";
+    case NK_ERR_UNSUPPORTED_BACK_REF:
+      return (const uint8_t*)"back references are not supported in this version";
+    case NK_ERR_UNSUPPORTED_SUBEXP_CALL:
+      return (const uint8_t*)"sub-expression calls are not supported in this version";
+    case NK_ERR_UNSUPPORTED_LOOKAROUND:
+      return (const uint8_t*)"lookaround assertions are not supported in this version";
+    case NK_ERR_UNSUPPORTED_ATOMIC_GROUP:
+      return (const uint8_t*)"atomic groups are not supported in this version";
+    case NK_ERR_UNSUPPORTED_ABSENCE_GROUP:
+      return (const uint8_t*)"absence groups are not supported in this version";
+    case NK_ERR_UNSUPPORTED_CONDITIONAL:
+      return (const uint8_t*)"conditional groups are not supported in this version";
+    case NK_ERR_UNSUPPORTED_POSSESSIVE_QUANTIFIER:
+      return (const uint8_t*)"possessive quantifiers are not supported in this version";
+    case NK_ERR_PATTERN_TOO_COMPLEX:
+      return (const uint8_t*)"pattern is too complex to compile";
   }
 
   return (const uint8_t*)"BUG: unknown error";

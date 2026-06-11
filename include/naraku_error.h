@@ -143,6 +143,26 @@ typedef enum nk_error {
   // Errors related to character properties:
   NK_ERR_INVALID_CHAR_PROP_NAME = -510,
   NK_ERR_UNSUPPORTED_CHAR_PROPERTY = -511,
+
+  // ============================================================================
+  //
+  // Regex compiler-related errors (-600..-699):
+  //
+  // ============================================================================
+
+  // Errors for features not yet supported by the regex VM compiler:
+  NK_ERR_UNSUPPORTED_FEATURE = -600,
+  NK_ERR_UNSUPPORTED_IGNORE_CASE = -601,
+  NK_ERR_UNSUPPORTED_BACK_REF = -602,
+  NK_ERR_UNSUPPORTED_SUBEXP_CALL = -603,
+  NK_ERR_UNSUPPORTED_LOOKAROUND = -604,
+  NK_ERR_UNSUPPORTED_ATOMIC_GROUP = -605,
+  NK_ERR_UNSUPPORTED_ABSENCE_GROUP = -606,
+  NK_ERR_UNSUPPORTED_CONDITIONAL = -607,
+  NK_ERR_UNSUPPORTED_POSSESSIVE_QUANTIFIER = -608,
+
+  // Errors related to compiled program limits:
+  NK_ERR_PATTERN_TOO_COMPLEX = -610,
 } nk_error_t;
 
 /**
