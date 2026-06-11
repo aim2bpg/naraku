@@ -16,6 +16,32 @@
 // and ignores all writes.
 #define NO_CAPS_PTR ((caps_t*)1)
 
+// Finds the first occurrence of `needle[0..nlen-1]` in `haystack[0..hlen-1]`.
+// Uses `memchr` for the fast initial scan (SIMD on most platforms), then
+// `memcmp` for verification. Returns NULL if not found.
+static const uint8_t* vm_memmem(const uint8_t* haystack, size_t hlen, const uint8_t* needle, size_t nlen) {
+  if (nlen == 0) {
+    return haystack;
+  }
+  if (hlen < nlen) {
+    return NULL;
+  }
+  const uint8_t* end = haystack + (hlen - nlen);
+  int first = (int)(unsigned int)needle[0];
+  const uint8_t* p = haystack;
+  while (p <= end) {
+    p = (const uint8_t*)memchr(p, first, (size_t)(end - p) + 1);
+    if (p == NULL) {
+      return NULL;
+    }
+    if (nlen == 1 || memcmp(p, needle, nlen) == 0) {
+      return p;
+    }
+    p++;
+  }
+  return NULL;
+}
+
 // The code point of `\n`.
 #define VM_NEWLINE_CODE UINT32_C(0x0A)
 
@@ -550,6 +576,20 @@ static nk_error_t search_impl(
   size_t subject_len = (size_t)(subject_bytes_end - subject_bytes);
   if (start_offset > subject_len) {
     return NK_NO_MATCH;
+  }
+
+  // Pre-scan: if the program has an ASCII literal prefix, use vm_memmem to
+  // find the first candidate start position. This avoids running the epsilon
+  // closure at every character just to fail immediately — the biggest win is
+  // for subjects that do not contain the prefix at all (immediate no-match).
+  if (program->literal_prefix_len > 0 && !program->is_anchored) {
+    size_t scan_len = subject_len > start_offset ? subject_len - start_offset : 0;
+    const uint8_t* found =
+      vm_memmem(subject_bytes + start_offset, scan_len, program->literal_prefix_bytes, program->literal_prefix_len);
+    if (found == NULL) {
+      return NK_NO_MATCH;
+    }
+    start_offset = (size_t)(found - subject_bytes);
   }
 
   vm_t vm;

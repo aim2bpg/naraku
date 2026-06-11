@@ -1263,6 +1263,51 @@ static nk_error_t compile_node(compiler_t* c, const nk_node_t* node, uint32_t* o
 //
 // ============================================================================
 
+// Returns the leading case-sensitive literal bytes of `node` (skipping any
+// leading zero-width assertions). Returns NULL when there is no such prefix or
+// when any byte is non-ASCII (>= 0x80); the VM pre-scan relies on the
+// all-ASCII guarantee for encoding safety across UTF-8 / Shift-JIS etc.
+static const uint8_t* node_literal_prefix(const nk_node_t* node, size_t* out_len) {
+  if (node == NULL) {
+    *out_len = 0;
+    return NULL;
+  }
+  switch (node->base.type) {
+    case NK_NODE_TYPE_LITERAL:
+      if (node->literal.is_ignore_case) {
+        *out_len = 0;
+        return NULL;
+      }
+      {
+        size_t len = (size_t)(node->literal.buf.bytes_end - node->literal.buf.bytes);
+        for (size_t i = 0; i < len; i++) {
+          if (node->literal.buf.bytes[i] >= 0x80u) {
+            *out_len = 0;
+            return NULL;
+          }
+        }
+        *out_len = len;
+        return node->literal.buf.bytes;
+      }
+    case NK_NODE_TYPE_CONCAT:
+      for (size_t i = 0; i < node->concat.children_len; i++) {
+        if (node->concat.children[i]->base.type == NK_NODE_TYPE_ASSERTION) {
+          continue;  // zero-width: look past it
+        }
+        return node_literal_prefix(node->concat.children[i], out_len);
+      }
+      *out_len = 0;
+      return NULL;
+    case NK_NODE_TYPE_CAPTURE:
+      return node_literal_prefix(node->capture.child, out_len);
+    case NK_NODE_TYPE_GROUP:
+      return node_literal_prefix(node->group.child, out_len);
+    default:
+      *out_len = 0;
+      return NULL;
+  }
+}
+
 // Returns true when the pattern is guaranteed to only match at position 0
 // (i.e., the effective first token is a \A assertion). Used to set
 // `program->is_anchored` so the VM can skip re-injection at later positions.
@@ -1367,6 +1412,22 @@ nk_error_t nk_program_compile(
   program->num_check_ids = compiler.next_check_id;
   program->num_epsilon_check_ids = compiler.next_epsilon_check_id;
   program->is_anchored = node_starts_with_string_anchor(root_node);
+  program->literal_prefix_bytes = NULL;
+  program->literal_prefix_len = 0;
+  {
+    size_t prefix_len = 0;
+    const uint8_t* prefix_bytes = node_literal_prefix(root_node, &prefix_len);
+    if (prefix_len > 0) {
+      uint8_t* copy = (uint8_t*)malloc(prefix_len);
+      if (copy == NULL) {
+        nk_program_free(program);
+        return NK_ERR_MEMORY_ALLOCATION_FAILED;
+      }
+      memcpy(copy, prefix_bytes, prefix_len);
+      program->literal_prefix_bytes = copy;
+      program->literal_prefix_len = prefix_len;
+    }
+  }
 
   *out_program = program;
   return NK_SUCCESS;
@@ -1382,6 +1443,7 @@ void nk_program_free(nk_program_t* program) {
     free(program->char_classes[i].ranges);
   }
   free(program->char_classes);
+  free(program->literal_prefix_bytes);
   free(program);
 }
 

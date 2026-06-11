@@ -93,6 +93,12 @@ typedef struct nk_program {
   nk_vm_char_class_t* char_classes;
   size_t char_classes_len;
   bool is_anchored;  // true when the pattern is anchored to \A (never matches after position 0)
+  // Leading case-sensitive literal byte sequence extracted from the pattern.
+  // Non-NULL only when all bytes are ASCII (<0x80), which is safe for all
+  // supported encodings (ASCII bytes are never continuation bytes in UTF-8,
+  // Shift-JIS, etc.). Used by the VM for a fast memmem pre-scan.
+  uint8_t* literal_prefix_bytes;
+  size_t literal_prefix_len;
 } nk_program_t;
 
 /**
