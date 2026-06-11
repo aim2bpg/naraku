@@ -1350,6 +1350,9 @@ nk_error_t nk_program_compile(
   program->num_epsilon_check_ids = 0;
   program->char_classes = NULL;
   program->char_classes_len = 0;
+  program->is_anchored = false;
+  program->literal_prefix_bytes = NULL;
+  program->literal_prefix_len = 0;
 
   compiler_t compiler = {
     .enc = enc,
@@ -1412,8 +1415,6 @@ nk_error_t nk_program_compile(
   program->num_check_ids = compiler.next_check_id;
   program->num_epsilon_check_ids = compiler.next_epsilon_check_id;
   program->is_anchored = node_starts_with_string_anchor(root_node);
-  program->literal_prefix_bytes = NULL;
-  program->literal_prefix_len = 0;
   {
     size_t prefix_len = 0;
     const uint8_t* prefix_bytes = node_literal_prefix(root_node, &prefix_len);
