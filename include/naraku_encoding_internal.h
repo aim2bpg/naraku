@@ -56,10 +56,8 @@ static inline void adjust_mbc_head_context_cache_fill_step2(
   size_t target_offset,
   size_t target_offset_end
 ) {
-  if (
-    context->head_bits == NULL || context->cache_start_offset == NK_DONT_USE_CACHE_FOR_ADJUST_MBC_HEAD ||
-    target_offset >= target_offset_end
-  ) {
+  if (context->head_bits == NULL || context->cache_start_offset == NK_DONT_USE_CACHE_FOR_ADJUST_MBC_HEAD ||
+      target_offset >= target_offset_end) {
     return;
   }
 

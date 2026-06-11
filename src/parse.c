@@ -2793,10 +2793,8 @@ static nk_error_t lex_in_char_class_impl(nk_parser_t* parser, token_t* out_token
         return NK_SUCCESS;
       }
       case ']':
-        if (
-          (state != CC_STATE_BEGIN && state != CC_STATE_BEGIN_AFTER_NEGATION) ||
-          parser->pattern_bytes >= parser->pattern_bytes_end
-        ) {
+        if ((state != CC_STATE_BEGIN && state != CC_STATE_BEGIN_AFTER_NEGATION) ||
+            parser->pattern_bytes >= parser->pattern_bytes_end) {
           out_token->type = TK_CHAR_CLASS_CLOSE;
           return NK_SUCCESS;
         }

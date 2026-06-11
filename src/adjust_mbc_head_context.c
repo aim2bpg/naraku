@@ -36,9 +36,8 @@ nk_error_t adjust_mbc_head_context_cache_ensure(
   size_t target_offset_start,
   size_t target_offset_end  // exclusive bound
 ) {
-  if (
-    context->cache_start_offset == NK_DONT_USE_CACHE_FOR_ADJUST_MBC_HEAD || target_offset_start >= target_offset_end
-  ) {
+  if (context->cache_start_offset == NK_DONT_USE_CACHE_FOR_ADJUST_MBC_HEAD ||
+      target_offset_start >= target_offset_end) {
     return NK_SUCCESS;
   }
 

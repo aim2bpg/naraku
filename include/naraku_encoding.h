@@ -612,18 +612,15 @@ static inline nk_error_t nk_enc_adjust_mbc_head(
     return 0;
   }
 
-  if (
-    (enc->flags & NK_ENC_FLAG_SELF_SYNC) == 0 && context->head_bits != NULL &&
-    context->cache_start_offset != NK_DONT_USE_CACHE_FOR_ADJUST_MBC_HEAD
-  ) {
+  if ((enc->flags & NK_ENC_FLAG_SELF_SYNC) == 0 && context->head_bits != NULL &&
+      context->cache_start_offset != NK_DONT_USE_CACHE_FOR_ADJUST_MBC_HEAD) {
     size_t offset = (size_t)(*bytes_to_adjust - context->bytes_begin);
     if (context->cache_start_offset <= offset) {
       for (size_t i = 0; i < enc->max_mbc_width && offset - i >= context->cache_start_offset; i++) {
         size_t bit_index = (offset - i) / 64;
         size_t bit_offset = (offset - i) % 64;
-        if (
-          bit_index < context->head_bits_capacity && (context->head_bits[bit_index] & ((uint64_t)1 << bit_offset)) != 0
-        ) {
+        if (bit_index < context->head_bits_capacity &&
+            (context->head_bits[bit_index] & ((uint64_t)1 << bit_offset)) != 0) {
           const uint8_t* candidate = *bytes_to_adjust - i;
           int8_t width = nk_enc_scan_mbc_width(enc, candidate, context->bytes_end);
           if (width > 0 && candidate + width > *bytes_to_adjust) {

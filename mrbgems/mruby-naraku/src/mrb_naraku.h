@@ -27,6 +27,7 @@ extern struct mrb_data_type mrb_naraku_parser_type;
 void mrb_naraku_encoding_gem_init(mrb_state* mrb, struct RClass* naraku_module);
 void mrb_naraku_node_gem_init(mrb_state* mrb, struct RClass* naraku_module);
 void mrb_naraku_parser_gem_init(mrb_state* mrb, struct RClass* naraku_module);
+void mrb_naraku_program_gem_init(mrb_state* mrb, struct RClass* naraku_module);
 
 // ============================================================================
 //

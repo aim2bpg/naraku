@@ -38,6 +38,7 @@ void mrb_mruby_naraku_gem_init(mrb_state* mrb) {
   mrb_naraku_encoding_gem_init(mrb, naraku_module);
   mrb_naraku_node_gem_init(mrb, naraku_module);
   mrb_naraku_parser_gem_init(mrb, naraku_module);
+  mrb_naraku_program_gem_init(mrb, naraku_module);
 }
 
 void mrb_mruby_naraku_gem_final(mrb_state* mrb) {
