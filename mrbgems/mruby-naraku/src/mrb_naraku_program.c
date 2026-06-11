@@ -118,6 +118,36 @@ static mrb_value mrb_naraku_program_search(mrb_state* mrb, mrb_value self) {
   return ary;
 }
 
+// `program._search_boolean(string, byte_start)` → true or false
+// Like _search but skips all capture allocation (for match?).
+static mrb_value mrb_naraku_program_search_boolean(mrb_state* mrb, mrb_value self) {
+  nk_program_t* program = (nk_program_t*)mrb_data_get_ptr(mrb, self, &mrb_naraku_program_type);
+
+  char* subject;
+  mrb_int subject_len;
+  mrb_int start_offset;
+  mrb_get_args(mrb, "si", &subject, &subject_len, &start_offset);
+
+  if (start_offset < 0 || start_offset > subject_len) {
+    return mrb_false_value();
+  }
+
+  const uint8_t* bytes = (const uint8_t*)subject;
+  const uint8_t* bytes_end = bytes + (size_t)subject_len;
+
+  nk_error_t err = nk_program_search_boolean(program, bytes, bytes_end, (size_t)start_offset);
+
+  if (err == NK_SUCCESS) {
+    return mrb_true_value();
+  }
+  if (err == NK_NO_MATCH) {
+    return mrb_false_value();
+  }
+  struct RClass* naraku_module = mrb_module_get(mrb, "Naraku");
+  struct RClass* error_class = mrb_class_get_under(mrb, naraku_module, "Error");
+  mrb_raise(mrb, error_class, (const char*)nk_error_message(err));
+}
+
 static mrb_value mrb_naraku_program_num_capture_groups(mrb_state* mrb, mrb_value self) {
   nk_program_t* program = (nk_program_t*)mrb_data_get_ptr(mrb, self, &mrb_naraku_program_type);
   return mrb_fixnum_value((mrb_int)program->num_capture_groups);
@@ -138,5 +168,6 @@ void mrb_naraku_program_gem_init(mrb_state* mrb, struct RClass* naraku_module) {
 
   mrb_define_class_method(mrb, program_class, "_compile", mrb_naraku_program_compile, MRB_ARGS_REQ(2));
   mrb_define_method(mrb, program_class, "_search", mrb_naraku_program_search, MRB_ARGS_REQ(2));
+  mrb_define_method(mrb, program_class, "_search_boolean", mrb_naraku_program_search_boolean, MRB_ARGS_REQ(2));
   mrb_define_method(mrb, program_class, "num_capture_groups", mrb_naraku_program_num_capture_groups, MRB_ARGS_NONE());
 }

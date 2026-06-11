@@ -116,7 +116,7 @@ module Naraku
     end
 
     def match?(string, byte_start = 0)
-      !@program._search(string, byte_start).nil?
+      @program._search_boolean(string, byte_start)
     end
 
     def =~(string)

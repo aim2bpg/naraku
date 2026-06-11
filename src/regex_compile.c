@@ -1263,6 +1263,27 @@ static nk_error_t compile_node(compiler_t* c, const nk_node_t* node, uint32_t* o
 //
 // ============================================================================
 
+// Returns true when the pattern is guaranteed to only match at position 0
+// (i.e., the effective first token is a \A assertion). Used to set
+// `program->is_anchored` so the VM can skip re-injection at later positions.
+static bool node_starts_with_string_anchor(const nk_node_t* node) {
+  if (node == NULL) {
+    return false;
+  }
+  switch (node->base.type) {
+    case NK_NODE_TYPE_ASSERTION:
+      return node->assertion.type == NK_ASSERTION_TYPE_BEGIN_OF_STRING;
+    case NK_NODE_TYPE_CONCAT:
+      return node->concat.children_len > 0 && node_starts_with_string_anchor(node->concat.children[0]);
+    case NK_NODE_TYPE_CAPTURE:
+      return node_starts_with_string_anchor(node->capture.child);
+    case NK_NODE_TYPE_GROUP:
+      return node_starts_with_string_anchor(node->group.child);
+    default:
+      return false;
+  }
+}
+
 nk_error_t nk_program_compile(
   const nk_encoding_t* enc,
   const nk_node_t* root_node,
@@ -1345,6 +1366,7 @@ nk_error_t nk_program_compile(
   program->initial_state = begin_index;
   program->num_check_ids = compiler.next_check_id;
   program->num_epsilon_check_ids = compiler.next_epsilon_check_id;
+  program->is_anchored = node_starts_with_string_anchor(root_node);
 
   *out_program = program;
   return NK_SUCCESS;

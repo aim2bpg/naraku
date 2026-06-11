@@ -11,6 +11,11 @@
 // or at/after its end).
 #define VM_NO_CHAR UINT32_MAX
 
+// Sentinel pointer used in no-capture mode. All caps_* functions treat this
+// as a valid but permanently-shared reference that requires no heap allocation
+// and ignores all writes.
+#define NO_CAPS_PTR ((caps_t*)1)
+
 // The code point of `\n`.
 #define VM_NEWLINE_CODE UINT32_C(0x0A)
 
@@ -42,12 +47,15 @@ static caps_t* caps_new(size_t num_caps) {
 }
 
 static caps_t* caps_ref(caps_t* caps) {
+  if (caps == NO_CAPS_PTR) {
+    return caps;
+  }
   caps->refcount++;
   return caps;
 }
 
 static void caps_unref(caps_t* caps) {
-  if (caps == NULL) {
+  if (caps == NULL || caps == NO_CAPS_PTR) {
     return;
   }
   caps->refcount--;
@@ -90,6 +98,7 @@ typedef struct {
 typedef struct {
   const nk_program_t* program;
   size_t num_caps;  // num_capture_groups + 1
+  bool no_caps;     // when true, use NO_CAPS_PTR everywhere (skip all heap allocation)
   size_t start_offset;
 
   // Visited set, keyed by state check ids. An id is visited in the current
@@ -204,6 +213,9 @@ static nk_error_t push_mark(vm_t* vm, uint32_t check_id) {
 // Writes one capture slot, copying the buffer first if it is shared.
 static nk_error_t caps_write(vm_t* vm, caps_t** caps_ptr, size_t index, size_t value) {
   caps_t* caps = *caps_ptr;
+  if (caps == NO_CAPS_PTR) {
+    return NK_SUCCESS;
+  }
   if (caps->refcount > 1) {
     caps_t* copy = caps_new(vm->num_caps);
     if (copy == NULL) {
@@ -522,11 +534,12 @@ static void next_token(vm_t* vm) {
   vm->token++;
 }
 
-nk_error_t nk_program_search(
+static nk_error_t search_impl(
   const nk_program_t* program,
   const uint8_t* subject_bytes,
   const uint8_t* subject_bytes_end,
   size_t start_offset,
+  bool no_caps,
   nk_region_t* out_region
 ) {
   if (program == NULL || subject_bytes == NULL || subject_bytes_end < subject_bytes) {
@@ -543,6 +556,7 @@ nk_error_t nk_program_search(
   memset(&vm, 0, sizeof(vm));
   vm.program = program;
   vm.num_caps = (size_t)program->num_capture_groups + 1;
+  vm.no_caps = no_caps;
   vm.start_offset = start_offset;
 
   size_t visited_len = program->num_check_ids == 0 ? 1 : (size_t)program->num_check_ids;
@@ -600,7 +614,7 @@ nk_error_t nk_program_search(
   vm.curr_code = curr_code;
   vm.next_code = next_code;
   {
-    caps_t* caps = caps_new(vm.num_caps);
+    caps_t* caps = no_caps ? NO_CAPS_PTR : caps_new(vm.num_caps);
     if (caps == NULL) {
       err = NK_ERR_MEMORY_ALLOCATION_FAILED;
       goto done;
@@ -611,7 +625,9 @@ nk_error_t nk_program_search(
     }
   }
 
-  while (curr_code != VM_NO_CHAR && !(vm.has_match && threads.len == 0)) {
+  // For anchored patterns (\A), no new start threads will be injected past
+  // position 0, so we can exit as soon as the active thread list is empty.
+  while (curr_code != VM_NO_CHAR && (threads.len > 0 || !program->is_anchored) && !(vm.has_match && threads.len == 0)) {
     size_t advance_pos = pos + curr_width;
 
     // The character window after consuming the current character.
@@ -659,9 +675,10 @@ nk_error_t nk_program_search(
     threads.len = 0;
 
     // Non-anchored search: while no match has been found, also try starting
-    // at the new position, with the lowest priority.
-    if (!vm.has_match) {
-      caps_t* caps = caps_new(vm.num_caps);
+    // at the new position, with the lowest priority. Skipped for \A-anchored
+    // patterns because the start assertion will never pass after position 0.
+    if (!vm.has_match && !program->is_anchored) {
+      caps_t* caps = no_caps ? NO_CAPS_PTR : caps_new(vm.num_caps);
       if (caps == NULL) {
         err = NK_ERR_MEMORY_ALLOCATION_FAILED;
         goto done;
@@ -703,4 +720,23 @@ done:
   caps_unref(vm.match_caps);
   free(vm.visited);
   return err;
+}
+
+nk_error_t nk_program_search(
+  const nk_program_t* program,
+  const uint8_t* subject_bytes,
+  const uint8_t* subject_bytes_end,
+  size_t start_offset,
+  nk_region_t* out_region
+) {
+  return search_impl(program, subject_bytes, subject_bytes_end, start_offset, false, out_region);
+}
+
+nk_error_t nk_program_search_boolean(
+  const nk_program_t* program,
+  const uint8_t* subject_bytes,
+  const uint8_t* subject_bytes_end,
+  size_t start_offset
+) {
+  return search_impl(program, subject_bytes, subject_bytes_end, start_offset, true, NULL);
 }

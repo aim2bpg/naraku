@@ -92,6 +92,7 @@ typedef struct nk_program {
   uint32_t num_epsilon_check_ids;
   nk_vm_char_class_t* char_classes;
   size_t char_classes_len;
+  bool is_anchored;  // true when the pattern is anchored to \A (never matches after position 0)
 } nk_program_t;
 
 /**
@@ -204,6 +205,23 @@ nk_error_t nk_program_search(
   const uint8_t* subject_bytes_end,
   size_t start_offset,
   nk_region_t* out_region  // nullable
+);
+
+/**
+ * Tests whether the subject matches the program without recording captures.
+ *
+ * Equivalent to `nk_program_search` with a NULL region, but avoids all
+ * capture-buffer allocation. Use this for `match?`-style boolean queries.
+ *
+ * Returns `NK_SUCCESS` on match, `NK_NO_MATCH` if there is no match, or a
+ * negative error code.
+ */
+NARAKU_EXPORTED_FUNCTION
+nk_error_t nk_program_search_boolean(
+  const nk_program_t* program,
+  const uint8_t* subject_bytes,
+  const uint8_t* subject_bytes_end,
+  size_t start_offset
 );
 
 #ifdef __cplusplus
