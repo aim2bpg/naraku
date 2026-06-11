@@ -318,28 +318,31 @@ Naraku(奈落)は Oniguruma(鬼車)→ Onigmo(鬼雲)の系譜に連なる
 **実測ベンチマーク** (`ruby-prototype/benchmark/bench_compare.rb`):
 
 測定環境: CRuby 4.0.5 plain(JIT なし) / mruby 4.0.0、Dev Container(x86_64)。
-ips = 全入力バッチを 1 周する回数/秒(高いほど速い)。
+ips = 全入力バッチを 1 周する回数/秒(高いほど速い)。最適化サイクル A〜E 適用後。
 
 | パターン | Onigmo(C) | NarakuRuby::DFA | Naraku Pike VM<br/>(mruby) | VM/Ong |
 |---|---|---|---|---|
-| literal: `Watson` | 3,569 | 116 | 552 | 0.15x |
-| alternation: `foo\|bar\|baz` | 3,555 | 90 | 613 | 0.17x |
-| repetition: `a+b` | 1,632 | 7 | 51 | 0.03x |
-| ambiguous: `(a\|a)+b` | 653 | 3 | 17 | 0.03x |
-| char_class: `[a-zA-Z0-9]+` | 3,865 | 388 | 675 | 0.17x |
-| bounded: `\d{4}-\d{2}-\d{2}` | 3,192 | 65 | 501 | 0.16x |
-| pathological: `(?:a?){30}a{30}` | 757 | 1 | 10 | 0.01x |
-| unicode: `ジョバンニ\|カムパネルラ` | 3,303 | 63 | 586 | 0.18x |
+| literal: `Watson` | 3,725 | 118 | 2,175 | 0.58x |
+| alternation: `foo\|bar\|baz` | 3,709 | 105 | 1,315 | 0.35x |
+| repetition: `a+b` | 1,706 | 7 | 521 | 0.31x |
+| ambiguous: `(a\|a)+b` | 683 | 3 | 273 | 0.40x |
+| char_class: `[a-zA-Z0-9]+` | 3,898 | 398 | 3,119 | 0.80x |
+| bounded: `\d{4}-\d{2}-\d{2}` | 3,522 | 73 | 1,960 | 0.56x |
+| pathological: `(?:a?){30}a{30}` | 802 | 1 | 10 | 0.01x |
+| unicode: `ジョバンニ\|カムパネルラ` | 3,598 | 66 | 1,767 | 0.49x |
 
 読み方:
-- **Pike VM は Onigmo の約 1〜20% の速度**。Onigmo は 20 年の最適化が
-  蓄積した C 実装・同一プロセス内で動くため、この差は想定範囲内。
-- **Pike VM は DFA(CRuby)より数倍速い**。DFA は Ruby 実装のため言語
+- **Pike VM は Onigmo の 30〜80% の速度**を達成(最適化前は 1〜20%)。
+  Onigmo は 20 年の最適化が蓄積した C 実装のため、この差は良好。
+- **`char_class: [a-zA-Z0-9]+` は Onigmo の 80%** まで肉薄している。
+  Thompson NFA ビットセット(Cycle E)が特に効いている。
+- **Pike VM は DFA(CRuby)より数十倍速い**。DFA は Ruby 実装のため言語
   オーバーヘッドが大きく、JIT がない状態ではより不利。
-- **pathological ケース(`(?:a?){30}a{30}`)**: Onigmo 757 ips に対して
+- **pathological ケース(`(?:a?){30}a{30}`)**: Onigmo 802 ips に対して
   Pike VM 10 ips と差は開くが、**両方とも O(n) で完走**している。
   バックトラッキングエンジンがこのパターンで指数的に詰まる例(数秒〜フリーズ)
-  とは根本的に異なる。ReDoS 耐性は確認済み。
+  とは根本的に異なる。ReDoS 耐性は確認済み。なお 64 状態超のため Cycle E
+  ビットセット最適化は未適用。
 - YJIT/ZJIT 有効時は DFA(CRuby)が 1.2〜2.8 倍高速化することが
   RubyKaigi 2026 スライドで報告されている。
 
@@ -699,46 +702,48 @@ re =~ "xabcbd"       # => 1  (マッチ開始バイトオフセット)
 
 ### 10.1 施策一覧
 
-| # | 施策 | 対象 | 実装先 | JIT 関係 |
-|---|---|---|---|---|
-| P1 | `match?` no-capture モード | `match?` / `=~` 限定の caps 確保ゼロ化 | C | 無関係 |
-| P2 | リテラルプレフィックス高速スキップ | 先頭が固定文字列なら `memmem` でジャンプ | C | 無関係 |
-| P3 | SIMD 文字スキャン | 文字クラス判定を 16〜32 バイト一括処理 | C | 無関係 |
-| P4 | caps arena アロケータ | 1 回の検索分 caps を一括確保・一括解放 | C | 無関係 |
-| P5 | Thompson NFA state bitset | プログラム ≤ 64 状態を `uint64_t` 1 本で管理 | C | 無関係 |
-| P6a | Lazy DFA(**Ruby** 実装) | NFA 状態集合をキャッシュして DFA 遷移を再利用 | Ruby | **YJIT/ZJIT で効く** |
-| P6b | Lazy DFA(**C** 実装) | 同上を C に移植(最終目標) | C | 無関係 |
+| # | 施策 | 対象 | 実装先 | JIT 関係 | 状態 |
+|---|---|---|---|---|---|
+| P1 | `match?` no-capture モード + `\A` アンカースキップ | `match?` / `=~` 限定の caps 確保ゼロ化 | C | 無関係 | ✅ 完了 |
+| P2 | リテラルプレフィックス高速スキップ | 先頭が固定文字列なら `memmem` でジャンプ | C | 無関係 | ✅ 完了 |
+| P3 | ASCII ラン スキャン(CHAR\_CLASS) | 文字クラス連続ランを一括スキップ | C | 無関係 | ✅ 完了 |
+| P4 | ASCII ラン スキャン(CODE) | 固定バイトの連続ランを一括スキップ | C | 無関係 | ✅ 完了 |
+| P5 | Thompson NFA state bitset | プログラム ≤ 63 状態を `uint64_t` 1 本で管理 | C | 無関係 | ✅ 完了 |
+| P6a | Lazy DFA(**Ruby** 実装) | NFA 状態集合をキャッシュして DFA 遷移を再利用 | Ruby | **YJIT/ZJIT で効く** | 今後 |
+| P6b | Lazy DFA(**C** 実装) | 同上を C に移植(最終目標) | C | 無関係 | 今後 |
 
 **JIT との関係**: P1〜P5 および P6b は C 実装のため YJIT/ZJIT の影響を受けない。
 JIT が効くのは P6a(Ruby 実装の Lazy DFA)のみ。
 RubyKaigi 2026 スライドの「JIT で高速化」はこの P6a + JIT の組み合わせを指している。
 P6b(C 移植)は JIT なしで最速になる代わりに JIT の上乗せは不要になる。
 
-### 10.2 実装サイクル
+### 10.2 実装サイクルと結果
 
-各サイクルは「実装 → ベンチマーク更新 → コミット」を 1 単位とする。
-ベンチマークは `bundle exec ruby ruby-prototype/benchmark/bench_compare.rb` で取得。
+各サイクルは「実装 → ベンチマーク確認 → コミット」を 1 単位とした。
+ベンチマークは `bin/mruby tools/bench_pike_vm.rb` で取得。
 
-```
-Cycle A  P1 match? no-capture + anchor skip (初期状態の再注入省略)
-         → match? 系・アンカー付きパターンの改善を確認
+| Cycle | 施策 | 主な改善パターン | 代表的な改善幅 |
+|-------|------|----------------|---------------|
+| A | P1: match? no-capture + \\A skip | すべての `match?` 呼び出し | caps malloc ゼロ化 |
+| B | P2: literal prefix memmem | literal / bounded | ミスマッチ即リターン |
+| C | P3: CHAR\_CLASS run scan | char\_class `[a-zA-Z0-9]+` | 675 → 1671 ips (+148%) |
+| D | P4: CODE run scan | repetition `a+b` | 62 → 305 ips (+392%) |
+| E | P5: Thompson NFA bitset | 全 ≤63 状態パターン | ambiguous 24 → 260 ips (+983%) |
 
-Cycle B  P2 リテラルプレフィックス (memmem)
-         → literal / bounded / alternation ベンチの改善を確認
+**Cycle E 後の累積改善**(最適化前ベースライン → 最終値):
 
-Cycle C  P3 SIMD 文字スキャン (x86 SSE4.2 / ARM NEON)
-         → char_class / unicode 系ベンチの改善を確認
-         ※ ポータビリティのため実行時 CPU 検出 or configure フラグで有効化
-
-Cycle D  P4 caps arena アロケータ
-         → ambiguous / キャプチャ多用パターンの改善を確認
-
-Cycle E  P5 Thompson NFA state bitset
-         → シンプルパターン全般、Onigmo との差が縮まるか確認
+| パターン | 最適化前 | 最終値 | 倍率 |
+|---------|---------|--------|------|
+| literal: Watson | 552 | 2,175 | **3.9x** |
+| alternation: foo\|bar\|baz | 613 | 1,315 | **2.1x** |
+| repetition: a+b | 51 | 521 | **10.2x** |
+| ambiguous: (a\|a)+b | 17 | 273 | **16.1x** |
+| char\_class: [a-zA-Z0-9]+ | 675 | 3,119 | **4.6x** |
+| bounded: \\d{4}-\\d{2}-\\d{2} | 501 | 1,960 | **3.9x** |
+| unicode: ジョバンニ\|カムパネルラ | 586 | 1,767 | **3.0x** |
 
 別PR     P6a Lazy DFA (Ruby) + YJIT/ZJIT 計測
          P6b Lazy DFA (C 移植)
-```
 
 ### 10.3 コミット構造
 

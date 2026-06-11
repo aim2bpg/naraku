@@ -99,7 +99,16 @@ typedef struct nk_program {
   // Shift-JIS, etc.). Used by the VM for a fast memmem pre-scan.
   uint8_t* literal_prefix_bytes;
   size_t literal_prefix_len;
+  // Thompson NFA bitset for fast boolean match? on small assertion-free programs.
+  // Bit i in goto_mask[j] means "after consuming a char from consuming state j,
+  // state i may be active". Bit 63 (NK_BITSET_MATCH_BIT) signals MATCH reachable.
+  // NULL when states_len > 63 or any ASSERTION / KEEP state exists.
+  uint64_t* goto_mask;   // [states_len] (only indices of consuming states are used)
+  uint64_t initial_mask; // epsilon closure from initial_state (consuming bits + MATCH bit)
 } nk_program_t;
+
+/** Bit 63 of a bitset mask signals that a MATCH state is reachable. */
+#define NK_BITSET_MATCH_BIT ((uint64_t)1u << 63)
 
 /**
  * The maximum number of VM states in a compiled program.

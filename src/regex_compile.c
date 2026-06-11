@@ -1329,6 +1329,125 @@ static bool node_starts_with_string_anchor(const nk_node_t* node) {
   }
 }
 
+// ============================================================================
+//
+// Thompson NFA bitset precomputation (used by the fast boolean match? path):
+//
+// ============================================================================
+
+// DFS through epsilon-only transitions starting from `start_idx`.
+// Returns a bitmask of consuming-state indices reached, with NK_BITSET_MATCH_BIT
+// set if any MATCH state is reachable.  ASSERTION and KEEP states are treated
+// as transparent epsilons (they must have been screened out before calling).
+// For CHECK_EPSILON we follow only `next` (body-not-empty branch); SPLIT
+// follows both branches.
+static uint64_t compute_epsilon_mask(
+  const nk_vm_state_t* states,
+  uint32_t num_states,
+  uint32_t start_idx,
+  uint8_t* visited
+) {
+  if (start_idx == NK_VM_STATE_NONE || start_idx >= num_states) {
+    return 0;
+  }
+
+  uint64_t result = 0;
+  uint32_t stack[256];
+  size_t top = 0;
+  stack[top++] = start_idx;
+
+  while (top > 0) {
+    uint32_t idx = stack[--top];
+    if (idx >= num_states || visited[idx]) {
+      continue;
+    }
+    visited[idx] = 1;
+
+    const nk_vm_state_t* s = &states[idx];
+    switch (s->op) {
+      case NK_VM_OP_CODE:
+      case NK_VM_OP_CHAR_CLASS:
+      case NK_VM_OP_DOT:
+        result |= (uint64_t)1u << idx;
+        break;
+      case NK_VM_OP_MATCH:
+        result |= NK_BITSET_MATCH_BIT;
+        break;
+      case NK_VM_OP_SPLIT:
+        if (s->split_next != NK_VM_STATE_NONE) {
+          stack[top++] = s->split_next;
+        }
+        if (s->next != NK_VM_STATE_NONE) {
+          stack[top++] = s->next;
+        }
+        break;
+      case NK_VM_OP_CHECK_EPSILON:
+        // Assume body-not-empty (we're computing "after consuming a char"):
+        // take `next` (loop path) only.  SPLIT inside the loop provides the
+        // exit path so MATCH is still discovered through the loop → SPLIT.
+        if (s->next != NK_VM_STATE_NONE) {
+          stack[top++] = s->next;
+        }
+        break;
+      default:
+        // CAP_BEGIN, CAP_END, KEEP, JUMP, MARK_EPSILON, CHECK_VISITED,
+        // ASSERTION: all follow `next` only.
+        if (s->next != NK_VM_STATE_NONE) {
+          stack[top++] = s->next;
+        }
+        break;
+    }
+  }
+  return result;
+}
+
+// Precompute `goto_mask` and `initial_mask` for the Thompson NFA bitset path.
+// Sets program->goto_mask = NULL if the program is not eligible (too large,
+// or contains ASSERTION / KEEP states).
+static void compute_goto_masks(nk_program_t* program) {
+  uint32_t n = (uint32_t)program->states_len;
+
+  // Only applicable for small programs (bit 63 is reserved for MATCH).
+  if (n > 63) {
+    return;
+  }
+  // Assertion and \K states depend on position; skip those programs.
+  for (uint32_t i = 0; i < n; i++) {
+    nk_vm_op_t op = program->states[i].op;
+    if (op == NK_VM_OP_ASSERTION || op == NK_VM_OP_KEEP) {
+      return;
+    }
+  }
+
+  program->goto_mask = (uint64_t*)calloc(n, sizeof(uint64_t));
+  if (program->goto_mask == NULL) {
+    return;
+  }
+
+  uint8_t* visited = (uint8_t*)calloc(n, 1);
+  if (visited == NULL) {
+    free(program->goto_mask);
+    program->goto_mask = NULL;
+    return;
+  }
+
+  for (uint32_t i = 0; i < n; i++) {
+    nk_vm_op_t op = program->states[i].op;
+    if (op != NK_VM_OP_CODE && op != NK_VM_OP_CHAR_CLASS && op != NK_VM_OP_DOT) {
+      continue;
+    }
+    uint32_t next_idx = program->states[i].next;
+    memset(visited, 0, (size_t)n);
+    program->goto_mask[i] = compute_epsilon_mask(program->states, n, next_idx, visited);
+  }
+
+  memset(visited, 0, (size_t)n);
+  program->initial_mask =
+    compute_epsilon_mask(program->states, n, program->initial_state, visited);
+
+  free(visited);
+}
+
 nk_error_t nk_program_compile(
   const nk_encoding_t* enc,
   const nk_node_t* root_node,
@@ -1353,6 +1472,8 @@ nk_error_t nk_program_compile(
   program->is_anchored = false;
   program->literal_prefix_bytes = NULL;
   program->literal_prefix_len = 0;
+  program->goto_mask = NULL;
+  program->initial_mask = 0;
 
   compiler_t compiler = {
     .enc = enc,
@@ -1430,6 +1551,8 @@ nk_error_t nk_program_compile(
     }
   }
 
+  compute_goto_masks(program);
+
   *out_program = program;
   return NK_SUCCESS;
 }
@@ -1445,6 +1568,7 @@ void nk_program_free(nk_program_t* program) {
   }
   free(program->char_classes);
   free(program->literal_prefix_bytes);
+  free(program->goto_mask);
   free(program);
 }
 

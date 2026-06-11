@@ -560,6 +560,80 @@ static void next_token(vm_t* vm) {
   vm->token++;
 }
 
+// ============================================================================
+//
+// Fast Thompson NFA bitset path (no_caps boolean match, small programs):
+//
+// ============================================================================
+
+// Iterate over set bits in `a`, calling state_matches_code for each, and OR
+// the corresponding goto_mask into `next`.
+static nk_error_t search_impl_bitset(
+  const nk_program_t* program,
+  const uint8_t* subject_bytes,
+  const uint8_t* subject_bytes_end,
+  size_t start_offset
+) {
+  const nk_encoding_t* enc = program->enc;
+
+  uint64_t active = program->initial_mask & ~NK_BITSET_MATCH_BIT;
+  if (program->initial_mask & NK_BITSET_MATCH_BIT) {
+    return NK_SUCCESS;  // empty pattern matches at start
+  }
+  if (active == 0 && program->is_anchored) {
+    return NK_NO_MATCH;
+  }
+
+  size_t pos = start_offset;
+  uint32_t curr_code;
+  size_t curr_width;
+  nk_error_t err = decode_char(enc, subject_bytes + pos, subject_bytes_end, &curr_code, &curr_width);
+  if (err != NK_SUCCESS) {
+    return err;
+  }
+
+  while (curr_code != VM_NO_CHAR) {
+    uint64_t next = 0;
+
+    // Advance each active consuming thread.
+    uint64_t bits = active;
+    while (bits != 0) {
+      // Isolate and clear the lowest set bit portably.
+      uint64_t lsb = bits & (uint64_t)(-(int64_t)bits);
+      bits ^= lsb;
+      // Compute bit index via a portable right-shift loop (≤63 iterations).
+      uint32_t idx = 0;
+      uint64_t tmp = lsb;
+      while (tmp > 1u) {
+        tmp >>= 1;
+        idx++;
+      }
+      if (state_matches_code(program, &program->states[idx], curr_code)) {
+        next |= program->goto_mask[idx];
+      }
+    }
+
+    if (next & NK_BITSET_MATCH_BIT) {
+      return NK_SUCCESS;
+    }
+
+    if (!program->is_anchored) {
+      // Re-inject threads for the next start position.
+      next |= program->initial_mask & ~NK_BITSET_MATCH_BIT;
+    }
+
+    active = next;
+
+    pos += curr_width;
+    err = decode_char(enc, subject_bytes + pos, subject_bytes_end, &curr_code, &curr_width);
+    if (err != NK_SUCCESS) {
+      return err;
+    }
+  }
+
+  return NK_NO_MATCH;
+}
+
 static nk_error_t search_impl(
   const nk_program_t* program,
   const uint8_t* subject_bytes,
@@ -590,6 +664,11 @@ static nk_error_t search_impl(
       return NK_NO_MATCH;
     }
     start_offset = (size_t)(found - subject_bytes);
+  }
+
+  // Fast Thompson NFA bitset path: no allocation, O(active_states) per char.
+  if (no_caps && out_region == NULL && program->goto_mask != NULL) {
+    return search_impl_bitset(program, subject_bytes, subject_bytes_end, start_offset);
   }
 
   vm_t vm;
