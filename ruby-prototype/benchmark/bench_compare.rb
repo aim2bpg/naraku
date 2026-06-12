@@ -151,7 +151,7 @@ hr = '-' * (col_w + (num_w * 3) + (ratio_w * 2) + 10)
 puts
 puts hr
 puts format("%-#{col_w}s  %#{num_w}s  %#{num_w}s  %#{num_w}s  %#{ratio_w}s  %#{ratio_w}s",
-            'Pattern', 'Onigmo(C)', 'DFA(Ruby)', 'PikeVM(mrb)', 'DFA/Ong', 'VM/Ong')
+            'Pattern', 'Onigmo(C)', 'LazyDFA(Rb)', 'PikeVM(mrb)', 'DFA/Ong', 'VM/Ong')
 puts hr
 
 CASES.each do |c|
@@ -173,6 +173,6 @@ end
 puts hr
 puts
 puts 'ips = full input-batch iterations per second (higher is better)'
-puts "Onigmo/DFA: CRuby #{RUBY_VERSION} (#{jit_mode})"
+puts "Onigmo/LazyDFA: CRuby #{RUBY_VERSION} (#{jit_mode})"
 puts 'PikeVM:     mruby (no JIT)'
 puts 'Note: runtimes differ — ratio is approximate'

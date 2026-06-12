@@ -131,6 +131,16 @@ module NarakuRuby
         @full_dfa_start_index = nil
         @full_dfa_codes = nil
         @full_dfa_eval_matcher = nil
+
+        # Lazy DFA cache: memoises (NFA-state-set, char) → next-NFA-state-set.
+        # Enabled for assertion-free programs when full_dfa is not already in use.
+        unless @has_assertion || full_dfa
+          @lazy_dfa_transitions = {}  # state_set_key => {char_code => next_key}
+          @lazy_dfa_state_sets  = {}  # state_set_key => Array<State> (reverse map)
+          @lazy_dfa_accepting   = {}  # state_set_key => bool
+          @lazy_dfa_start_key   = nil # computed on first match?
+        end
+
         return unless full_dfa
 
         build_full_dfa_without_caps
@@ -413,6 +423,7 @@ module NarakuRuby
 
       def run_without_caps(string, start_pos)
         return run_without_caps_full_dfa(string, start_pos) if @full_dfa_transitions
+        return run_without_caps_lazy_dfa(string, start_pos) if @lazy_dfa_transitions
 
         unless @has_assertion
           return run_without_caps_ascii_no_assertion(string, start_pos) if string.ascii_only?
@@ -425,6 +436,85 @@ module NarakuRuby
         else
           run_without_caps_utf8_with_assertion(string, start_pos)
         end
+      end
+
+      def run_without_caps_lazy_dfa(string, start_pos)
+        if string.ascii_only?
+          run_without_caps_lazy_dfa_ascii(string, start_pos)
+        else
+          run_without_caps_lazy_dfa_utf8(string, start_pos)
+        end
+      end
+
+      def run_without_caps_lazy_dfa_ascii(string, start_pos)
+        length = string.bytesize
+        return false if start_pos > length
+
+        key = (@lazy_dfa_start_key ||= init_lazy_dfa_start)
+        return true if @lazy_dfa_accepting[key]
+
+        pos = start_pos
+        while pos < length
+          key = lazy_dfa_step(key, string.getbyte(pos))
+          return true if @lazy_dfa_accepting[key]
+
+          pos += 1
+        end
+        @lazy_dfa_accepting[key]
+      end
+
+      def run_without_caps_lazy_dfa_utf8(string, start_pos)
+        seek = utf8_seek_byte_pos(string, start_pos)
+        return false unless seek
+
+        byte_pos = seek
+        bytesize = string.bytesize
+        key = (@lazy_dfa_start_key ||= init_lazy_dfa_start)
+        return true if @lazy_dfa_accepting[key]
+
+        while byte_pos < bytesize
+          code, len = utf8_decode_code_len(string, byte_pos)
+          key = lazy_dfa_step(key, code)
+          return true if @lazy_dfa_accepting[key]
+
+          byte_pos += len
+        end
+        @lazy_dfa_accepting[key]
+      end
+
+      def init_lazy_dfa_start
+        start_states = epsilon_closure_for_state_set_without_caps([@initial_state])
+        key = build_state_set_key(start_states)
+        @lazy_dfa_state_sets[key] = start_states
+        @lazy_dfa_accepting[key]  = start_states.any? { |s| s.op == :match }
+        key
+      end
+
+      def lazy_dfa_step(key, code)
+        trans = (@lazy_dfa_transitions[key] ||= {})
+        return trans[code] if trans.key?(code)
+
+        from_states = @lazy_dfa_state_sets[key]
+        next_entries = []
+        from_states.each do |state|
+          case state.op
+          when :code
+            next_entries << state.next if state.code == code
+          when :char_class
+            next_entries << state.next if char_class_include?(state, code)
+          when :dot
+            next_entries << state.next if code != 0x0A || state.newline
+          end
+        end
+        next_entries << @initial_state
+
+        next_states = epsilon_closure_for_state_set_without_caps(next_entries)
+        next_key = build_state_set_key(next_states)
+        unless @lazy_dfa_state_sets.key?(next_key)
+          @lazy_dfa_state_sets[next_key] = next_states
+          @lazy_dfa_accepting[next_key]  = next_states.any? { |s| s.op == :match }
+        end
+        trans[code] = next_key
       end
 
       def run_without_caps_ascii_no_assertion(string, start_pos)
