@@ -317,8 +317,10 @@ Naraku(奈落)は Oniguruma(鬼車)→ Onigmo(鬼雲)の系譜に連なる
 
 **実測ベンチマーク** (`ruby-prototype/benchmark/bench_compare.rb`):
 
-測定環境: CRuby 4.0.5 plain(JIT なし) / mruby 4.0.0、Dev Container(x86_64)。
+測定環境: CRuby 4.0.5 / mruby 4.0.0、Dev Container(x86_64)。
 ips = 全入力バッチを 1 周する回数/秒(高いほど速い)。最適化サイクル A〜H 適用後。
+
+**plain (JIT なし)**:
 
 | パターン | Onigmo(C) | NarakuRuby<br/>LazyDFA | Naraku Pike VM<br/>(mruby) | VM/Ong |
 |---|---|---|---|---|
@@ -331,20 +333,28 @@ ips = 全入力バッチを 1 周する回数/秒(高いほど速い)。最適�
 | pathological: `(?:a?){30}a{30}` | 808 | 67 | 10 | 0.01x |
 | unicode: `ジョバンニ\|カムパネルラ` | 3,657 | 133 | 1,947 | 0.53x |
 
+**YJIT 有効 (`ruby --yjit`)**:
+
+| パターン | Onigmo(C)+YJIT | NarakuRuby<br/>LazyDFA+YJIT | YJIT 倍率<br/>(LazyDFA) | VM/Ong+YJIT |
+|---|---|---|---|---|
+| literal: `Watson` | 4,766 | 566 | **2.02x** | 0.47x |
+| alternation: `foo\|bar\|baz` | 4,687 | 1,123 | **2.08x** | 0.46x |
+| repetition: `a+b` | 1,806 | 63 | **1.97x** | 0.57x |
+| ambiguous: `(a\|a)+b` | 686 | 63 | **2.17x** | **1.40x** |
+| char_class: `[a-zA-Z0-9]+` | 4,823 | 2,312 | **2.30x** | 0.66x |
+| bounded: `\d{4}-\d{2}-\d{2}` | 4,136 | 523 | **2.10x** | 0.50x |
+| pathological: `(?:a?){30}a{30}` | 846 | 109 | 1.63x | 0.01x |
+| unicode: `ジョバンニ\|カムパネルラ` | 4,574 | 247 | **1.86x** | 0.42x |
+
 読み方:
-- **Pike VM は Onigmo の 49〜133% の速度**を達成(最適化前は 1〜20%)。
-- **`ambiguous: (a|a)+b` は Onigmo を **1.33x** 超え**。Lazy DFA + キャッシュ拡大(G-3)で
-  複雑な NFA 遷移が O(1) になる一方、Onigmo はバックトラッキングを行うため。
-- **`repetition: a+b`** は G-2(必須バイト先読み)により non-match 入力が early-exit になり
-  0.45x → 0.59x に改善。
-- **NarakuRuby LazyDFA(CRuby)** は Cycle F-1 で追加。DFA(Ruby)がデフォルトで
-  Lazy DFA を使うようになった(assertion-free パターン全般に適用)。
-- **pathological ケース(`(?:a?){30}a{30}`)**: 64 状態超のためビットセット/Lazy DFA 最適化は未適用。
-  Onigmo 808 ips に対して Pike VM 10 ips と差は開くが、**両方とも O(n) で完走**している。
-  バックトラッキングエンジンがこのパターンで指数的に詰まる例(数秒〜フリーズ)
-  とは根本的に異なる。ReDoS 耐性は確認済み。
-- YJIT/ZJIT 有効時は LazyDFA(CRuby)が 1.2〜2.8 倍高速化することが
-  RubyKaigi 2026 スライドで報告されている。
+- **Pike VM(mruby) は JIT なしで Onigmo+YJIT を凌駕** — `ambiguous` で **1.40x**。
+- **LazyDFA(Ruby) は YJIT で約 2 倍** になる(1.63x〜2.30x)。P6a の設計意図通り。
+- **`ambiguous: (a|a)+b`** は Lazy DFA + キャッシュ拡大(G-3)で複雑な NFA 遷移が O(1)に。
+  Onigmo はバックトラッキングで指数的に増える遷移を処理するため差が開く。
+- **`repetition: a+b`** は G-2(必須バイト先読み)により non-match 入力が early-exit。
+- **NarakuRuby LazyDFA(CRuby)** は assertion-free パターン全般に適用(Cycle F-1)。
+- **pathological ケース(`(?:a?){30}a{30}`)**: 64 状態超のため bitset/Lazy DFA 最適化は未適用。
+  **両方とも O(n) で完走**している点が重要。ReDoS 耐性は確認済み。
 
 ---
 
@@ -739,6 +749,7 @@ P6b(C 移植)以降は JIT なしで最速になる代わりに JIT の上乗せ
 | G-2 | P7b: required-byte prefilter | repetition `a+b`(non-match 入力) | 757 → 1,008 ips (+33%) |
 | G-3 | P7c: Lazy DFA cache 拡大 | ambiguous `(a\|a)+b` | 694 → 954 ips (+37%) |
 | H | P8: ascii\_lookup flat table | char\_class `[a-zA-Z0-9]+` | scan ループ 1 load/byte (SIMD 対応) |
+| G-4 | YJIT 環境整備 + ベンチマーク | LazyDFA(Ruby) 全パターン | LazyDFA: ~2x, PikeVM(ambig) Onigmo+YJIT 比 **1.40x** |
 
 **Cycle H 後の累積改善**(最適化前ベースライン → 最終値, PikeVM, 2026-06-12):
 
@@ -781,6 +792,7 @@ Onigmo 参考値(同環境 CRuby 4.0.5): Watson 3,735 / alt 3,727 / rep 1,721 / 
 [Cycle G-2] perf: required-byte prefilter (memchr early exit)
 [Cycle G-1] perf: multi-literal alternation pre-scan
 [Cycle H]   perf: ascii_lookup flat table for char-class scan
+[Cycle G-4] bench: YJIT benchmark results (CRuby 4.0.5 --yjit)
 [ツール]    tools: match.rb / bench_compare.rb  ← 最終数値を反映
 [設計書]    docs: regex-vm.md                   ← 全体を総括
 ```

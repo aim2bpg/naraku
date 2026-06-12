@@ -7,8 +7,10 @@
     "source=${localEnv:HOME}/.claude,target=/home/vscode/.claude,type=bind,consistency=cached",
     "source=${localEnv:HOME}/.ssh,target=/home/vscode/.ssh,type=bind,consistency=cached,readonly",
     "source=${localEnv:HOME}/.config/gh,target=/home/vscode/.config/gh,type=bind,consistency=cached",
-    "source=naraku-rbenv,target=/home/vscode/.rbenv,type=volume"
+    "source=naraku-rbenv,target=/home/vscode/.rbenv,type=volume",
+    "source=naraku-cargo,target=/home/vscode/.cargo,type=volume",
+    "source=naraku-rustup,target=/home/vscode/.rustup,type=volume"
   ],
-  "onCreateCommand": "sudo chown -R vscode:vscode /home/vscode/.rbenv",
+  "onCreateCommand": "sudo chown -R vscode:vscode /home/vscode/.rbenv /home/vscode/.cargo /home/vscode/.rustup",
   "postCreateCommand": "bash .devcontainer/setup.sh"
 }

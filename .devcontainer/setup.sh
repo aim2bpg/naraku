@@ -25,9 +25,15 @@ fi
 export PATH="$HOME/.rbenv/bin:$PATH"
 eval "$(rbenv init -)"
 
+# --- rustup + rustc (required for YJIT-enabled Ruby) ---
+if ! command -v rustc &>/dev/null; then
+  curl -fsSL https://sh.rustup.rs | sh -s -- -y --no-modify-path
+fi
+export PATH="$HOME/.cargo/bin:$PATH"
+
 RUBY_VERSION=$(tr -d '[:space:]' < "$WORKSPACE_ROOT/.ruby-version")
 if ! rbenv versions --bare | grep -qx "$RUBY_VERSION"; then
-  rbenv install "$RUBY_VERSION"
+  RUBY_CONFIGURE_OPTS="--enable-yjit" rbenv install "$RUBY_VERSION"
 fi
 rbenv global "$RUBY_VERSION"
 
@@ -73,7 +79,7 @@ add_if_missing() {
   grep -qF "$1" "$PROFILE" || echo "$1" >> "$PROFILE"
 }
 
-add_if_missing 'export PATH="$HOME/.rbenv/bin:$PATH"'
+add_if_missing 'export PATH="$HOME/.cargo/bin:$HOME/.rbenv/bin:$PATH"'
 add_if_missing 'eval "$(rbenv init -)"'
 
 # --- Claude Code (optional) ---
