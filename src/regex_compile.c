@@ -1446,6 +1446,9 @@ static void compute_goto_masks(nk_program_t* program) {
     compute_epsilon_mask(program->states, n, program->initial_state, visited);
 
   free(visited);
+
+  program->lazy_dfa = (nk_lazy_dfa_t*)calloc(1u, sizeof(nk_lazy_dfa_t));
+  // calloc zeroes all bytes, so all slots start with occupied==0 (empty).
 }
 
 nk_error_t nk_program_compile(
@@ -1474,6 +1477,7 @@ nk_error_t nk_program_compile(
   program->literal_prefix_len = 0;
   program->goto_mask = NULL;
   program->initial_mask = 0;
+  program->lazy_dfa = NULL;
 
   compiler_t compiler = {
     .enc = enc,
@@ -1569,6 +1573,7 @@ void nk_program_free(nk_program_t* program) {
   free(program->char_classes);
   free(program->literal_prefix_bytes);
   free(program->goto_mask);
+  free(program->lazy_dfa);
   free(program);
 }
 

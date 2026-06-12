@@ -318,32 +318,32 @@ Naraku(奈落)は Oniguruma(鬼車)→ Onigmo(鬼雲)の系譜に連なる
 **実測ベンチマーク** (`ruby-prototype/benchmark/bench_compare.rb`):
 
 測定環境: CRuby 4.0.5 plain(JIT なし) / mruby 4.0.0、Dev Container(x86_64)。
-ips = 全入力バッチを 1 周する回数/秒(高いほど速い)。最適化サイクル A〜E 適用後。
+ips = 全入力バッチを 1 周する回数/秒(高いほど速い)。最適化サイクル A〜E + F-1/F-2 適用後。
 
-| パターン | Onigmo(C) | NarakuRuby::DFA | Naraku Pike VM<br/>(mruby) | VM/Ong |
+| パターン | Onigmo(C) | NarakuRuby<br/>LazyDFA | Naraku Pike VM<br/>(mruby) | VM/Ong |
 |---|---|---|---|---|
-| literal: `Watson` | 3,725 | 118 | 2,175 | 0.58x |
-| alternation: `foo\|bar\|baz` | 3,709 | 105 | 1,315 | 0.35x |
-| repetition: `a+b` | 1,706 | 7 | 521 | 0.31x |
-| ambiguous: `(a\|a)+b` | 683 | 3 | 273 | 0.40x |
-| char_class: `[a-zA-Z0-9]+` | 3,898 | 398 | 3,119 | 0.80x |
-| bounded: `\d{4}-\d{2}-\d{2}` | 3,522 | 73 | 1,960 | 0.56x |
-| pathological: `(?:a?){30}a{30}` | 802 | 1 | 10 | 0.01x |
-| unicode: `ジョバンニ\|カムパネルラ` | 3,598 | 66 | 1,767 | 0.49x |
+| literal: `Watson` | 3,769 | 279 | 2,279 | 0.60x |
+| alternation: `foo\|bar\|baz` | 3,751 | 546 | 1,811 | 0.48x |
+| repetition: `a+b` | 1,681 | 27 | 757 | 0.45x |
+| ambiguous: `(a\|a)+b` | 610 | 27 | 694 | **1.14x** |
+| char_class: `[a-zA-Z0-9]+` | 3,550 | 981 | 3,200 | **0.90x** |
+| bounded: `\d{4}-\d{2}-\d{2}` | 2,796 | 221 | 2,510 | **0.90x** |
+| pathological: `(?:a?){30}a{30}` | 764 | 58 | 10 | 0.01x |
+| unicode: `ジョバンニ\|カムパネルラ` | 3,681 | 133 | 1,998 | 0.54x |
 
 読み方:
-- **Pike VM は Onigmo の 30〜80% の速度**を達成(最適化前は 1〜20%)。
-  Onigmo は 20 年の最適化が蓄積した C 実装のため、この差は良好。
-- **`char_class: [a-zA-Z0-9]+` は Onigmo の 80%** まで肉薄している。
-  Thompson NFA ビットセット(Cycle E)が特に効いている。
-- **Pike VM は DFA(CRuby)より数十倍速い**。DFA は Ruby 実装のため言語
-  オーバーヘッドが大きく、JIT がない状態ではより不利。
-- **pathological ケース(`(?:a?){30}a{30}`)**: Onigmo 802 ips に対して
-  Pike VM 10 ips と差は開くが、**両方とも O(n) で完走**している。
+- **Pike VM は Onigmo の 45〜114% の速度**を達成(最適化前は 1〜20%)。
+  Lazy DFA キャッシュ(Cycle F-2)が特に効いている。
+- **`ambiguous: (a|a)+b` は Onigmo を超えた(1.14x)**。Lazy DFA により
+  複雑な NFA 遷移が O(1) になる一方、Onigmo はバックトラッキングを行うため。
+- **`char_class` / `bounded` は Onigmo の 90%** に到達。
+- **NarakuRuby LazyDFA(CRuby)** は Cycle F-1 で追加。DFA(Ruby)がデフォルトで
+  Lazy DFA を使うようになった(assertion-free パターン全般に適用)。
+- **pathological ケース(`(?:a?){30}a{30}`)**: 64 状態超のためビットセット/Lazy DFA 最適化は未適用。
+  Onigmo 764 ips に対して Pike VM 10 ips と差は開くが、**両方とも O(n) で完走**している。
   バックトラッキングエンジンがこのパターンで指数的に詰まる例(数秒〜フリーズ)
-  とは根本的に異なる。ReDoS 耐性は確認済み。なお 64 状態超のため Cycle E
-  ビットセット最適化は未適用。
-- YJIT/ZJIT 有効時は DFA(CRuby)が 1.2〜2.8 倍高速化することが
+  とは根本的に異なる。ReDoS 耐性は確認済み。
+- YJIT/ZJIT 有効時は LazyDFA(CRuby)が 1.2〜2.8 倍高速化することが
   RubyKaigi 2026 スライドで報告されている。
 
 ---
@@ -709,8 +709,8 @@ re =~ "xabcbd"       # => 1  (マッチ開始バイトオフセット)
 | P3 | ASCII ラン スキャン(CHAR\_CLASS) | 文字クラス連続ランを一括スキップ | C | 無関係 | ✅ 完了 |
 | P4 | ASCII ラン スキャン(CODE) | 固定バイトの連続ランを一括スキップ | C | 無関係 | ✅ 完了 |
 | P5 | Thompson NFA state bitset | プログラム ≤ 63 状態を `uint64_t` 1 本で管理 | C | 無関係 | ✅ 完了 |
-| P6a | Lazy DFA(**Ruby** 実装) | NFA 状態集合をキャッシュして DFA 遷移を再利用 | Ruby | **YJIT/ZJIT で効く** | 今後 |
-| P6b | Lazy DFA(**C** 実装) | 同上を C に移植(最終目標) | C | 無関係 | 今後 |
+| P6a | Lazy DFA(**Ruby** 実装) | NFA 状態集合をキャッシュして DFA 遷移を再利用 | Ruby | **YJIT/ZJIT で効く** | ✅ 完了 |
+| P6b | Lazy DFA(**C** 実装) | bitset VM に (NFA ビットマスク, バイト) → 次ビットマスク キャッシュを追加 | C | 無関係 | ✅ 完了 |
 
 **JIT との関係**: P1〜P5 および P6b は C 実装のため YJIT/ZJIT の影響を受けない。
 JIT が効くのは P6a(Ruby 実装の Lazy DFA)のみ。
@@ -729,21 +729,27 @@ P6b(C 移植)は JIT なしで最速になる代わりに JIT の上乗せは不
 | C | P3: CHAR\_CLASS run scan | char\_class `[a-zA-Z0-9]+` | 675 → 1671 ips (+148%) |
 | D | P4: CODE run scan | repetition `a+b` | 62 → 305 ips (+392%) |
 | E | P5: Thompson NFA bitset | 全 ≤63 状態パターン | ambiguous 24 → 260 ips (+983%) |
+| F-1 | P6a: Lazy DFA (Ruby) | assertion-free 全パターン(DFA) | char\_class 398 → 1,082 ips (+172%) |
+| F-2 | P6b: Lazy DFA (C) | 全 ≤63 状態パターン(PikeVM) | ambiguous 273 → 694 ips (+154%) |
 
-**Cycle E 後の累積改善**(最適化前ベースライン → 最終値):
+**Cycle F-2 後の累積改善**(最適化前ベースライン → 最終値, PikeVM):
 
-| パターン | 最適化前 | 最終値 | 倍率 |
-|---------|---------|--------|------|
-| literal: Watson | 552 | 2,175 | **3.9x** |
-| alternation: foo\|bar\|baz | 613 | 1,315 | **2.1x** |
-| repetition: a+b | 51 | 521 | **10.2x** |
-| ambiguous: (a\|a)+b | 17 | 273 | **16.1x** |
-| char\_class: [a-zA-Z0-9]+ | 675 | 3,119 | **4.6x** |
-| bounded: \\d{4}-\\d{2}-\\d{2} | 501 | 1,960 | **3.9x** |
-| unicode: ジョバンニ\|カムパネルラ | 586 | 1,767 | **3.0x** |
+| パターン | 最適化前 | 最終値 | 倍率 | Onigmo 比 |
+|---------|---------|--------|------|-----------|
+| literal: Watson | 552 | 2,279 | **4.1x** | 0.60x |
+| alternation: foo\|bar\|baz | 613 | 1,811 | **3.0x** | 0.48x |
+| repetition: a+b | 51 | 757 | **14.8x** | 0.45x |
+| ambiguous: (a\|a)+b | 17 | 694 | **40.8x** | **1.14x** ← Onigmo 超え |
+| char\_class: [a-zA-Z0-9]+ | 675 | 3,200 | **4.7x** | **0.90x** |
+| bounded: \\d{4}-\\d{2}-\\d{2} | 501 | 2,510 | **5.0x** | **0.90x** |
+| unicode: ジョバンニ\|カムパネルラ | 586 | 1,998 | **3.4x** | 0.54x |
 
-別PR     P6a Lazy DFA (Ruby) + YJIT/ZJIT 計測
-         P6b Lazy DFA (C 移植)
+読み方:
+- **`ambiguous: (a|a)+b`** は Onigmo を超えた(1.14x)。Lazy DFA キャッシュがアクティブになると
+  複雑な NFA 遷移も O(1) になる一方、Onigmo はバックトラッキングを行うため。
+- **`char_class` / `bounded`** は Onigmo の 90% に到達。
+- F-2 の改善が少ないパターン(`literal`)は、もともと memmem プレスキャン(P2)で先行最適化済み。
+- `pathological: (?:a?){30}a{30}` は 64 状態超のため Cycle E/F-2 ビットセット最適化は未適用。
 
 ### 10.3 コミット構造
 
@@ -756,6 +762,9 @@ P6b(C 移植)は JIT なしで最速になる代わりに JIT の上乗せは不
 [Cycle A]   perf: ... / bench: Cycle A results
 [Cycle B]   perf: ... / bench: Cycle B results
 ...
+[Cycle E]   perf: Thompson NFA bitset / bench: Cycle E results
+[Cycle F-1] perf: Lazy DFA Ruby / bench: Cycle F-1 results
+[Cycle F-2] perf: Lazy DFA C bitset VM / bench: Cycle F-2 results
 [ツール]    tools: match.rb / bench_compare.rb  ← 最終数値を反映
 [設計書]    docs: regex-vm.md                   ← 全体を総括
 ```

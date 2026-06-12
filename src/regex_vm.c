@@ -566,8 +566,78 @@ static void next_token(vm_t* vm) {
 //
 // ============================================================================
 
-// Iterate over set bits in `a`, calling state_matches_code for each, and OR
-// the corresponding goto_mask into `next`.
+// Return the index of the lowest set bit in `lsb` (which must be a power of
+// two, i.e. a single isolated bit).  Uses the compiler built-in when
+// available (maps to BSF/TZCNT on x86, CLZ on ARM), otherwise a portable
+// right-shift loop.
+static uint32_t bitset_lsb_index(uint64_t lsb) {
+#if defined(__GNUC__) || defined(__clang__)
+  return (uint32_t)__builtin_ctzll((unsigned long long)lsb);
+#else
+  uint32_t idx = 0;
+  uint64_t tmp = lsb;
+  while (tmp > 1u) {
+    tmp >>= 1;
+    idx++;
+  }
+  return idx;
+#endif
+}
+
+// Compute the next active-state bitmask by advancing `active` over `curr_code`.
+// Does NOT add the initial mask (the caller handles non-anchored re-injection).
+static uint64_t bitset_transition(const nk_program_t* program, uint64_t active, uint32_t curr_code) {
+  uint64_t next = 0;
+  uint64_t bits = active;
+  while (bits != 0) {
+    uint64_t lsb = bits & (uint64_t)(-(int64_t)bits);
+    bits ^= lsb;
+    uint32_t idx = bitset_lsb_index(lsb);
+    if (state_matches_code(program, &program->states[idx], curr_code)) {
+      next |= program->goto_mask[idx];
+    }
+  }
+  return next;
+}
+
+// Compute `transition(active, curr_code)` using the lazy DFA cache when the
+// character is ASCII.  Falls back to `bitset_transition` on a cache miss and
+// stores the result for future calls.  Non-ASCII characters always bypass the
+// cache (UTF-8 continuation bytes are filtered at the call site).
+//
+// The cache lives in `program->lazy_dfa`, which is mutable even when accessed
+// via a `const nk_program_t*` pointer: the pointer field itself is read-only,
+// but the heap allocation it points to is not.
+static uint64_t bitset_transition_cached(const nk_program_t* program, uint64_t active, uint32_t curr_code) {
+  nk_lazy_dfa_t* ld = program->lazy_dfa;
+  if (ld == NULL || curr_code >= 128u) {
+    return bitset_transition(program, active, curr_code);
+  }
+
+  uint8_t cbyte = (uint8_t)curr_code;
+  // Fibonacci hash of the (state_set, char) pair for good slot distribution.
+  uint32_t h = (uint32_t)((active * 11400714819323198485ULL ^ (uint64_t)cbyte) &
+               (uint64_t)(NK_LAZY_DFA_SLOTS - 1u));
+
+  for (uint32_t probe = 0; probe < NK_LAZY_DFA_SLOTS; probe++) {
+    nk_lazy_dfa_slot_t* slot = &ld->slots[(h + probe) & (NK_LAZY_DFA_SLOTS - 1u)];
+    if (!slot->occupied) {
+      // Cache miss: compute, store, and return.
+      uint64_t next = bitset_transition(program, active, curr_code);
+      slot->state_key = active;
+      slot->next_key  = next;
+      slot->char_byte = cbyte;
+      slot->occupied  = 1;
+      return next;
+    }
+    if (slot->state_key == active && slot->char_byte == cbyte) {
+      return slot->next_key;  // Cache hit.
+    }
+  }
+  // Table full (extremely unlikely for typical patterns): compute without caching.
+  return bitset_transition(program, active, curr_code);
+}
+
 static nk_error_t search_impl_bitset(
   const nk_program_t* program,
   const uint8_t* subject_bytes,
@@ -593,25 +663,7 @@ static nk_error_t search_impl_bitset(
   }
 
   while (curr_code != VM_NO_CHAR) {
-    uint64_t next = 0;
-
-    // Advance each active consuming thread.
-    uint64_t bits = active;
-    while (bits != 0) {
-      // Isolate and clear the lowest set bit portably.
-      uint64_t lsb = bits & (uint64_t)(-(int64_t)bits);
-      bits ^= lsb;
-      // Compute bit index via a portable right-shift loop (≤63 iterations).
-      uint32_t idx = 0;
-      uint64_t tmp = lsb;
-      while (tmp > 1u) {
-        tmp >>= 1;
-        idx++;
-      }
-      if (state_matches_code(program, &program->states[idx], curr_code)) {
-        next |= program->goto_mask[idx];
-      }
-    }
+    uint64_t next = bitset_transition_cached(program, active, curr_code);
 
     if (next & NK_BITSET_MATCH_BIT) {
       return NK_SUCCESS;

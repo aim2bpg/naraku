@@ -80,6 +80,36 @@ typedef struct {
 } nk_vm_char_class_t;
 
 /**
+ * One slot in the lazy DFA transition cache.
+ *
+ * Slots are open-addressed with linear probing.  An empty slot has
+ * `occupied == 0` (guaranteed by `calloc`).  The lookup key is the pair
+ * (state_key, char_byte); `next_key` is the cached result.
+ */
+typedef struct {
+  uint64_t state_key;  // NFA active-state bitmask (key)
+  uint64_t next_key;   // resulting NFA bitmask after consuming char_byte
+  uint8_t  char_byte;  // ASCII byte 0–127
+  uint8_t  occupied;   // 0 = empty, 1 = in use
+  uint8_t  pad[6];     // explicit padding to keep the struct 24 bytes
+} nk_lazy_dfa_slot_t;
+
+/** Number of slots in the lazy DFA cache (must be a power of two). */
+#define NK_LAZY_DFA_SLOTS 256u
+
+/**
+ * Lazy DFA transition cache for bitset-compatible programs.
+ *
+ * Caches (NFA-state-bitmask, ASCII-byte) → next-NFA-state-bitmask entries
+ * computed during `search_impl_bitset`.  Amortises the inner bit-scan loop
+ * for repeated (state-set, character) pairs across calls on the same program.
+ * Non-NULL only when `goto_mask != NULL`.
+ */
+typedef struct {
+  nk_lazy_dfa_slot_t slots[NK_LAZY_DFA_SLOTS];
+} nk_lazy_dfa_t;
+
+/**
  * Structure representing a compiled regex VM program.
  */
 typedef struct nk_program {
@@ -103,8 +133,10 @@ typedef struct nk_program {
   // Bit i in goto_mask[j] means "after consuming a char from consuming state j,
   // state i may be active". Bit 63 (NK_BITSET_MATCH_BIT) signals MATCH reachable.
   // NULL when states_len > 63 or any ASSERTION / KEEP state exists.
-  uint64_t* goto_mask;   // [states_len] (only indices of consuming states are used)
-  uint64_t initial_mask; // epsilon closure from initial_state (consuming bits + MATCH bit)
+  uint64_t* goto_mask;    // [states_len] (only indices of consuming states are used)
+  uint64_t  initial_mask; // epsilon closure from initial_state (consuming bits + MATCH bit)
+  // Lazy DFA cache: populated by search_impl_bitset.  NULL when goto_mask is NULL.
+  nk_lazy_dfa_t* lazy_dfa;
 } nk_program_t;
 
 /** Bit 63 of a bitset mask signals that a MATCH state is reachable. */
