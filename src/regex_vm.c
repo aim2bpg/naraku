@@ -756,16 +756,29 @@ static nk_error_t search_impl(
     size_t scan_len = subject_len > start_offset ? subject_len - start_offset : 0u;
     const uint8_t* scan_base = subject_bytes + start_offset;
     const uint8_t* earliest = NULL;
+    size_t earliest_len = 0;
     for (size_t i = 0; i < program->alt_literal_count; i++) {
       const uint8_t* found = vm_memmem(scan_base, scan_len,
                                         program->alt_literal_bytes[i],
                                         program->alt_literal_lens[i]);
       if (found != NULL && (earliest == NULL || found < earliest)) {
         earliest = found;
+        earliest_len = program->alt_literal_lens[i];
       }
     }
     if (earliest == NULL) return NK_NO_MATCH;
     start_offset = (size_t)(earliest - subject_bytes);
+
+    // Pure alternation bypass: the pre-scan already confirmed a complete literal
+    // match for one of the branches — skip the NFA.  Tie-breaking at the same
+    // position follows storage order (= left-to-right alternation priority).
+    if (program->is_pure_alt_literal) {
+      if (out_region != NULL && out_region->caps != NULL) {
+        out_region->caps[0] = start_offset;
+        out_region->caps[1] = start_offset + earliest_len;
+      }
+      return NK_SUCCESS;
+    }
   }
 
   // Fast Thompson NFA bitset path: no allocation, O(active_states) per char.

@@ -1606,6 +1606,7 @@ nk_error_t nk_program_compile(
   program->char_classes_len = 0;
   program->is_anchored = false;
   program->is_pure_literal = false;
+  program->is_pure_alt_literal = false;
   program->literal_prefix_bytes = NULL;
   program->literal_prefix_len = 0;
   program->has_required_byte = false;
@@ -1711,6 +1712,12 @@ nk_error_t nk_program_compile(
         return alt_err;
       }
     }
+
+    // Pure alternation flag: the entire pattern is an alternation of ASCII literals
+    // with no capture groups. The VM is bypassed — the alt pre-scan result alone
+    // resolves the match (analogous to is_pure_literal for the single-literal case).
+    program->is_pure_alt_literal =
+      (program->alt_literal_count > 0u && program->num_capture_groups == 0u);
 
     // Required-byte prefilter: find a single ASCII byte guaranteed to appear in
     // any match.  Only useful when neither a literal prefix nor an alt-literal
