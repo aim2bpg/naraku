@@ -139,6 +139,13 @@ typedef struct nk_program {
   // is 0 (when a prefix is available it already implies this byte).
   bool    has_required_byte;
   uint8_t required_byte;
+  // Multi-literal alternation prefilter.  When the top-level pattern is a pure
+  // alternation of case-sensitive ASCII literals (e.g., `foo|bar|baz`), all
+  // literals are stored here so the VM can scan for the earliest occurrence
+  // with multiple memmem calls before starting the NFA.  NULL when not applicable.
+  uint8_t** alt_literal_bytes;
+  size_t*   alt_literal_lens;
+  size_t    alt_literal_count;
   // Thompson NFA bitset for fast boolean match? on small assertion-free programs.
   // Bit i in goto_mask[j] means "after consuming a char from consuming state j,
   // state i may be active". Bit 63 (NK_BITSET_MATCH_BIT) signals MATCH reachable.

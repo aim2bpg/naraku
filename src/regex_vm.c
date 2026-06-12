@@ -737,6 +737,25 @@ static nk_error_t search_impl(
     start_offset = (size_t)(found - subject_bytes);
   }
 
+  // Multi-literal alternation pre-scan: if the pattern is a pure alternation
+  // of ASCII literals (e.g., `foo|bar|baz`), scan for the earliest occurrence
+  // of any alternative.  Returns NK_NO_MATCH immediately when none is found.
+  if (program->alt_literal_count > 0u) {
+    size_t scan_len = subject_len > start_offset ? subject_len - start_offset : 0u;
+    const uint8_t* scan_base = subject_bytes + start_offset;
+    const uint8_t* earliest = NULL;
+    for (size_t i = 0; i < program->alt_literal_count; i++) {
+      const uint8_t* found = vm_memmem(scan_base, scan_len,
+                                        program->alt_literal_bytes[i],
+                                        program->alt_literal_lens[i]);
+      if (found != NULL && (earliest == NULL || found < earliest)) {
+        earliest = found;
+      }
+    }
+    if (earliest == NULL) return NK_NO_MATCH;
+    start_offset = (size_t)(earliest - subject_bytes);
+  }
+
   // Fast Thompson NFA bitset path: no allocation, O(active_states) per char.
   if (no_caps && out_region == NULL && program->goto_mask != NULL) {
     return search_impl_bitset(program, subject_bytes, subject_bytes_end, start_offset);

@@ -1308,6 +1308,82 @@ static const uint8_t* node_literal_prefix(const nk_node_t* node, size_t* out_len
   }
 }
 
+// Unwraps one or more layers of CAPTURE / GROUP to reach the inner node.
+static const nk_node_t* node_unwrap(const nk_node_t* node) {
+  while (node != NULL) {
+    if (node->base.type == NK_NODE_TYPE_CAPTURE) {
+      node = node->capture.child;
+    } else if (node->base.type == NK_NODE_TYPE_GROUP) {
+      node = node->group.child;
+    } else {
+      break;
+    }
+  }
+  return node;
+}
+
+// Returns true when `node` (after unwrapping captures/groups) is a
+// case-sensitive, all-ASCII literal.  Writes its length to `*out_len` and
+// a pointer to its bytes to `*out_bytes` (pointing into the AST; do not free).
+static bool node_is_ascii_literal(const nk_node_t* node, const uint8_t** out_bytes, size_t* out_len) {
+  node = node_unwrap(node);
+  if (node == NULL || node->base.type != NK_NODE_TYPE_LITERAL) return false;
+  if (node->literal.is_ignore_case) return false;
+  size_t len = (size_t)(node->literal.buf.bytes_end - node->literal.buf.bytes);
+  for (size_t i = 0; i < len; i++) {
+    if (node->literal.buf.bytes[i] >= 0x80u) return false;
+  }
+  *out_bytes = node->literal.buf.bytes;
+  *out_len   = len;
+  return true;
+}
+
+// Attempts to populate `program->alt_literal_*` when `root` is a top-level
+// alternation (possibly wrapped in captures/groups) whose every branch is a
+// case-sensitive, all-ASCII literal.  Returns true on success; leaves the
+// fields NULL/0 on failure.
+static nk_error_t extract_alt_literals(nk_program_t* program, const nk_node_t* root) {
+  const nk_node_t* node = node_unwrap(root);
+  if (node == NULL || node->base.type != NK_NODE_TYPE_ALT) return NK_SUCCESS;
+  if (node->alt.children_len < 2u) return NK_SUCCESS;
+
+  for (size_t i = 0; i < node->alt.children_len; i++) {
+    const uint8_t* dummy_bytes;
+    size_t         dummy_len;
+    if (!node_is_ascii_literal(node->alt.children[i], &dummy_bytes, &dummy_len)) return NK_SUCCESS;
+  }
+
+  size_t count = node->alt.children_len;
+  uint8_t** bytes_arr = (uint8_t**)malloc(count * sizeof(uint8_t*));
+  size_t*   lens_arr  = (size_t*)malloc(count * sizeof(size_t));
+  if (bytes_arr == NULL || lens_arr == NULL) {
+    free(bytes_arr);
+    free(lens_arr);
+    return NK_ERR_MEMORY_ALLOCATION_FAILED;
+  }
+
+  for (size_t i = 0; i < count; i++) {
+    const uint8_t* src;
+    size_t         len;
+    node_is_ascii_literal(node->alt.children[i], &src, &len);
+    uint8_t* copy = (uint8_t*)malloc(len > 0u ? len : 1u);
+    if (copy == NULL) {
+      for (size_t j = 0; j < i; j++) free(bytes_arr[j]);
+      free(bytes_arr);
+      free(lens_arr);
+      return NK_ERR_MEMORY_ALLOCATION_FAILED;
+    }
+    if (len > 0u) memcpy(copy, src, len);
+    bytes_arr[i] = copy;
+    lens_arr[i]  = len;
+  }
+
+  program->alt_literal_bytes = bytes_arr;
+  program->alt_literal_lens  = lens_arr;
+  program->alt_literal_count = count;
+  return NK_SUCCESS;
+}
+
 // Returns the first ASCII byte that is guaranteed to appear in any match of
 // `node`.  Callers use this for a prefilter: if the byte is absent from the
 // subject, no match is possible and the search can exit immediately.
@@ -1531,6 +1607,9 @@ nk_error_t nk_program_compile(
   program->literal_prefix_len = 0;
   program->has_required_byte = false;
   program->required_byte = 0u;
+  program->alt_literal_bytes = NULL;
+  program->alt_literal_lens  = NULL;
+  program->alt_literal_count = 0u;
   program->goto_mask = NULL;
   program->initial_mask = 0;
   program->lazy_dfa = NULL;
@@ -1611,14 +1690,26 @@ nk_error_t nk_program_compile(
     }
   }
 
-  // Required-byte prefilter: find a single ASCII byte guaranteed to appear in
-  // any match.  Only useful when there is no literal prefix (the prefix already
-  // implies a required byte) and the pattern is not anchored.
   if (root_node != NULL && !program->is_anchored && program->literal_prefix_len == 0) {
-    uint8_t req = 0u;
-    if (node_required_byte(root_node, &req)) {
-      program->has_required_byte = true;
-      program->required_byte = req;
+    // Multi-literal alternation prefilter: if every branch is a plain ASCII
+    // literal, store all alternatives for a multi-memmem pre-scan in the VM.
+    {
+      nk_error_t alt_err = extract_alt_literals(program, root_node);
+      if (alt_err != NK_SUCCESS) {
+        nk_program_free(program);
+        return alt_err;
+      }
+    }
+
+    // Required-byte prefilter: find a single ASCII byte guaranteed to appear in
+    // any match.  Only useful when neither a literal prefix nor an alt-literal
+    // prefilter is available (both are stricter).
+    if (program->alt_literal_count == 0u) {
+      uint8_t req = 0u;
+      if (node_required_byte(root_node, &req)) {
+        program->has_required_byte = true;
+        program->required_byte = req;
+      }
     }
   }
 
@@ -1639,6 +1730,13 @@ void nk_program_free(nk_program_t* program) {
   }
   free(program->char_classes);
   free(program->literal_prefix_bytes);
+  if (program->alt_literal_bytes != NULL) {
+    for (size_t i = 0; i < program->alt_literal_count; i++) {
+      free(program->alt_literal_bytes[i]);
+    }
+    free(program->alt_literal_bytes);
+    free(program->alt_literal_lens);
+  }
   free(program->goto_mask);
   free(program->lazy_dfa);
   free(program);
