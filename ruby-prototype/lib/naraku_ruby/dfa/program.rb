@@ -112,6 +112,9 @@ module NarakuRuby
       end
 
       DEBUG = false
+      # Reset the lazy DFA cache when this many distinct NFA-state-sets have
+      # accumulated, to cap memory use on complex patterns.
+      LAZY_DFA_MAX_STATES = 1024
 
       def initialize(states:, initial_state:, num_capture_groups:, num_check_ids:, full_dfa: false, full_dfa_eval: false)
         @states = states
@@ -511,6 +514,16 @@ module NarakuRuby
         next_states = epsilon_closure_for_state_set_without_caps(next_entries)
         next_key = build_state_set_key(next_states)
         unless @lazy_dfa_state_sets.key?(next_key)
+          if @lazy_dfa_state_sets.size >= LAZY_DFA_MAX_STATES
+            @lazy_dfa_transitions.clear
+            @lazy_dfa_state_sets.clear
+            @lazy_dfa_accepting.clear
+            @lazy_dfa_start_key = nil
+            # Re-seed the current and next states so this step remains valid.
+            @lazy_dfa_state_sets[key] = from_states
+            @lazy_dfa_accepting[key]  = from_states.any? { |s| s.op == :match }
+            trans = (@lazy_dfa_transitions[key] ||= {})
+          end
           @lazy_dfa_state_sets[next_key] = next_states
           @lazy_dfa_accepting[next_key]  = next_states.any? { |s| s.op == :match }
         end

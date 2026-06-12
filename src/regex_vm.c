@@ -615,6 +615,13 @@ static uint64_t bitset_transition_cached(const nk_program_t* program, uint64_t a
   }
 
   uint8_t cbyte = (uint8_t)curr_code;
+
+  // Reset the cache when 75% full to prevent probe-chain degradation.
+  if (ld->fill >= (NK_LAZY_DFA_SLOTS * 3u / 4u)) {
+    memset(ld->slots, 0, sizeof(ld->slots));
+    ld->fill = 0u;
+  }
+
   // Fibonacci hash of the (state_set, char) pair for good slot distribution.
   uint32_t h = (uint32_t)((active * 11400714819323198485ULL ^ (uint64_t)cbyte) &
                (uint64_t)(NK_LAZY_DFA_SLOTS - 1u));
@@ -628,13 +635,14 @@ static uint64_t bitset_transition_cached(const nk_program_t* program, uint64_t a
       slot->next_key  = next;
       slot->char_byte = cbyte;
       slot->occupied  = 1;
+      ld->fill++;
       return next;
     }
     if (slot->state_key == active && slot->char_byte == cbyte) {
       return slot->next_key;  // Cache hit.
     }
   }
-  // Table full (extremely unlikely for typical patterns): compute without caching.
+  // Unreachable after the 75%-full reset guard; kept as a safety fallback.
   return bitset_transition(program, active, curr_code);
 }
 

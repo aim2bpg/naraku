@@ -95,7 +95,7 @@ typedef struct {
 } nk_lazy_dfa_slot_t;
 
 /** Number of slots in the lazy DFA cache (must be a power of two). */
-#define NK_LAZY_DFA_SLOTS 256u
+#define NK_LAZY_DFA_SLOTS 1024u
 
 /**
  * Lazy DFA transition cache for bitset-compatible programs.
@@ -104,9 +104,14 @@ typedef struct {
  * computed during `search_impl_bitset`.  Amortises the inner bit-scan loop
  * for repeated (state-set, character) pairs across calls on the same program.
  * Non-NULL only when `goto_mask != NULL`.
+ *
+ * `fill` counts occupied slots.  When `fill` reaches 75% of `NK_LAZY_DFA_SLOTS`
+ * the cache is wiped and rebuilt from scratch to prevent probe-chain
+ * degradation without unbounded memory growth.
  */
 typedef struct {
   nk_lazy_dfa_slot_t slots[NK_LAZY_DFA_SLOTS];
+  uint32_t fill;
 } nk_lazy_dfa_t;
 
 /**
