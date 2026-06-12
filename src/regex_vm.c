@@ -735,6 +735,18 @@ static nk_error_t search_impl(
       return NK_NO_MATCH;
     }
     start_offset = (size_t)(found - subject_bytes);
+
+    // Pure literal bypass: memmem confirmed the complete match — skip the NFA.
+    if (program->is_pure_literal) {
+      if (out_region != NULL && out_region->caps != NULL) {
+        out_region->caps[0] = start_offset;
+        out_region->caps[1] = start_offset + program->literal_prefix_len;
+        for (size_t i = 2; i < 2 * out_region->num_caps; i++) {
+          out_region->caps[i] = NK_REGION_POS_NONE;
+        }
+      }
+      return NK_SUCCESS;
+    }
   }
 
   // Multi-literal alternation pre-scan: if the pattern is a pure alternation

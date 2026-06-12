@@ -133,7 +133,8 @@ typedef struct nk_program {
   uint32_t num_epsilon_check_ids;
   nk_vm_char_class_t* char_classes;
   size_t char_classes_len;
-  bool is_anchored;  // true when the pattern is anchored to \A (never matches after position 0)
+  bool is_anchored;       // true when the pattern is anchored to \A (never matches after position 0)
+  bool is_pure_literal;  // true when the entire pattern is one case-sensitive ASCII literal
   // Leading case-sensitive literal byte sequence extracted from the pattern.
   // Non-NULL only when all bytes are ASCII (<0x80), which is safe for all
   // supported encodings (ASCII bytes are never continuation bytes in UTF-8,

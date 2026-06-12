@@ -1605,6 +1605,7 @@ nk_error_t nk_program_compile(
   program->char_classes = NULL;
   program->char_classes_len = 0;
   program->is_anchored = false;
+  program->is_pure_literal = false;
   program->literal_prefix_bytes = NULL;
   program->literal_prefix_len = 0;
   program->has_required_byte = false;
@@ -1690,6 +1691,14 @@ nk_error_t nk_program_compile(
       program->literal_prefix_bytes = copy;
       program->literal_prefix_len = prefix_len;
     }
+  }
+
+  // Pure literal: the entire pattern is a single case-sensitive ASCII literal.
+  // When true, the VM is bypassed in search_impl — memmem alone resolves the match.
+  if (program->literal_prefix_len > 0) {
+    const uint8_t* lit_bytes;
+    size_t lit_len;
+    program->is_pure_literal = node_is_ascii_literal(root_node, &lit_bytes, &lit_len);
   }
 
   if (root_node != NULL && !program->is_anchored && program->literal_prefix_len == 0) {
