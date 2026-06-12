@@ -595,6 +595,7 @@ static nk_error_t program_add_char_class(compiler_t* c, cc_set_t* cc, uint32_t* 
 
   vm_cc->ascii_bits[0] = 0;
   vm_cc->ascii_bits[1] = 0;
+  memset(vm_cc->ascii_lookup, 0, sizeof(vm_cc->ascii_lookup));
   for (size_t i = 0; i < cc->len; i++) {
     uint32_t lo = cc->pairs[2 * i];
     uint32_t hi = cc->pairs[2 * i + 1];
@@ -606,6 +607,7 @@ static nk_error_t program_add_char_class(compiler_t* c, cc_set_t* cc, uint32_t* 
     }
     for (uint32_t code = lo; code <= hi; code++) {
       vm_cc->ascii_bits[code >> 6] |= (uint64_t)1 << (code & 0x3F);
+      vm_cc->ascii_lookup[code] = 1u;
     }
   }
 

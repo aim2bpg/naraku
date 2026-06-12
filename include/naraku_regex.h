@@ -72,11 +72,17 @@ typedef struct {
  * `ranges` is an inversion list: `2 * ranges_len` code points forming sorted,
  * non-overlapping, inclusive `[begin, end]` pairs. `ascii_bits` is a bitmap
  * fast path for code points below `0x80`.
+ *
+ * `ascii_lookup[b]` is non-zero iff byte `b` is a member of the class.  Bytes
+ * 0x80–0xFF are always 0 (they are never in an ASCII char class).  This flat
+ * table makes the consecutive-run inner loop a single load instead of a
+ * two-step bit extraction, enabling auto-vectorisation by the compiler.
  */
 typedef struct {
   size_t ranges_len;
   uint32_t* ranges;
   uint64_t ascii_bits[2];
+  uint8_t ascii_lookup[256];
 } nk_vm_char_class_t;
 
 /**

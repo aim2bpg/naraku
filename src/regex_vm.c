@@ -263,8 +263,8 @@ static nk_error_t caps_write(vm_t* vm, caps_t** caps_ptr, size_t index, size_t v
 // ============================================================================
 
 static bool char_class_contains(const nk_vm_char_class_t* char_class, uint32_t code) {
-  if (code < 0x80) {
-    return (char_class->ascii_bits[code >> 6] & ((uint64_t)1 << (code & 0x3F))) != 0;
+  if (code < 0x80u) {
+    return char_class->ascii_lookup[code] != 0u;
   }
 
   size_t lo = 0;
@@ -847,10 +847,12 @@ static nk_error_t search_impl(
 
       if (scan_state->op == NK_VM_OP_CHAR_CLASS) {
         const nk_vm_char_class_t* cc = &program->char_classes[scan_state->char_class_index];
-        if ((cc->ascii_bits[curr_code >> 6] & ((uint64_t)1u << (curr_code & 63u))) != 0u) {
+        if (cc->ascii_lookup[curr_code] != 0u) {
           scan = pos + 1;
-          while (scan < subject_len && subject_bytes[scan] < 0x80u &&
-                 (cc->ascii_bits[subject_bytes[scan] >> 6] & ((uint64_t)1u << (subject_bytes[scan] & 63u))) != 0u) {
+          // Use the flat ascii_lookup table (0xFF for members, 0 otherwise) so
+          // this inner loop reduces to a single load per byte — the compiler
+          // can auto-vectorise it with SSE2/AVX when compiled with -march=native.
+          while (scan < subject_len && cc->ascii_lookup[subject_bytes[scan]] != 0u) {
             scan++;
           }
         }
