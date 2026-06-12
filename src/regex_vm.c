@@ -781,6 +781,31 @@ static nk_error_t search_impl(
     }
   }
 
+  // Non-ASCII literal/alternation bypass: encoding-agnostic memmem scan over
+  // the full byte sequences.  Handles pure literals and alternations whose
+  // branches contain non-ASCII bytes (not covered by the ASCII-only paths above).
+  if (program->full_alt_count > 0u) {
+    size_t scan_len = subject_len > start_offset ? subject_len - start_offset : 0u;
+    const uint8_t* scan_base = subject_bytes + start_offset;
+    const uint8_t* earliest = NULL;
+    size_t earliest_len = 0;
+    for (size_t i = 0; i < program->full_alt_count; i++) {
+      const uint8_t* found = vm_memmem(scan_base, scan_len,
+                                        program->full_alt_bytes[i],
+                                        program->full_alt_lens[i]);
+      if (found != NULL && (earliest == NULL || found < earliest)) {
+        earliest = found;
+        earliest_len = program->full_alt_lens[i];
+      }
+    }
+    if (earliest == NULL) return NK_NO_MATCH;
+    if (out_region != NULL && out_region->caps != NULL) {
+      out_region->caps[0] = (size_t)(earliest - subject_bytes);
+      out_region->caps[1] = (size_t)(earliest - subject_bytes) + earliest_len;
+    }
+    return NK_SUCCESS;
+  }
+
   // Fast Thompson NFA bitset path: no allocation, O(active_states) per char.
   if (no_caps && out_region == NULL && program->goto_mask != NULL) {
     return search_impl_bitset(program, subject_bytes, subject_bytes_end, start_offset);

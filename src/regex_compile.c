@@ -1340,6 +1340,74 @@ static bool node_is_ascii_literal(const nk_node_t* node, const uint8_t** out_byt
   return true;
 }
 
+// Like node_is_ascii_literal but allows non-ASCII bytes.
+static bool node_is_literal(const nk_node_t* node, const uint8_t** out_bytes, size_t* out_len) {
+  node = node_unwrap(node);
+  if (node == NULL || node->base.type != NK_NODE_TYPE_LITERAL) return false;
+  if (node->literal.is_ignore_case) return false;
+  *out_bytes = node->literal.buf.bytes;
+  *out_len   = (size_t)(node->literal.buf.bytes_end - node->literal.buf.bytes);
+  return *out_len > 0;
+}
+
+// Populates `program->full_alt_*` when `root` is a top-level literal or
+// alternation of literals (any encoding, including non-ASCII) with no
+// capture groups.  Only called when the ASCII-only paths are not applicable.
+static nk_error_t extract_full_alt_literals(nk_program_t* program, const nk_node_t* root) {
+  const nk_node_t* node = node_unwrap(root);
+  if (node == NULL) return NK_SUCCESS;
+
+  size_t count;
+  if (node->base.type == NK_NODE_TYPE_LITERAL) {
+    count = 1;
+  } else if (node->base.type == NK_NODE_TYPE_ALT) {
+    count = node->alt.children_len;
+    if (count < 2u) return NK_SUCCESS;
+  } else {
+    return NK_SUCCESS;
+  }
+
+  // Verify all branches are case-sensitive literals (any encoding).
+  for (size_t i = 0; i < count; i++) {
+    const nk_node_t* child = (node->base.type == NK_NODE_TYPE_LITERAL)
+                               ? node : node->alt.children[i];
+    const uint8_t* dummy;
+    size_t dlen;
+    if (!node_is_literal(child, &dummy, &dlen)) return NK_SUCCESS;
+  }
+
+  uint8_t** bytes_arr = (uint8_t**)malloc(count * sizeof(uint8_t*));
+  size_t*   lens_arr  = (size_t*)malloc(count * sizeof(size_t));
+  if (bytes_arr == NULL || lens_arr == NULL) {
+    free(bytes_arr);
+    free(lens_arr);
+    return NK_ERR_MEMORY_ALLOCATION_FAILED;
+  }
+
+  for (size_t i = 0; i < count; i++) {
+    const nk_node_t* child = (node->base.type == NK_NODE_TYPE_LITERAL)
+                               ? node : node->alt.children[i];
+    const uint8_t* src;
+    size_t len;
+    node_is_literal(child, &src, &len);
+    uint8_t* copy = (uint8_t*)malloc(len);
+    if (copy == NULL) {
+      for (size_t j = 0; j < i; j++) free(bytes_arr[j]);
+      free(bytes_arr);
+      free(lens_arr);
+      return NK_ERR_MEMORY_ALLOCATION_FAILED;
+    }
+    memcpy(copy, src, len);
+    bytes_arr[i] = copy;
+    lens_arr[i]  = len;
+  }
+
+  program->full_alt_bytes = bytes_arr;
+  program->full_alt_lens  = lens_arr;
+  program->full_alt_count = count;
+  return NK_SUCCESS;
+}
+
 // Attempts to populate `program->alt_literal_*` when `root` is a top-level
 // alternation (possibly wrapped in captures/groups) whose every branch is a
 // case-sensitive, all-ASCII literal.  Returns true on success; leaves the
@@ -1607,6 +1675,9 @@ nk_error_t nk_program_compile(
   program->is_anchored = false;
   program->is_pure_literal = false;
   program->is_pure_alt_literal = false;
+  program->full_alt_bytes = NULL;
+  program->full_alt_lens  = NULL;
+  program->full_alt_count = 0u;
   program->literal_prefix_bytes = NULL;
   program->literal_prefix_len = 0;
   program->has_required_byte = false;
@@ -1719,10 +1790,20 @@ nk_error_t nk_program_compile(
     program->is_pure_alt_literal =
       (program->alt_literal_count > 0u && program->num_capture_groups == 0u);
 
+    // Non-ASCII literal/alternation bypass: handles pure literals or alternations
+    // whose branches contain non-ASCII bytes (not covered by the ASCII-only paths).
+    if (!program->is_pure_alt_literal && program->num_capture_groups == 0u) {
+      nk_error_t full_err = extract_full_alt_literals(program, root_node);
+      if (full_err != NK_SUCCESS) {
+        nk_program_free(program);
+        return full_err;
+      }
+    }
+
     // Required-byte prefilter: find a single ASCII byte guaranteed to appear in
     // any match.  Only useful when neither a literal prefix nor an alt-literal
     // prefilter is available (both are stricter).
-    if (program->alt_literal_count == 0u) {
+    if (program->alt_literal_count == 0u && program->full_alt_count == 0u) {
       uint8_t req = 0u;
       if (node_required_byte(root_node, &req)) {
         program->has_required_byte = true;
@@ -1754,6 +1835,13 @@ void nk_program_free(nk_program_t* program) {
     }
     free(program->alt_literal_bytes);
     free(program->alt_literal_lens);
+  }
+  if (program->full_alt_bytes != NULL) {
+    for (size_t i = 0; i < program->full_alt_count; i++) {
+      free(program->full_alt_bytes[i]);
+    }
+    free(program->full_alt_bytes);
+    free(program->full_alt_lens);
   }
   free(program->goto_mask);
   free(program->lazy_dfa);

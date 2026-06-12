@@ -136,6 +136,13 @@ typedef struct nk_program {
   bool is_anchored;       // true when the pattern is anchored to \A (never matches after position 0)
   bool is_pure_literal;      // true when the entire pattern is one case-sensitive ASCII literal
   bool is_pure_alt_literal;  // true when the entire pattern is an alternation of ASCII literals with no capture groups
+  // Non-ASCII pure literal/alternation bypass: like alt_literal_bytes but allows
+  // non-ASCII bytes.  Set when the entire pattern is a literal or alternation of
+  // literals (any encoding) with no capture groups and is not already covered by
+  // is_pure_literal / is_pure_alt_literal.  Used only for the VM bypass.
+  uint8_t** full_alt_bytes;
+  size_t*   full_alt_lens;
+  size_t    full_alt_count;
   // Leading case-sensitive literal byte sequence extracted from the pattern.
   // Non-NULL only when all bytes are ASCII (<0x80), which is safe for all
   // supported encodings (ASCII bytes are never continuation bytes in UTF-8,
