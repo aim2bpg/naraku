@@ -169,6 +169,14 @@ typedef struct nk_program {
   uint64_t  initial_mask; // epsilon closure from initial_state (consuming bits + MATCH bit)
   // Lazy DFA cache: populated by search_impl_bitset.  NULL when goto_mask is NULL.
   nk_lazy_dfa_t* lazy_dfa;
+  // First-byte table for jump optimization in search_impl_bitset.
+  // When valid, first_byte_table[b] != 0 means ASCII byte b can be the first byte
+  // consumed from the initial NFA state.  Positions where first_byte_table[byte] == 0
+  // can be skipped when the NFA is in the reset (initial_mask) state.
+  // NULL when goto_mask is NULL or first-byte scan is not applicable (loops,
+  // non-ASCII initial states, DOT initial states).
+  bool    first_byte_table_valid;
+  uint8_t first_byte_table[128]; // ASCII-only (bytes 0x00–0x7F)
 } nk_program_t;
 
 /** Bit 63 of a bitset mask signals that a MATCH state is reachable. */

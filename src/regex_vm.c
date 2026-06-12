@@ -654,7 +654,8 @@ static nk_error_t search_impl_bitset(
 ) {
   const nk_encoding_t* enc = program->enc;
 
-  uint64_t active = program->initial_mask & ~NK_BITSET_MATCH_BIT;
+  uint64_t start_active = program->initial_mask & ~NK_BITSET_MATCH_BIT;
+  uint64_t active = start_active;
   if (program->initial_mask & NK_BITSET_MATCH_BIT) {
     return NK_SUCCESS;  // empty pattern matches at start
   }
@@ -671,6 +672,25 @@ static nk_error_t search_impl_bitset(
   }
 
   while (curr_code != VM_NO_CHAR) {
+    // First-byte jump: when the NFA is in its initial (reset) state and the
+    // current byte cannot begin a match, scan forward to the next candidate.
+    // This replaces O(N) per-position closures with a fast byte scan for
+    // patterns like `\d{n}` on non-matching inputs (e.g., `not-a-date`).
+    if (!program->is_anchored && program->first_byte_table_valid &&
+        active == start_active && curr_code < 128u &&
+        program->first_byte_table[(uint8_t)curr_code] == 0u) {
+      const uint8_t* p = subject_bytes + pos + 1u;
+      while (p < subject_bytes_end && *p < 128u && program->first_byte_table[*p] == 0u) {
+        p++;
+      }
+      if (p >= subject_bytes_end) {
+        return NK_NO_MATCH;
+      }
+      pos = (size_t)(p - subject_bytes);
+      curr_code = (uint32_t)*p;
+      curr_width = 1u;
+    }
+
     uint64_t next = bitset_transition_cached(program, active, curr_code);
 
     if (next & NK_BITSET_MATCH_BIT) {
@@ -679,7 +699,7 @@ static nk_error_t search_impl_bitset(
 
     if (!program->is_anchored) {
       // Re-inject threads for the next start position.
-      next |= program->initial_mask & ~NK_BITSET_MATCH_BIT;
+      next |= start_active;
     }
 
     active = next;

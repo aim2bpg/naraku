@@ -1651,6 +1651,72 @@ static void compute_goto_masks(nk_program_t* program) {
   // calloc zeroes all bytes, so all slots start with occupied==0 (empty).
 }
 
+// Populates `program->first_byte_table` and `program->first_byte_table_valid`.
+// The table encodes which ASCII bytes can be the first character consumed from
+// the NFA's initial state, enabling search_impl_bitset to skip positions that
+// cannot possibly begin a match.
+//
+// Safety: when `active == initial_mask` and `curr_byte` is NOT in the table,
+// all consuming states in initial_mask fail to match `curr_byte` (since the
+// table is their ASCII union), so bitset_transition returns 0 and re-injection
+// restores initial_mask unchanged.  Skipping that byte is therefore
+// equivalent to running the full transition — loop-back structure is irrelevant.
+//
+// The table is only applicable when goto_mask is set and at least one ASCII
+// byte can begin a match (CODE < 128 or CHAR_CLASS with non-empty ascii_lookup).
+// DOT states disable the table because they match almost all bytes.
+static void compute_first_byte_table(nk_program_t* program) {
+  if (program->goto_mask == NULL) {
+    return;
+  }
+
+  uint32_t n = (uint32_t)program->states_len;
+  uint64_t imask = program->initial_mask & ~NK_BITSET_MATCH_BIT;
+  if (imask == 0u) {
+    return;
+  }
+
+  uint8_t table[128];
+  memset(table, 0, sizeof(table));
+  bool can_jump = true;
+  bool has_any = false;
+
+  for (uint32_t idx = 0; idx < n && can_jump; idx++) {
+    if (!(imask & ((uint64_t)1u << idx))) {
+      continue;
+    }
+    const nk_vm_state_t* s = &program->states[idx];
+
+    if (s->op == NK_VM_OP_CODE) {
+      // Non-ASCII CODE states are safe: the jump is guarded by `curr_code < 128`
+      // so non-ASCII code points never trigger the scan.
+      if (s->code < 128u) {
+        table[(uint8_t)s->code] = 1u;
+        has_any = true;
+      }
+    } else if (s->op == NK_VM_OP_CHAR_CLASS) {
+      const nk_vm_char_class_t* cc = &program->char_classes[s->char_class_index];
+      // Non-ASCII ranges are harmless: the jump is guarded by `curr_code < 128`.
+      for (uint32_t b = 0u; b < 128u; b++) {
+        if (cc->ascii_lookup[b] != 0u) {
+          table[(uint8_t)b] = 1u;
+          has_any = true;
+        }
+      }
+    } else {
+      // DOT matches nearly all bytes — the table would cover everything, skip.
+      can_jump = false;
+    }
+  }
+
+  if (!can_jump || !has_any) {
+    return;
+  }
+
+  memcpy(program->first_byte_table, table, sizeof(table));
+  program->first_byte_table_valid = true;
+}
+
 nk_error_t nk_program_compile(
   const nk_encoding_t* enc,
   const nk_node_t* root_node,
@@ -1688,6 +1754,8 @@ nk_error_t nk_program_compile(
   program->goto_mask = NULL;
   program->initial_mask = 0;
   program->lazy_dfa = NULL;
+  program->first_byte_table_valid = false;
+  memset(program->first_byte_table, 0, sizeof(program->first_byte_table));
 
   compiler_t compiler = {
     .enc = enc,
@@ -1813,6 +1881,7 @@ nk_error_t nk_program_compile(
   }
 
   compute_goto_masks(program);
+  compute_first_byte_table(program);
 
   *out_program = program;
   return NK_SUCCESS;
