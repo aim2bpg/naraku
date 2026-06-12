@@ -712,6 +712,17 @@ static nk_error_t search_impl(
     return NK_NO_MATCH;
   }
 
+  // Required-byte prefilter: if the pattern mandates an ASCII byte in every
+  // match and that byte is absent from the search window, exit immediately.
+  // Only active when no literal prefix is set (the prefix already implies
+  // this check through vm_memmem).
+  if (program->has_required_byte) {
+    size_t scan_len = subject_len > start_offset ? subject_len - start_offset : 0u;
+    if (memchr(subject_bytes + start_offset, (int)program->required_byte, scan_len) == NULL) {
+      return NK_NO_MATCH;
+    }
+  }
+
   // Pre-scan: if the program has an ASCII literal prefix, use vm_memmem to
   // find the first candidate start position. This avoids running the epsilon
   // closure at every character just to fail immediately — the biggest win is

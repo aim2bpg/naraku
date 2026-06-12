@@ -1308,6 +1308,60 @@ static const uint8_t* node_literal_prefix(const nk_node_t* node, size_t* out_len
   }
 }
 
+// Returns the first ASCII byte that is guaranteed to appear in any match of
+// `node`.  Callers use this for a prefilter: if the byte is absent from the
+// subject, no match is possible and the search can exit immediately.
+//
+// For NK_NODE_TYPE_CONCAT: walk children left to right, skipping zero-width
+// nodes (assertions, \K) and children that can match empty.  Return the first
+// required byte found in a non-optional child.  Continuing past a child with
+// no extractable byte (e.g., a char class) is intentional: subsequent children
+// are guaranteed to run too, so their required bytes are equally valid.
+static bool node_required_byte(const nk_node_t* node, uint8_t* out) {
+  if (node == NULL) return false;
+  switch (node->base.type) {
+    case NK_NODE_TYPE_LITERAL: {
+      if (node->literal.is_ignore_case) return false;
+      size_t len = (size_t)(node->literal.buf.bytes_end - node->literal.buf.bytes);
+      for (size_t i = 0; i < len; i++) {
+        uint8_t b = node->literal.buf.bytes[i];
+        if (b < 0x80u) { *out = b; return true; }
+      }
+      return false;
+    }
+    case NK_NODE_TYPE_CONCAT:
+      for (size_t i = 0; i < node->concat.children_len; i++) {
+        const nk_node_t* child = node->concat.children[i];
+        if (child->base.type == NK_NODE_TYPE_ASSERTION ||
+            child->base.type == NK_NODE_TYPE_KEEP) continue;
+        if (node_can_match_empty(child)) continue;
+        if (node_required_byte(child, out)) return true;
+      }
+      return false;
+    case NK_NODE_TYPE_ALT: {
+      if (node->alt.children_len == 0) return false;
+      uint8_t common;
+      if (!node_required_byte(node->alt.children[0], &common)) return false;
+      for (size_t i = 1; i < node->alt.children_len; i++) {
+        uint8_t b;
+        if (!node_required_byte(node->alt.children[i], &b) || b != common) return false;
+      }
+      *out = common;
+      return true;
+    }
+    case NK_NODE_TYPE_QUANTIFIER:
+      return node->quantifier.min > 0 && node_required_byte(node->quantifier.child, out);
+    case NK_NODE_TYPE_CAPTURE:
+      return node_required_byte(node->capture.child, out);
+    case NK_NODE_TYPE_GROUP:
+      return node_required_byte(node->group.child, out);
+    case NK_NODE_TYPE_ATOMIC:
+      return node_required_byte(node->atomic.child, out);
+    default:
+      return false;
+  }
+}
+
 // Returns true when the pattern is guaranteed to only match at position 0
 // (i.e., the effective first token is a \A assertion). Used to set
 // `program->is_anchored` so the VM can skip re-injection at later positions.
@@ -1475,6 +1529,8 @@ nk_error_t nk_program_compile(
   program->is_anchored = false;
   program->literal_prefix_bytes = NULL;
   program->literal_prefix_len = 0;
+  program->has_required_byte = false;
+  program->required_byte = 0u;
   program->goto_mask = NULL;
   program->initial_mask = 0;
   program->lazy_dfa = NULL;
@@ -1552,6 +1608,17 @@ nk_error_t nk_program_compile(
       memcpy(copy, prefix_bytes, prefix_len);
       program->literal_prefix_bytes = copy;
       program->literal_prefix_len = prefix_len;
+    }
+  }
+
+  // Required-byte prefilter: find a single ASCII byte guaranteed to appear in
+  // any match.  Only useful when there is no literal prefix (the prefix already
+  // implies a required byte) and the pattern is not anchored.
+  if (root_node != NULL && !program->is_anchored && program->literal_prefix_len == 0) {
+    uint8_t req = 0u;
+    if (node_required_byte(root_node, &req)) {
+      program->has_required_byte = true;
+      program->required_byte = req;
     }
   }
 

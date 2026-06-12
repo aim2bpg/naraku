@@ -134,6 +134,11 @@ typedef struct nk_program {
   // Shift-JIS, etc.). Used by the VM for a fast memmem pre-scan.
   uint8_t* literal_prefix_bytes;
   size_t literal_prefix_len;
+  // Single ASCII byte that must appear in any match (prefilter for early no-match
+  // rejection). Only set when `has_required_byte` is true and `literal_prefix_len`
+  // is 0 (when a prefix is available it already implies this byte).
+  bool    has_required_byte;
+  uint8_t required_byte;
   // Thompson NFA bitset for fast boolean match? on small assertion-free programs.
   // Bit i in goto_mask[j] means "after consuming a char from consuming state j,
   // state i may be active". Bit 63 (NK_BITSET_MATCH_BIT) signals MATCH reachable.
