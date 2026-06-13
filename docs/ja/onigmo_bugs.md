@@ -29,6 +29,39 @@
 | ST2 | 不正なバイト列 | ✅ 方針通り | パース時・マッチング時にエラー |
 | ST3 | Ruby から見たデッドコード | ✅ 方針通り | Naraku には含まれていない |
 
+## VM プロトタイプ API サーフェス（ブランチ: kansai-rubykaigi09）
+
+パーサーに手を加えずに追加した `Naraku::Regexp` / `Naraku::MatchData` の標準 Ruby 互換メソッド。
+
+### `Naraku::MatchData`
+
+| メソッド | 説明 |
+|---|---|
+| `byte_begin(n)` / `byte_end(n)` | n 番目のキャプチャのバイトオフセット |
+| `[](n)` | 整数・文字列・シンボルでのキャプチャ取得 |
+| `size` / `length` | キャプチャ数（全体マッチ含む） |
+| `captures` | 1 番目以降のキャプチャ配列 |
+| `to_a` | 全キャプチャ配列（全体マッチ含む） |
+| `pre_match` / `post_match` | マッチ前後の文字列 |
+| `to_s` | 全体マッチ文字列 |
+| `names` | 名前付きキャプチャの名前一覧 |
+| `named_captures` | `{名前 => 文字列}` のハッシュ |
+| `values_at(*indices)` | 複数インデックスの一括取得 |
+| `inspect` | `#<MatchData "match" name:"cap">` 形式の文字列表現 |
+
+### `Naraku::Regexp`
+
+| メソッド | 説明 |
+|---|---|
+| `match(string, byte_start=0)` | マッチング（`MatchData` または `nil`） |
+| `match?(string, byte_start=0)` | `true`/`false` のみ返す高速版 |
+| `=~(string)` | マッチ開始バイトオフセット（未マッチは `nil`） |
+| `===(string)` | `case/when` で使える等値判定 |
+| `pattern` / `source` | パターン文字列 |
+| `inspect` | `/pattern/` 形式の文字列表現（スラッシュはエスケープ） |
+| `names` | 名前付きキャプチャの名前一覧 |
+| `named_captures` | `{名前 => [キャプチャ番号, ...]}` のハッシュ |
+
 ## TODO
 
 書く予定のこと:

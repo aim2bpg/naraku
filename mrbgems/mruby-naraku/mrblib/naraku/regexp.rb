@@ -122,6 +122,25 @@ module Naraku
       @names_to_capture_nums.each_key { |name| result[name] = self[name] }
       result
     end
+
+    def values_at(*indices)
+      indices.map { |i| self[i] }
+    end
+
+    def inspect
+      name_for = {}
+      @names_to_capture_nums.each do |name, nums|
+        nums.each { |n| name_for[n] ||= name }
+      end
+      s = "#<MatchData #{self[0].inspect}"
+      i = 1
+      while i < size
+        label = name_for[i] || i.to_s
+        s += " #{label}:#{self[i].inspect}"
+        i += 1
+      end
+      "#{s}>"
+    end
   end
 
   class Regexp
@@ -145,6 +164,26 @@ module Naraku
     end
 
     attr_reader :pattern
+    alias source pattern
+
+    def inspect
+      "/#{@pattern.gsub('/', '\\/')}/"
+    end
+
+    def names
+      @names_to_capture_nums.keys
+    end
+
+    # Returns {name => [capture_num, ...]} for all named groups.
+    def named_captures
+      result = {}
+      @names_to_capture_nums.each { |name, nums| result[name] = nums }
+      result
+    end
+
+    def ===(string)
+      !match(string).nil?
+    end
 
     # Searches `string` starting at byte offset `byte_start`.
     # Returns a MatchData on match, nil otherwise.

@@ -886,4 +886,106 @@ class RegexpTest < Mtest::Test
     assert_equal 'y', md['a']
     assert_equal 'y', md[:a]
   end
+
+  # ========================================================================
+  # MatchData#inspect
+  # ========================================================================
+
+  def test_match_data_inspect_no_captures
+    md = match('ab', 'xaby')
+    assert_equal '#<MatchData "ab">', md.inspect
+  end
+
+  def test_match_data_inspect_numbered_captures
+    md = match('(a)(b)', 'ab')
+    assert_equal '#<MatchData "ab" 1:"a" 2:"b">', md.inspect
+  end
+
+  def test_match_data_inspect_named_captures
+    md = match('(?<x>a)(?<y>b)', 'ab')
+    assert_equal '#<MatchData "ab" x:"a" y:"b">', md.inspect
+  end
+
+  def test_match_data_inspect_unmatched_capture
+    md = match('(a)?(b)', 'b')
+    assert_equal '#<MatchData "b" 1:nil 2:"b">', md.inspect
+  end
+
+  # ========================================================================
+  # MatchData#values_at
+  # ========================================================================
+
+  def test_match_data_values_at
+    md = match('(a)(b)(c)', 'abc')
+    assert_equal %w[abc a c], md.values_at(0, 1, 3)
+  end
+
+  def test_match_data_values_at_named
+    md = match('(?<x>a)(?<y>b)', 'ab')
+    assert_equal %w[a b], md.values_at('x', 'y')
+  end
+
+  # ========================================================================
+  # Regexp#source / Regexp#inspect
+  # ========================================================================
+
+  def test_regexp_source
+    re = Naraku::Regexp.new('ab+c')
+    assert_equal 'ab+c', re.source
+  end
+
+  def test_regexp_inspect
+    re = Naraku::Regexp.new('ab+c')
+    assert_equal '/ab+c/', re.inspect
+  end
+
+  def test_regexp_inspect_escapes_slash
+    re = Naraku::Regexp.new('a/b')
+    assert_equal '/a\\/b/', re.inspect
+  end
+
+  # ========================================================================
+  # Regexp#===
+  # ========================================================================
+
+  def test_regexp_case_equality_match
+    re = Naraku::Regexp.new('\\d+')
+    s = '123'
+    matched = case s
+              when re then true
+              else false
+              end
+    assert matched
+  end
+
+  def test_regexp_case_equality_no_match
+    re = Naraku::Regexp.new('\\d+')
+    s = 'abc'
+    matched = case s
+              when re then true
+              else false
+              end
+    assert !matched
+  end
+
+  # ========================================================================
+  # Regexp#names / Regexp#named_captures
+  # ========================================================================
+
+  def test_regexp_names_empty
+    re = Naraku::Regexp.new('(a)(b)')
+    assert_equal [], re.names
+  end
+
+  def test_regexp_names
+    re = Naraku::Regexp.new('(?<x>a)(?<y>b)')
+    assert_equal %w[x y], re.names
+  end
+
+  def test_regexp_named_captures
+    re = Naraku::Regexp.new('(?<x>a)(?<y>b)')
+    nc = re.named_captures
+    assert_equal [1], nc['x']
+    assert_equal [2], nc['y']
+  end
 end

@@ -10,23 +10,27 @@ def show_match(pattern, subject)
   re = Naraku::Regexp.new(pattern)
   md = re.match(subject)
 
-  puts "  pattern : #{pattern}"
-  puts "  subject : #{subject}"
+  puts "  pattern : #{re.inspect}"
+  puts "  subject : #{subject.inspect}"
 
   if md.nil?
     puts '  result  : no match'
     return
   end
 
-  whole = md[0]
   b = md.byte_begin(0)
   e = md.byte_end(0)
-  puts "  match   : #{whole.inspect}  [#{b}...#{e}]"
+  puts "  match   : #{md[0].inspect}  [#{b}...#{e}]"
 
   if md.size > 1
+    name_for = {}
+    re.named_captures.each do |name, nums|
+      nums.each { |n| name_for[n] ||= name }
+    end
     (1...md.size).each do |i|
       cap = md[i]
-      puts "  [#{i}]     : #{cap.inspect}"
+      label = name_for[i] ? "[#{i}] :#{name_for[i]}" : "[#{i}]"
+      puts "  #{label.ljust(12)}: #{cap.inspect}"
     end
   end
 
