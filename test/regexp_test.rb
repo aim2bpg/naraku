@@ -273,14 +273,6 @@ class RegexpTest < Mtest::Test
   # Compile errors for unsupported features
   # ========================================================================
 
-  def test_compile_error_lookahead
-    assert_compile_error('(?=foo)', 'lookaround')
-  end
-
-  def test_compile_error_lookbehind
-    assert_compile_error('(?<=foo)', 'lookaround')
-  end
-
   def test_compile_error_atomic_group
     assert_compile_error('(?>a+)', 'atomic')
   end
@@ -619,5 +611,99 @@ class RegexpTest < Mtest::Test
 
   def test_back_ref_case_insensitive_no_match
     assert_nil match('(abc)\\1', 'ABCxyz', is_ignore_case: true)
+  end
+
+  # ========================================================================
+  # Lookahead (?=...) / (?!...)
+  # ========================================================================
+
+  def test_positive_lookahead_match
+    md = match('foo(?=bar)', 'foobar')
+    assert_equal 'foo', md[0]
+  end
+
+  def test_positive_lookahead_no_match
+    assert_nil match('foo(?=bar)', 'foobaz')
+  end
+
+  def test_positive_lookahead_with_capture
+    md = match('(\\w+)(?= world)', 'hello world')
+    assert_equal 'hello', md[0]
+    assert_equal 'hello', md[1]
+  end
+
+  def test_positive_lookahead_mid_string
+    md = match('\\d+(?=px)', 'width:42px;')
+    assert_equal '42', md[0]
+  end
+
+  def test_negative_lookahead_match
+    md = match('foo(?!bar)', 'foobaz')
+    assert_equal 'foo', md[0]
+  end
+
+  def test_negative_lookahead_no_match
+    assert_nil match('foo(?!bar)', 'foobar')
+  end
+
+  def test_negative_lookahead_end_of_string
+    md = match('foo(?!bar)', 'foo')
+    assert_equal 'foo', md[0]
+  end
+
+  def test_positive_lookahead_alternation
+    md = match('(cat|catch)(?=ing)', 'catching')
+    assert_equal 'catch', md[0]
+  end
+
+  # ========================================================================
+  # Lookbehind (?<=...) / (?<!...)
+  # ========================================================================
+
+  def test_positive_lookbehind_match
+    md = match('(?<=foo)bar', 'foobar')
+    assert_equal 'bar', md[0]
+  end
+
+  def test_positive_lookbehind_no_match
+    assert_nil match('(?<=foo)bar', 'bazbar')
+  end
+
+  def test_positive_lookbehind_position
+    md = match('(?<=\\d{3})\\w+', 'abc123def')
+    assert_equal 'def', md[0]
+  end
+
+  def test_negative_lookbehind_match
+    md = match('(?<!foo)bar', 'bazbar')
+    assert_equal 'bar', md[0]
+  end
+
+  def test_negative_lookbehind_no_match
+    assert_nil match('(?<!foo)bar', 'foobar')
+  end
+
+  def test_negative_lookbehind_at_start
+    md = match('(?<!\\d)\\w+', 'hello')
+    assert_equal 'hello', md[0]
+  end
+
+  def test_lookahead_and_lookbehind_combined
+    md = match('(?<=\\()\\w+(?=\\))', '(hello)')
+    assert_equal 'hello', md[0]
+  end
+
+  def test_lookahead_zero_width
+    md = match('(?=\\w)', 'abc')
+    assert_equal '', md[0]
+    assert_equal 0, md.byte_begin(0)
+    assert_equal 0, md.byte_end(0)
+  end
+
+  def test_lookbehind_zero_width
+    md = match('(?<=a)', 'xay')
+    assert_equal '', md[0]
+    assert_equal 2, md.byte_begin(0)
+    assert_equal 2, md.byte_end(0)
   end
 end

@@ -41,6 +41,7 @@ typedef enum {
   NK_VM_OP_MARK_EPSILON,   // mark entering an empty-matchable loop body
   NK_VM_OP_CHECK_EPSILON,  // leave the loop if the body matched empty
   NK_VM_OP_BACK_REF,       // match a back reference to a capture group (`\1`, `\k<name>`)
+  NK_VM_OP_LOOKAROUND,     // zero-width lookahead/lookbehind sub-pattern test
   NK_VM_OP_MATCH,          // accept
 } nk_vm_op_t;
 
@@ -71,6 +72,12 @@ typedef struct {
   //   NK_FOLD_ASCII_ONLY — A-Z / a-z only, no encoding API call
   nk_fold_flag_t fold_flags;
   bool is_ignore_case;
+  // For `NK_VM_OP_LOOKAROUND`: sub-program index (into `nk_program_t::sub_programs`),
+  // whether the assertion is positive (true = (?=)/(?<=)) or negative (false = (?!)/(?<!)),
+  // and whether it looks ahead (true) or behind (false).
+  uint32_t lookaround_prog_idx;
+  bool lookaround_is_positive;
+  bool lookaround_is_ahead;
 } nk_vm_state_t;
 
 /**
@@ -192,6 +199,10 @@ typedef struct nk_program {
   // True when the program contains NK_VM_OP_BACK_REF states.
   // Disables the no_caps optimization (which would make caps->data invalid).
   bool has_back_refs;
+  // Sub-programs compiled from lookahead/lookbehind bodies.
+  // Owned and freed by nk_program_free(); indexed by NK_VM_OP_LOOKAROUND states.
+  struct nk_program** sub_programs;
+  size_t sub_programs_len;
 } nk_program_t;
 
 /** Bit 63 of a bitset mask signals that a MATCH state is reachable. */

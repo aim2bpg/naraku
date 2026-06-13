@@ -145,6 +145,10 @@ typedef struct {
   uint32_t curr_code;
   uint32_t next_code;
 
+  // Subject byte range, needed by the LOOKAROUND handler inside closure().
+  const uint8_t* subject_bytes;
+  const uint8_t* subject_bytes_end;
+
   // The best match recorded so far. Every newly recorded match comes from a
   // higher-priority thread than the previous one (lower-priority work is
   // discarded as soon as a match is recorded), so recording always replaces.
@@ -529,6 +533,73 @@ static nk_error_t closure(vm_t* vm, uint32_t start_state, size_t keep_pos, caps_
           goto fail;
         }
         break;
+
+      case NK_VM_OP_LOOKAROUND:
+      {
+        const nk_program_t* inner = vm->program->sub_programs[state->lookaround_prog_idx];
+        nk_region_t inner_region;
+        nk_error_t init_err = nk_region_init(&inner_region, inner->num_capture_groups);
+        if (init_err != NK_SUCCESS) {
+          caps_unref(item.caps);
+          err = init_err;
+          goto fail;
+        }
+
+        bool assertion_passed = false;
+        if (state->lookaround_is_ahead) {
+          // Lookahead: the sub-pattern must match starting exactly at closure_pos.
+          nk_error_t search_err = nk_program_search(
+            inner, vm->subject_bytes, vm->subject_bytes_end,
+            vm->closure_pos, &inner_region
+          );
+          if (search_err == NK_SUCCESS && inner_region.caps[0] == vm->closure_pos) {
+            assertion_passed = state->lookaround_is_positive;
+          } else if (search_err == NK_NO_MATCH || (search_err == NK_SUCCESS && inner_region.caps[0] != vm->closure_pos)) {
+            assertion_passed = !state->lookaround_is_positive;
+          } else if (search_err != NK_SUCCESS) {
+            nk_region_free(&inner_region);
+            caps_unref(item.caps);
+            err = search_err;
+            goto fail;
+          }
+        } else {
+          // Lookbehind: the sub-pattern must end exactly at closure_pos.
+          // Try every possible start position from 0..closure_pos.
+          bool found = false;
+          for (size_t try_start = 0; try_start <= vm->closure_pos; try_start++) {
+            for (size_t k = 0; k < inner_region.num_caps * 2; k++) {
+              inner_region.caps[k] = NK_REGION_POS_NONE;
+            }
+            nk_error_t search_err = nk_program_search(
+              inner, vm->subject_bytes, vm->subject_bytes_end,
+              try_start, &inner_region
+            );
+            if (search_err == NK_SUCCESS && inner_region.caps[1] == vm->closure_pos) {
+              found = true;
+              break;
+            }
+            if (search_err != NK_SUCCESS && search_err != NK_NO_MATCH) {
+              nk_region_free(&inner_region);
+              caps_unref(item.caps);
+              err = search_err;
+              goto fail;
+            }
+          }
+          assertion_passed = found == state->lookaround_is_positive;
+        }
+
+        nk_region_free(&inner_region);
+
+        if (assertion_passed) {
+          err = push_state(vm, state->next, item.keep_pos, item.epsilon_bits, item.caps);
+          if (err != NK_SUCCESS) {
+            goto fail;
+          }
+        } else {
+          caps_unref(item.caps);
+        }
+        break;
+      }
     }
   }
 
@@ -1128,6 +1199,8 @@ static nk_error_t search_impl(
   vm.num_caps = (size_t)program->num_capture_groups + 1;
   vm.no_caps = no_caps;
   vm.start_offset = start_offset;
+  vm.subject_bytes = subject_bytes;
+  vm.subject_bytes_end = subject_bytes_end;
 
   size_t visited_len = program->num_check_ids == 0 ? 1 : (size_t)program->num_check_ids;
   vm.visited = (uint32_t*)calloc(visited_len, sizeof(uint32_t));

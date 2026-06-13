@@ -233,7 +233,7 @@ flowchart TD
 | ✨ コンパイラ用エラーコード | `include/naraku_error.h`, `src/error.c` | `-600` 番台 `NK_ERR_UNSUPPORTED_*` ほか 10 種 |
 | ✨ mruby マッチ API | `mrbgems/mruby-naraku/src/mrb_naraku_program.c` | `Naraku::Program` C ブリッジ |
 | ✨ mruby Ruby ラッパー | `mrbgems/mruby-naraku/mrblib/naraku/regexp.rb` | `Naraku::Regexp` / `MatchData` / `CompileError` |
-| ✨ Mtest テスト | `test/regexp_test.rb` | 342 テストケース(マッチング全体を網羅) |
+| ✨ Mtest テスト | `test/regexp_test.rb` | 357 テストケース(マッチング全体を網羅) |
 | ✨ 対話型テスター | `tools/match.rb` | `bin/mruby` で動く Rubular ライク CLI |
 | ✨ 3 エンジン比較ベンチマーク | `ruby-prototype/benchmark/bench_compare.rb` + `tools/bench_pike_vm.rb` | Onigmo / DFA / Pike VM の速度比較 |
 | 🐛 バグ修正 | `src/cprop.c` | `code_in_code_range` の `size_t` アンダーフロー修正(`\b` 誤判定の根本原因) |
@@ -260,11 +260,11 @@ flowchart TD
 | Unicode コード生成 | `tools/gen_*.rb` | 約 400 行 | (生成物をテストで担保) | 🟩 既存 |
 | Ruby プロトタイプ(VM の原本) | `ruby-prototype/lib/naraku_ruby/` | 2,513 行 | ✅ 932 行 | 🟩 既存 |
 | mruby バインディング(Parser/Encoding/Node) | `mrbgems/mruby-naraku/` | C 1,826 行 + Ruby 284 行 | ✅(test/ 経由) | 🟩 既存 |
-| **VM コンパイラ** | `src/regex_compile.c` | 2,234 行 | ✅ `test/regexp_test.rb` | ✨ **追加** |
-| **Pike VM 実行器** | `src/regex_vm.c` | 1,142 行 | ✅ `test/regexp_test.rb` | ✨ **追加** |
+| **VM コンパイラ** | `src/regex_compile.c` | 2,374 行 | ✅ `test/regexp_test.rb` | ✨ **追加** |
+| **Pike VM 実行器** | `src/regex_vm.c` | 1,595 行 | ✅ `test/regexp_test.rb` | ✨ **追加** |
 | コンパイラ用エラーコード | `naraku_error.h`, `error.c` | -600〜-610 追加 | ✅ `test/regexp_test.rb` | ✨ **追加** |
-| 公開 API ヘッダ | `include/naraku_regex.h` | 213 行 | — | ✨ **追加** |
-| mruby マッチ API | `mrb_naraku_program.c`, `regexp.rb` | C 143 行 + Ruby 129 行 | ✅ 342 テスト | ✨ **追加** |
+| 公開 API ヘッダ | `include/naraku_regex.h` | 346 行 | — | ✨ **追加** |
+| mruby マッチ API | `mrb_naraku_program.c`, `regexp.rb` | C 143 行 + Ruby 129 行 | ✅ 357 テスト | ✨ **追加** |
 | 対話型テスター | `tools/match.rb` | 75 行 | — | ✨ **追加** |
 | 3 エンジン比較ベンチマーク | `benchmark/bench_compare.rb` + `tools/bench_pike_vm.rb` | 計 255 行 | — | ✨ **追加** |
 | `\b` バグ修正 | `src/cprop.c` | `code_in_code_range` 修正 | ✅(既存テストが通る) | 🐛 **修正** |
@@ -294,7 +294,7 @@ Naraku(奈落)は Oniguruma(鬼車)→ Onigmo(鬼雲)の系譜に連なる
 | possessive 量指定子 `a*+` | ✅ | ❌ 明示エラー | ⭕ 予定 |
 | `/i`(ASCII-only / Simple / Full Unicode fold) | ✅ | ✅ | ✅ |
 | 後方参照 `\1` `\k<name>` | ✅ | ✅ | ✅ |
-| 先読み・後読み `(?=) (?!) (?<=) (?<!)` | ✅ | ❌ 明示エラー | ⭕ 予定 |
+| 先読み・後読み `(?=) (?!) (?<=) (?<!)` | ✅ | ✅ | ✅ |
 | アトミックグループ `(?>)`・不在 `(?~)`・条件分岐 | ✅ | ❌ 明示エラー | ⭕ 検討 |
 | 部分式呼び出し `\g<...>` | ✅ | ❌ 明示エラー | ⭕ 検討 |
 | `\R` `\X` その他 | ✅ | ❌ 明示エラー | ⭕ 予定 |
@@ -439,6 +439,7 @@ C 1,826 行)が既に完成しており、マッチ API を足すだけで「動
 | `MARK_EPSILON` | 空マッチ可能ループ本体への突入を記録 | ε | `check_id`(ε 用 id) |
 | `CHECK_EPSILON` | 本体が空マッチなら `split_next`(脱出)、消費していれば `next`(継続) | ε | `check_id`, `next`, `split_next` |
 | `BACK_REF` | 後方参照(`\1`/`\k<name>`)とマッチ — キャプチャの長さ分を消費 | 可変 | `cap_num`, `is_ignore_case`, `fold_flags` |
+| `LOOKAROUND` | ゼロ幅先読み/後読みアサーション — サブプログラムを実行し成否を判定 | ε | `lookaround_prog_idx`, `lookaround_is_positive`, `lookaround_is_ahead` |
 | `MATCH` | 受理 | — | `check_id` |
 
 - 「消費 = ε」は文字を読まずに移動できる命令(ε 遷移)。
@@ -720,6 +721,19 @@ br_deferred_t:
 
 `(?<name>a)|(?<name>b)\k<name>` のように同名グループが複数ある場合、バックレファレンスは **最後に定義されたグループを優先的に試みる** という Onigmo 互換の動作を実装する。コンパイラは capture_nums を逆順に並べた SPLIT チェーンを生成し、実行時には優先分岐として処理される。
 
+#### 先読み・後読み(`LOOKAROUND`)
+
+ゼロ幅アサーション `(?=)` `(?!)` `(?<=)` `(?<!)` は **サブプログラム方式** で実装する。
+
+**コンパイル時**: アサーション本体を再帰的に `nk_program_compile()` で独立したサブプログラム(`nk_program_t`)にコンパイルし、親プログラムの `sub_programs[]` 配列に格納する。`LOOKAROUND` 命令はそのインデックス・正負・前後を保持する。
+
+**実行時(ε 閉包内)**: `closure()` が `LOOKAROUND` に到達すると:
+
+- **先読み(`is_ahead=true`)**: `nk_program_search()` を現在位置(`closure_pos`)から呼び出し、得られた `region.caps[0] == closure_pos` なら「開始位置が合っている」と判断。positive なら通過、negative なら棄却。
+- **後読み(`is_ahead=false`)**: `try_start = 0..closure_pos` を順に試し `region.caps[1] == closure_pos`(終了位置が現在位置)が得られた時点で成否判定。O(n²) だが現実的なパターンサイズでは問題ない。
+
+サブプログラムは `nk_program_free()` で再帰的に解放される。goto_mask(bitset パス)はサブプログラムを含む親プログラムでは無効化される。
+
 ---
 
 ## 8. mruby バインディング
@@ -793,7 +807,6 @@ re =~ "xabcbd"       # => 1  (マッチ開始バイトオフセット)
 | 機能 | エラー |
 |---|---|
 | 部分式呼び出し `\g<...>` | `NK_ERR_UNSUPPORTED_SUBEXP_CALL` |
-| 先読み・後読み `(?=) (?!) (?<=) (?<!)` | `NK_ERR_UNSUPPORTED_LOOKAROUND` |
 | アトミックグループ `(?>)` | `NK_ERR_UNSUPPORTED_ATOMIC_GROUP` |
 | 不在グループ `(?~)` | `NK_ERR_UNSUPPORTED_ABSENCE_GROUP` |
 | 条件分岐 `(?(...)...)` | `NK_ERR_UNSUPPORTED_CONDITIONAL` |
@@ -923,6 +936,8 @@ P6a(Ruby 実装 Lazy DFA)のみ YJIT/ZJIT の恩恵を受ける。P1〜P5・P6b�
 [Cycle K]   perf: non-ASCII literal/alternation VM bypass
 [Cycle L]   perf: first-byte table jump for bitset path
 [Cycle M]   perf: pure char-class loop VM bypass
+[Back-ref]  feat: back-reference \1 \k<name> VM execution (run-scan bug fix)
+[Lookaround] feat: lookahead/lookbehind (?=) (?!) (?<=) (?<!) sub-program VM
 [設計書]    docs: regex-vm.md                   ← 全体を総括
 ```
 
@@ -948,6 +963,7 @@ P6a(Ruby 実装 Lazy DFA)のみ YJIT/ZJIT の恩恵を受ける。P1〜P5・P6b�
 - [x] `/i` フラグ — ASCII-only fold(`NK_FOLD_ASCII_ONLY`)・Simple fold(`NK_FOLD_DEFAULT`)・Full fold(`NK_FOLD_FULL`)・Turkish/Azeri fold(`NK_FOLD_TURKISH_AZERI`)全対応
 - [x] `size_t` アンダーフローバグ修正(`code_in_code_range`、`\b` 誤判定の原因)
 - [x] 後方参照 `\1` `\k<name>` — 数値/名前参照・可変幅消費・case-insensitive fold 対応
+- [x] 先読み・後読み `(?=) (?!) (?<=) (?<!)` — サブプログラム方式・Pike VM ε 閉包で実行
 - [x] 対話型テスター `tools/match.rb`
 - [x] 3 エンジン比較ベンチマーク `ruby-prototype/benchmark/bench_compare.rb`
 
@@ -962,5 +978,9 @@ $ bin/mruby tools/match.rb 'a(b|c)+d' 'xabcbd'
   post    : ""
 
 $ bin/mruby tools/match.rb '(?=foo)' 'foobar'
-  compile error: lookaround assertions are not supported in this version (at span 0...7)
+  pattern : (?=foo)
+  subject : foobar
+  match   : ""  [0...0]
+  pre     : ""
+  post    : "foobar"
 ```
