@@ -64,6 +64,9 @@ typedef struct {
   uint32_t check_id;
   uint32_t next;
   uint32_t split_next;  // valid for `NK_VM_OP_SPLIT` and `NK_VM_OP_CHECK_EPSILON`
+  // Case folding flags for `NK_VM_OP_CODE`. `NK_FOLD_DEFAULT` means
+  // case-sensitive; `NK_FOLD_ASCII_ONLY` enables A-Z / a-z folding.
+  nk_fold_flag_t fold_flags;
 } nk_vm_state_t;
 
 /**

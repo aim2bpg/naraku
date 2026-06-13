@@ -354,4 +354,88 @@ class RegexpTest < Mtest::Test
     md = match('(a*)*b', 'aaac')
     assert_nil md
   end
+
+  # ========================================================================
+  # ASCII-only case folding (A flag: is_ignore_case + fold_flags: [:ascii_only])
+  # ========================================================================
+
+  def match_a(pattern, subject)
+    match(pattern, subject, is_ignore_case: true, fold_flags: [:ascii_only])
+  end
+
+  # Literal: basic upper/lower matching (md[0] reflects the subject, not pattern)
+  def test_ascii_fold_literal_lower_input
+    assert_equal 'HELLO', match_a('hello', 'HELLO')[0]
+  end
+
+  def test_ascii_fold_literal_upper_pattern
+    assert_equal 'hello', match_a('HELLO', 'hello')[0]
+  end
+
+  def test_ascii_fold_literal_mixed
+    assert_equal 'Watson', match_a('watson', 'xWatsonY')[0]
+  end
+
+  def test_ascii_fold_literal_no_match
+    assert_nil match_a('hello', 'world')
+  end
+
+  # Non-ASCII bytes are not folded
+  def test_ascii_fold_literal_non_ascii_unaffected
+    assert_nil match_a('ss', "\xC3\x9F") # ß (U+00DF) should NOT match
+  end
+
+  # Capture group: position is correct
+  def test_ascii_fold_capture_position
+    md = match_a('(ab)', 'xABy')
+    assert_equal 'AB', md[0]
+    assert_equal 1, md.byte_begin(0)
+    assert_equal 3, md.byte_end(0)
+    assert_equal 'AB', md[1]
+  end
+
+  # Char class: [a-z] with fold matches A-Z too
+  def test_ascii_fold_char_class_lower_range
+    md = match_a('[a-z]+', 'ABC')
+    assert_equal 'ABC', md[0]
+  end
+
+  def test_ascii_fold_char_class_upper_range
+    md = match_a('[A-Z]+', 'abc')
+    assert_equal 'abc', md[0]
+  end
+
+  def test_ascii_fold_char_class_mixed_range
+    md = match_a('[a-zA-Z]+', 'Hello123')
+    assert_equal 'Hello', md[0]
+  end
+
+  def test_ascii_fold_char_class_no_match
+    assert_nil match_a('[a-z]+', '123')
+  end
+
+  # Alternation
+  def test_ascii_fold_alternation
+    assert_equal 'FOO', match_a('foo|bar', 'xFOOy')[0]
+    assert_equal 'BAR', match_a('foo|bar', 'xBARy')[0]
+  end
+
+  # Quantifier: a+ with fold matches a run of A/a only (not B, C, ...)
+  def test_ascii_fold_quantifier_plus
+    assert_equal 'AA', match_a('a+', 'xAABy')[0]
+    assert_equal 'aa', match_a('A+', 'xaaBy')[0]
+  end
+
+  # CF6 regression: [s]s must NOT behave like ss for fold purposes.
+  # With ASCII-only fold, [s] is a char class (not a literal), so
+  # /[s]s/A does NOT match "ß" (ß is non-ASCII and never folded).
+  def test_ascii_fold_cf6_char_class_not_treated_as_literal
+    assert_nil match_a('[s]s', "\xC3\x9F")
+    assert_nil match_a('s[s]', "\xC3\x9F")
+  end
+
+  # Without explicit ascii_only, the default i flag (full fold) is not yet supported
+  def test_non_ascii_fold_raises_compile_error
+    assert_compile_error('hello', 'not supported', is_ignore_case: true)
+  end
 end

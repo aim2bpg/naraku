@@ -190,6 +190,41 @@ static nk_error_t cc_negate(cc_set_t* cc) {
   return NK_SUCCESS;
 }
 
+// Returns true if `code` is contained in `cc` (binary search on pairs).
+static bool cc_contains(const cc_set_t* cc, uint32_t code) {
+  size_t lo = 0, hi = cc->len;
+  while (lo < hi) {
+    size_t mid = lo + (hi - lo) / 2;
+    if (code < cc->pairs[2 * mid]) {
+      hi = mid;
+    } else if (code > cc->pairs[2 * mid + 1]) {
+      lo = mid + 1;
+    } else {
+      return true;
+    }
+  }
+  return false;
+}
+
+// Expands ASCII case folding into `cc`: for every letter in A-Z / a-z that is
+// already in `cc`, adds its fold counterpart so the class matches both cases.
+static nk_error_t cc_ascii_fold_expand(cc_set_t* cc) {
+  for (uint32_t c = 'A'; c <= 'Z'; c++) {
+    uint32_t lower = c | 0x20u;
+    bool has_upper = cc_contains(cc, c);
+    bool has_lower = cc_contains(cc, lower);
+    if (has_upper && !has_lower) {
+      nk_error_t err = cc_add_range(cc, lower, lower);
+      if (err != NK_SUCCESS) return err;
+    }
+    if (has_lower && !has_upper) {
+      nk_error_t err = cc_add_range(cc, c, c);
+      if (err != NK_SUCCESS) return err;
+    }
+  }
+  return NK_SUCCESS;
+}
+
 // ============================================================================
 //
 // Compiler context, state emission, and hole patching:
@@ -289,6 +324,7 @@ static nk_error_t emit(compiler_t* c, nk_vm_op_t op, uint32_t* out_index) {
   state->check_id = 0;
   state->next = NK_VM_STATE_NONE;
   state->split_next = NK_VM_STATE_NONE;
+  state->fold_flags = NK_FOLD_DEFAULT;
 
   switch (op) {
     case NK_VM_OP_CODE:
@@ -713,7 +749,7 @@ static nk_error_t compile_cc_state(compiler_t* c, cc_set_t* cc, uint32_t* out_in
 static nk_error_t compile_literal(compiler_t* c, const nk_node_t* node, uint32_t* out_initial, hole_list_t* out_holes) {
   const nk_literal_node_t* literal = &node->literal;
 
-  if (literal->is_ignore_case) {
+  if (literal->is_ignore_case && literal->fold_flags != NK_FOLD_ASCII_ONLY) {
     return NK_ERR_UNSUPPORTED_IGNORE_CASE;
   }
 
@@ -739,6 +775,9 @@ static nk_error_t compile_literal(compiler_t* c, const nk_node_t* node, uint32_t
       return err;
     }
     c->program->states[state_index].code = code;
+    if (literal->is_ignore_case) {
+      c->program->states[state_index].fold_flags = literal->fold_flags;
+    }
 
     if (initial == NK_VM_STATE_NONE) {
       initial = state_index;
@@ -757,7 +796,7 @@ static nk_error_t
 compile_char_class(compiler_t* c, const nk_node_t* node, uint32_t* out_initial, hole_list_t* out_holes) {
   const nk_char_class_node_t* char_class = &node->char_class;
 
-  if (char_class->is_ignore_case) {
+  if (char_class->is_ignore_case && char_class->fold_flags != NK_FOLD_ASCII_ONLY) {
     return NK_ERR_UNSUPPORTED_IGNORE_CASE;
   }
 
@@ -767,6 +806,14 @@ compile_char_class(compiler_t* c, const nk_node_t* node, uint32_t* out_initial, 
     return err;
   }
 
+  if (char_class->is_ignore_case) {
+    err = cc_ascii_fold_expand(&cc);
+    if (err != NK_SUCCESS) {
+      cc_free(&cc);
+      return err;
+    }
+  }
+
   return compile_cc_state(c, &cc, out_initial, out_holes);
 }
 
@@ -774,7 +821,7 @@ static nk_error_t
 compile_char_type(compiler_t* c, const nk_node_t* node, uint32_t* out_initial, hole_list_t* out_holes) {
   const nk_char_type_node_t* char_type = &node->char_type;
 
-  if (char_type->is_ignore_case) {
+  if (char_type->is_ignore_case && char_type->fold_flags != NK_FOLD_ASCII_ONLY) {
     return NK_ERR_UNSUPPORTED_IGNORE_CASE;
   }
 
@@ -785,6 +832,14 @@ compile_char_type(compiler_t* c, const nk_node_t* node, uint32_t* out_initial, h
     return err;
   }
 
+  if (char_type->is_ignore_case) {
+    err = cc_ascii_fold_expand(&cc);
+    if (err != NK_SUCCESS) {
+      cc_free(&cc);
+      return err;
+    }
+  }
+
   return compile_cc_state(c, &cc, out_initial, out_holes);
 }
 
@@ -792,7 +847,7 @@ static nk_error_t
 compile_char_prop(compiler_t* c, const nk_node_t* node, uint32_t* out_initial, hole_list_t* out_holes) {
   const nk_char_prop_node_t* char_prop = &node->char_prop;
 
-  if (char_prop->is_ignore_case) {
+  if (char_prop->is_ignore_case && char_prop->fold_flags != NK_FOLD_ASCII_ONLY) {
     return NK_ERR_UNSUPPORTED_IGNORE_CASE;
   }
 
@@ -800,6 +855,14 @@ compile_char_prop(compiler_t* c, const nk_node_t* node, uint32_t* out_initial, h
   nk_error_t err = cc_from_cprop(c, char_prop->cprop, false, char_prop->is_positive, &cc);
   if (err != NK_SUCCESS) {
     return err;
+  }
+
+  if (char_prop->is_ignore_case) {
+    err = cc_ascii_fold_expand(&cc);
+    if (err != NK_SUCCESS) {
+      cc_free(&cc);
+      return err;
+    }
   }
 
   return compile_cc_state(c, &cc, out_initial, out_holes);
@@ -1704,6 +1767,15 @@ static void compute_first_byte_table(nk_program_t* program) {
       if (s->code < 128u) {
         table[(uint8_t)s->code] = 1u;
         has_any = true;
+        // ASCII-only fold: the case-folded counterpart is also a valid first byte.
+        if ((s->fold_flags & NK_FOLD_ASCII_ONLY) != 0) {
+          uint8_t b = (uint8_t)s->code;
+          uint8_t folded = (b >= 'A' && b <= 'Z') ? (uint8_t)(b | 0x20u) :
+                           (b >= 'a' && b <= 'z') ? (uint8_t)(b & ~0x20u) : b;
+          if (folded != b) {
+            table[folded] = 1u;
+          }
+        }
       }
     } else if (s->op == NK_VM_OP_CHAR_CLASS) {
       const nk_vm_char_class_t* cc = &program->char_classes[s->char_class_index];

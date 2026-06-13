@@ -328,6 +328,11 @@ static bool eval_assertion(const vm_t* vm, nk_assertion_type_t type) {
 static bool state_matches_code(const nk_program_t* program, const nk_vm_state_t* state, uint32_t code) {
   switch (state->op) {
     case NK_VM_OP_CODE:
+      if ((state->fold_flags & NK_FOLD_ASCII_ONLY) != 0 && code < 0x80u && state->code < 0x80u) {
+        uint32_t fc = (code >= 'A' && code <= 'Z') ? (code | 0x20u) : code;
+        uint32_t fp = (state->code >= 'A' && state->code <= 'Z') ? (state->code | 0x20u) : state->code;
+        return fc == fp;
+      }
       return code == state->code;
     case NK_VM_OP_CHAR_CLASS:
       return char_class_contains(&program->char_classes[state->char_class_index], code);
@@ -969,7 +974,8 @@ static nk_error_t search_impl(
             scan++;
           }
         }
-      } else if (scan_state->op == NK_VM_OP_CODE && curr_code == scan_state->code) {
+      } else if (scan_state->op == NK_VM_OP_CODE && scan_state->fold_flags == NK_FOLD_DEFAULT &&
+                 curr_code == scan_state->code) {
         // Only scan a consecutive run when the state's successor is an epsilon
         // (non-consuming) state, indicating this is a loop-head (e.g., `a+`).
         // If the next state is a consuming op, this CODE is part of a sequence
