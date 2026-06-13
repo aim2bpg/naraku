@@ -207,15 +207,38 @@ static bool cc_contains(const cc_set_t* cc, uint32_t code) {
 }
 
 // Callback context for cc_simple_fold_expand.
+// Collects unique multi-char (fold_len > 1) fold sequences for code points
+// that are present in `cc`. Used by compile_char_class to generate SPLIT
+// alternatives so that e.g. [ß]/i also matches "ss".
+typedef struct {
+  const cc_set_t* cc;
+  uint32_t folds[32][NK_ENC_MAX_FOLDED_CODES];
+  size_t fold_lens[32];
+  size_t count;
+} cc_multi_fold_ctx_t;
+
+static nk_error_t cc_multi_fold_cb(uint32_t unfolded, const uint32_t* folded, size_t fold_len, void* data) {
+  cc_multi_fold_ctx_t* ctx = (cc_multi_fold_ctx_t*)data;
+  if (fold_len <= 1 || ctx->count >= 32) return NK_SUCCESS;
+  if (!cc_contains(ctx->cc, unfolded)) return NK_SUCCESS;
+  for (size_t i = 0; i < ctx->count; i++) {
+    if (ctx->fold_lens[i] == fold_len && memcmp(ctx->folds[i], folded, fold_len * sizeof(uint32_t)) == 0) {
+      return NK_SUCCESS;
+    }
+  }
+  memcpy(ctx->folds[ctx->count], folded, fold_len * sizeof(uint32_t));
+  ctx->fold_lens[ctx->count] = fold_len;
+  ctx->count++;
+  return NK_SUCCESS;
+}
+
 typedef struct {
   const cc_set_t* original;
   cc_set_t additions;
   nk_error_t err;
 } cc_fold_ctx_t;
 
-static nk_error_t cc_fold_expand_cb(
-  uint32_t unfolded, const uint32_t* folded, size_t fold_len, void* data
-) {
+static nk_error_t cc_fold_expand_cb(uint32_t unfolded, const uint32_t* folded, size_t fold_len, void* data) {
   cc_fold_ctx_t* ctx = (cc_fold_ctx_t*)data;
   if (ctx->err != NK_SUCCESS) return NK_SUCCESS;
   if (fold_len != 1) return NK_SUCCESS;  // simple 1-to-1 fold only
@@ -829,7 +852,7 @@ static nk_error_t compile_full_fold_seq(
   // Compile one continuation per unique consumed count and store its entry state.
   // Indexed by consumed count (1..NK_ENC_MAX_FOLDED_CODES); index 0 is unused.
   uint32_t cont_initial_by_n[NK_ENC_MAX_FOLDED_CODES + 1];
-  bool     cont_done_by_n[NK_ENC_MAX_FOLDED_CODES + 1];
+  bool cont_done_by_n[NK_ENC_MAX_FOLDED_CODES + 1];
   for (size_t j = 0; j <= NK_ENC_MAX_FOLDED_CODES; j++) {
     cont_initial_by_n[j] = NK_VM_STATE_NONE;
     cont_done_by_n[j] = false;
@@ -840,9 +863,13 @@ static nk_error_t compile_full_fold_seq(
       hole_list_t cont_holes;
       hole_list_init(&cont_holes);
       nk_error_t err = compile_full_fold_seq(
-        c, enc, flags,
-        folded_codes + consumed, folded_len - consumed,
-        &cont_initial_by_n[consumed], &cont_holes
+        c,
+        enc,
+        flags,
+        folded_codes + consumed,
+        folded_len - consumed,
+        &cont_initial_by_n[consumed],
+        &cont_holes
       );
       if (err != NK_SUCCESS) {
         hole_list_free(&cont_holes);
@@ -907,8 +934,7 @@ static nk_error_t compile_literal(compiler_t* c, const nk_node_t* node, uint32_t
   // multiple code points (e.g. ß→ss), so we expand the literal into an
   // alternation NFA instead of emitting plain CODE states with is_ignore_case.
   if (literal->is_ignore_case &&
-      ((literal->fold_flags & NK_FOLD_FULL) != 0 ||
-       (literal->fold_flags & NK_FOLD_TURKISH_AZERI) != 0)) {
+      ((literal->fold_flags & NK_FOLD_FULL) != 0 || (literal->fold_flags & NK_FOLD_TURKISH_AZERI) != 0)) {
     const uint8_t* bytes = literal->buf.bytes;
     const uint8_t* bytes_end = literal->buf.bytes_end;
     if (bytes == bytes_end) {
@@ -934,9 +960,8 @@ static nk_error_t compile_literal(compiler_t* c, const nk_node_t* node, uint32_t
       }
       bytes += (size_t)width;
     }
-    nk_error_t err = compile_full_fold_seq(
-      c, c->enc, literal->fold_flags, folded_codes, folded_len, out_initial, out_holes
-    );
+    nk_error_t err =
+      compile_full_fold_seq(c, c->enc, literal->fold_flags, folded_codes, folded_len, out_initial, out_holes);
     free(folded_codes);
     return err;
   }
@@ -999,6 +1024,101 @@ compile_char_class(compiler_t* c, const nk_node_t* node, uint32_t* out_initial, 
     }
     if (err != NK_SUCCESS) {
       cc_free(&cc);
+      return err;
+    }
+  }
+
+  // When full fold is active, check for multi-char fold sequences (e.g. ß→ss).
+  // These cannot be added to the char class set (single code points only),
+  // so compile each unique fold sequence and wire them via SPLIT alternatives.
+  if (char_class->is_ignore_case && (char_class->fold_flags & NK_FOLD_ASCII_ONLY) == 0 &&
+      (char_class->fold_flags & (NK_FOLD_FULL | NK_FOLD_TURKISH_AZERI)) != 0) {
+    cc_multi_fold_ctx_t mf = {.cc = &cc};
+    err = nk_enc_iterate_case_fold(c->enc, char_class->fold_flags, cc_multi_fold_cb, &mf);
+    if (err != NK_SUCCESS) {
+      cc_free(&cc);
+      return err;
+    }
+
+    if (mf.count > 0) {
+      // Step 1: compile all alternatives.
+      // compile_cc_state -> program_add_char_class always frees cc internally.
+      uint32_t cc_init;
+      hole_list_t cc_holes;
+      hole_list_init(&cc_holes);
+      err = compile_cc_state(c, &cc, &cc_init, &cc_holes);
+      if (err != NK_SUCCESS) {
+        hole_list_free(&cc_holes);
+        return err;
+      }
+
+      uint32_t seq_inits[32];
+      hole_list_t seq_holes[32];
+      size_t compiled = 0;
+      for (size_t i = 0; i < mf.count; i++) {
+        hole_list_init(&seq_holes[i]);
+        err = compile_full_fold_seq(
+          c,
+          c->enc,
+          char_class->fold_flags,
+          mf.folds[i],
+          mf.fold_lens[i],
+          &seq_inits[i],
+          &seq_holes[i]
+        );
+        if (err != NK_SUCCESS) {
+          hole_list_free(&cc_holes);
+          for (size_t j = 0; j < compiled; j++) hole_list_free(&seq_holes[j]);
+          hole_list_free(&seq_holes[i]);
+          return err;
+        }
+        compiled++;
+      }
+
+      // Step 2: emit SPLIT chain connecting all alternatives.
+      // Alternatives are compiled first so their state indices are stable;
+      // SPLIT states pointing backward into already-emitted states is valid.
+      size_t n = 1 + mf.count;
+      uint32_t first_split = NK_VM_STATE_NONE;
+      uint32_t prev_split = NK_VM_STATE_NONE;
+      for (size_t i = 0; i < n; i++) {
+        uint32_t alt_init = (i == 0) ? cc_init : seq_inits[i - 1];
+        bool is_last = (i == n - 1);
+        if (!is_last) {
+          uint32_t split_idx;
+          err = emit(c, NK_VM_OP_SPLIT, &split_idx);
+          if (err != NK_SUCCESS) goto multi_fold_fail;
+          c->program->states[split_idx].next = alt_init;
+          if (first_split == NK_VM_STATE_NONE) first_split = split_idx;
+          if (prev_split != NK_VM_STATE_NONE) c->program->states[prev_split].split_next = split_idx;
+          prev_split = split_idx;
+        } else {
+          if (prev_split != NK_VM_STATE_NONE)
+            c->program->states[prev_split].split_next = alt_init;
+          else
+            first_split = alt_init;
+        }
+      }
+
+      // Step 3: merge all holes.
+      err = hole_list_move_append(out_holes, &cc_holes);
+      hole_list_free(&cc_holes);
+      if (err != NK_SUCCESS) goto multi_fold_holes_fail;
+      for (size_t i = 0; i < mf.count; i++) {
+        err = hole_list_move_append(out_holes, &seq_holes[i]);
+        hole_list_free(&seq_holes[i]);
+        if (err != NK_SUCCESS) goto multi_fold_holes_fail;
+      }
+
+      *out_initial = first_split;
+      return NK_SUCCESS;
+
+    multi_fold_fail:
+      hole_list_free(&cc_holes);
+      for (size_t j = 0; j < compiled; j++) hole_list_free(&seq_holes[j]);
+      return err;
+    multi_fold_holes_fail:
+      for (size_t j = 0; j < mf.count; j++) hole_list_free(&seq_holes[j]);
       return err;
     }
   }
@@ -1088,9 +1208,7 @@ compile_assertion(compiler_t* c, const nk_node_t* node, uint32_t* out_initial, h
 
       // Append inner_prog to program->sub_programs[].
       size_t new_len = c->program->sub_programs_len + 1;
-      nk_program_t** new_arr = (nk_program_t**)realloc(
-        c->program->sub_programs, new_len * sizeof(nk_program_t*)
-      );
+      nk_program_t** new_arr = (nk_program_t**)realloc(c->program->sub_programs, new_len * sizeof(nk_program_t*));
       if (new_arr == NULL) {
         nk_program_free(inner_prog);
         return NK_ERR_MEMORY_ALLOCATION_FAILED;
@@ -1106,13 +1224,11 @@ compile_assertion(compiler_t* c, const nk_node_t* node, uint32_t* out_initial, h
       if (la_err != NK_SUCCESS) {
         return la_err;
       }
-      c->program->states[la_idx].lookaround_prog_idx  = prog_idx;
+      c->program->states[la_idx].lookaround_prog_idx = prog_idx;
       c->program->states[la_idx].lookaround_is_positive =
-        (type == NK_ASSERTION_TYPE_POSITIVE_LOOKAHEAD ||
-         type == NK_ASSERTION_TYPE_POSITIVE_LOOKBEHIND);
+        (type == NK_ASSERTION_TYPE_POSITIVE_LOOKAHEAD || type == NK_ASSERTION_TYPE_POSITIVE_LOOKBEHIND);
       c->program->states[la_idx].lookaround_is_ahead =
-        (type == NK_ASSERTION_TYPE_POSITIVE_LOOKAHEAD ||
-         type == NK_ASSERTION_TYPE_NEGATIVE_LOOKAHEAD);
+        (type == NK_ASSERTION_TYPE_POSITIVE_LOOKAHEAD || type == NK_ASSERTION_TYPE_NEGATIVE_LOOKAHEAD);
 
       *out_initial = la_idx;
       return hole_list_push(out_holes, la_idx, false);
@@ -1415,17 +1531,20 @@ compile_quantifier(compiler_t* c, const nk_node_t* node, uint32_t* out_initial, 
     size_t inner_err_off = 0;
     size_t inner_err_len = 0;
     nk_error_t inner_err = nk_program_compile(
-      c->enc, &greedy_node, c->num_capture_groups,
-      c->capture_entries, c->capture_entries_len,
-      &inner_prog, &inner_err_off, &inner_err_len
+      c->enc,
+      &greedy_node,
+      c->num_capture_groups,
+      c->capture_entries,
+      c->capture_entries_len,
+      &inner_prog,
+      &inner_err_off,
+      &inner_err_len
     );
     if (inner_err != NK_SUCCESS) {
       return inner_err;
     }
     size_t new_len = c->program->sub_programs_len + 1;
-    nk_program_t** new_arr = (nk_program_t**)realloc(
-      c->program->sub_programs, new_len * sizeof(nk_program_t*)
-    );
+    nk_program_t** new_arr = (nk_program_t**)realloc(c->program->sub_programs, new_len * sizeof(nk_program_t*));
     if (new_arr == NULL) {
       nk_program_free(inner_prog);
       return NK_ERR_MEMORY_ALLOCATION_FAILED;
@@ -1594,8 +1713,8 @@ compile_node_dispatch(compiler_t* c, const nk_node_t* node, uint32_t* out_initia
       for (size_t i = 0; i < count; i++) {
         // Reverse: index 0 tries the last-defined capture group first.
         uint32_t cap_num = (back_ref->target_kind == NK_REF_TARGET_KIND_CAPTURE_NUM)
-          ? single_cap_num
-          : entry->capture_nums[count - 1 - i];
+                             ? single_cap_num
+                             : entry->capture_nums[count - 1 - i];
         bool is_last = (i == count - 1);
 
         uint32_t br_idx;
@@ -1736,8 +1855,7 @@ static const nk_node_t* node_unwrap(const nk_node_t* node) {
 static bool node_is_char_class_like(const nk_node_t* node) {
   node = node_unwrap(node);
   if (node == NULL) return false;
-  return node->base.type == NK_NODE_TYPE_CHAR_CLASS ||
-         node->base.type == NK_NODE_TYPE_CHAR_TYPE  ||
+  return node->base.type == NK_NODE_TYPE_CHAR_CLASS || node->base.type == NK_NODE_TYPE_CHAR_TYPE ||
          node->base.type == NK_NODE_TYPE_CHAR_PROP;
 }
 
@@ -1753,7 +1871,7 @@ static bool node_is_ascii_literal(const nk_node_t* node, const uint8_t** out_byt
     if (node->literal.buf.bytes[i] >= 0x80u) return false;
   }
   *out_bytes = node->literal.buf.bytes;
-  *out_len   = len;
+  *out_len = len;
   return true;
 }
 
@@ -1763,7 +1881,7 @@ static bool node_is_literal(const nk_node_t* node, const uint8_t** out_bytes, si
   if (node == NULL || node->base.type != NK_NODE_TYPE_LITERAL) return false;
   if (node->literal.is_ignore_case) return false;
   *out_bytes = node->literal.buf.bytes;
-  *out_len   = (size_t)(node->literal.buf.bytes_end - node->literal.buf.bytes);
+  *out_len = (size_t)(node->literal.buf.bytes_end - node->literal.buf.bytes);
   return *out_len > 0;
 }
 
@@ -1786,15 +1904,14 @@ static nk_error_t extract_full_alt_literals(nk_program_t* program, const nk_node
 
   // Verify all branches are case-sensitive literals (any encoding).
   for (size_t i = 0; i < count; i++) {
-    const nk_node_t* child = (node->base.type == NK_NODE_TYPE_LITERAL)
-                               ? node : node->alt.children[i];
+    const nk_node_t* child = (node->base.type == NK_NODE_TYPE_LITERAL) ? node : node->alt.children[i];
     const uint8_t* dummy;
     size_t dlen;
     if (!node_is_literal(child, &dummy, &dlen)) return NK_SUCCESS;
   }
 
   uint8_t** bytes_arr = (uint8_t**)malloc(count * sizeof(uint8_t*));
-  size_t*   lens_arr  = (size_t*)malloc(count * sizeof(size_t));
+  size_t* lens_arr = (size_t*)malloc(count * sizeof(size_t));
   if (bytes_arr == NULL || lens_arr == NULL) {
     free(bytes_arr);
     free(lens_arr);
@@ -1802,8 +1919,7 @@ static nk_error_t extract_full_alt_literals(nk_program_t* program, const nk_node
   }
 
   for (size_t i = 0; i < count; i++) {
-    const nk_node_t* child = (node->base.type == NK_NODE_TYPE_LITERAL)
-                               ? node : node->alt.children[i];
+    const nk_node_t* child = (node->base.type == NK_NODE_TYPE_LITERAL) ? node : node->alt.children[i];
     const uint8_t* src;
     size_t len;
     node_is_literal(child, &src, &len);
@@ -1816,11 +1932,11 @@ static nk_error_t extract_full_alt_literals(nk_program_t* program, const nk_node
     }
     memcpy(copy, src, len);
     bytes_arr[i] = copy;
-    lens_arr[i]  = len;
+    lens_arr[i] = len;
   }
 
   program->full_alt_bytes = bytes_arr;
-  program->full_alt_lens  = lens_arr;
+  program->full_alt_lens = lens_arr;
   program->full_alt_count = count;
   return NK_SUCCESS;
 }
@@ -1836,13 +1952,13 @@ static nk_error_t extract_alt_literals(nk_program_t* program, const nk_node_t* r
 
   for (size_t i = 0; i < node->alt.children_len; i++) {
     const uint8_t* dummy_bytes;
-    size_t         dummy_len;
+    size_t dummy_len;
     if (!node_is_ascii_literal(node->alt.children[i], &dummy_bytes, &dummy_len)) return NK_SUCCESS;
   }
 
   size_t count = node->alt.children_len;
   uint8_t** bytes_arr = (uint8_t**)malloc(count * sizeof(uint8_t*));
-  size_t*   lens_arr  = (size_t*)malloc(count * sizeof(size_t));
+  size_t* lens_arr = (size_t*)malloc(count * sizeof(size_t));
   if (bytes_arr == NULL || lens_arr == NULL) {
     free(bytes_arr);
     free(lens_arr);
@@ -1851,7 +1967,7 @@ static nk_error_t extract_alt_literals(nk_program_t* program, const nk_node_t* r
 
   for (size_t i = 0; i < count; i++) {
     const uint8_t* src;
-    size_t         len;
+    size_t len;
     node_is_ascii_literal(node->alt.children[i], &src, &len);
     uint8_t* copy = (uint8_t*)malloc(len > 0u ? len : 1u);
     if (copy == NULL) {
@@ -1862,11 +1978,11 @@ static nk_error_t extract_alt_literals(nk_program_t* program, const nk_node_t* r
     }
     if (len > 0u) memcpy(copy, src, len);
     bytes_arr[i] = copy;
-    lens_arr[i]  = len;
+    lens_arr[i] = len;
   }
 
   program->alt_literal_bytes = bytes_arr;
-  program->alt_literal_lens  = lens_arr;
+  program->alt_literal_lens = lens_arr;
   program->alt_literal_count = count;
   return NK_SUCCESS;
 }
@@ -1883,25 +1999,29 @@ static nk_error_t extract_alt_literals(nk_program_t* program, const nk_node_t* r
 static bool node_required_byte(const nk_node_t* node, uint8_t* out) {
   if (node == NULL) return false;
   switch (node->base.type) {
-    case NK_NODE_TYPE_LITERAL: {
+    case NK_NODE_TYPE_LITERAL:
+    {
       if (node->literal.is_ignore_case) return false;
       size_t len = (size_t)(node->literal.buf.bytes_end - node->literal.buf.bytes);
       for (size_t i = 0; i < len; i++) {
         uint8_t b = node->literal.buf.bytes[i];
-        if (b < 0x80u) { *out = b; return true; }
+        if (b < 0x80u) {
+          *out = b;
+          return true;
+        }
       }
       return false;
     }
     case NK_NODE_TYPE_CONCAT:
       for (size_t i = 0; i < node->concat.children_len; i++) {
         const nk_node_t* child = node->concat.children[i];
-        if (child->base.type == NK_NODE_TYPE_ASSERTION ||
-            child->base.type == NK_NODE_TYPE_KEEP) continue;
+        if (child->base.type == NK_NODE_TYPE_ASSERTION || child->base.type == NK_NODE_TYPE_KEEP) continue;
         if (node_can_match_empty(child)) continue;
         if (node_required_byte(child, out)) return true;
       }
       return false;
-    case NK_NODE_TYPE_ALT: {
+    case NK_NODE_TYPE_ALT:
+    {
       if (node->alt.children_len == 0) return false;
       uint8_t common;
       if (!node_required_byte(node->alt.children[0], &common)) return false;
@@ -1958,12 +2078,8 @@ static bool node_starts_with_string_anchor(const nk_node_t* node) {
 // as transparent epsilons (they must have been screened out before calling).
 // For CHECK_EPSILON we follow only `next` (body-not-empty branch); SPLIT
 // follows both branches.
-static uint64_t compute_epsilon_mask(
-  const nk_vm_state_t* states,
-  uint32_t num_states,
-  uint32_t start_idx,
-  uint8_t* visited
-) {
+static uint64_t
+compute_epsilon_mask(const nk_vm_state_t* states, uint32_t num_states, uint32_t start_idx, uint8_t* visited) {
   if (start_idx == NK_VM_STATE_NONE || start_idx >= num_states) {
     return 0;
   }
@@ -2031,8 +2147,8 @@ static void compute_goto_masks(nk_program_t* program) {
   // Assertion, \K, and BACK_REF states depend on position or captured content.
   for (uint32_t i = 0; i < n; i++) {
     nk_vm_op_t op = program->states[i].op;
-    if (op == NK_VM_OP_ASSERTION || op == NK_VM_OP_KEEP || op == NK_VM_OP_BACK_REF ||
-        op == NK_VM_OP_LOOKAROUND || op == NK_VM_OP_POSSESSIVE) {
+    if (op == NK_VM_OP_ASSERTION || op == NK_VM_OP_KEEP || op == NK_VM_OP_BACK_REF || op == NK_VM_OP_LOOKAROUND ||
+        op == NK_VM_OP_POSSESSIVE) {
       return;
     }
   }
@@ -2060,8 +2176,7 @@ static void compute_goto_masks(nk_program_t* program) {
   }
 
   memset(visited, 0, (size_t)n);
-  program->initial_mask =
-    compute_epsilon_mask(program->states, n, program->initial_state, visited);
+  program->initial_mask = compute_epsilon_mask(program->states, n, program->initial_state, visited);
 
   free(visited);
 
@@ -2114,8 +2229,9 @@ static void compute_first_byte_table(nk_program_t* program) {
         // ASCII-only fold: the case-folded counterpart is also a valid first byte.
         if ((s->fold_flags & NK_FOLD_ASCII_ONLY) != 0) {
           uint8_t b = (uint8_t)s->code;
-          uint8_t folded = (b >= 'A' && b <= 'Z') ? (uint8_t)(b | 0x20u) :
-                           (b >= 'a' && b <= 'z') ? (uint8_t)(b & ~0x20u) : b;
+          uint8_t folded = (b >= 'A' && b <= 'Z')   ? (uint8_t)(b | 0x20u)
+                           : (b >= 'a' && b <= 'z') ? (uint8_t)(b & ~0x20u)
+                                                    : b;
           if (folded != b) {
             table[folded] = 1u;
           }
@@ -2171,14 +2287,14 @@ nk_error_t nk_program_compile(
   program->is_pure_literal = false;
   program->is_pure_alt_literal = false;
   program->full_alt_bytes = NULL;
-  program->full_alt_lens  = NULL;
+  program->full_alt_lens = NULL;
   program->full_alt_count = 0u;
   program->literal_prefix_bytes = NULL;
   program->literal_prefix_len = 0;
   program->has_required_byte = false;
   program->required_byte = 0u;
   program->alt_literal_bytes = NULL;
-  program->alt_literal_lens  = NULL;
+  program->alt_literal_lens = NULL;
   program->alt_literal_count = 0u;
   program->goto_mask = NULL;
   program->initial_mask = 0;
@@ -2292,8 +2408,7 @@ nk_error_t nk_program_compile(
     // Pure alternation flag: the entire pattern is an alternation of ASCII literals
     // with no capture groups. The VM is bypassed — the alt pre-scan result alone
     // resolves the match (analogous to is_pure_literal for the single-literal case).
-    program->is_pure_alt_literal =
-      (program->alt_literal_count > 0u && program->num_capture_groups == 0u);
+    program->is_pure_alt_literal = (program->alt_literal_count > 0u && program->num_capture_groups == 0u);
 
     // Non-ASCII literal/alternation bypass: handles pure literals or alternations
     // whose branches contain non-ASCII bytes (not covered by the ASCII-only paths).
@@ -2324,15 +2439,18 @@ nk_error_t nk_program_compile(
   // Requires states[] to be finalised (after compile), so runs after goto_masks.
   if (root_node != NULL && !program->is_anchored && program->num_capture_groups == 0u) {
     const nk_node_t* r = node_unwrap(root_node);
-    if (r != NULL && r->base.type == NK_NODE_TYPE_QUANTIFIER &&
-        r->quantifier.min >= 1u && node_is_char_class_like(r->quantifier.child)) {
+    if (r != NULL && r->base.type == NK_NODE_TYPE_QUANTIFIER && r->quantifier.min >= 1u &&
+        node_is_char_class_like(r->quantifier.child)) {
       for (size_t si = 0; si < program->states_len; si++) {
         if (program->states[si].op == NK_VM_OP_CHAR_CLASS) {
           uint32_t ci = program->states[si].char_class_index;
           const nk_vm_char_class_t* cc = &program->char_classes[ci];
           bool has_ascii = false;
           for (uint32_t b = 0; b < 128u; b++) {
-            if (cc->ascii_lookup[b] != 0u) { has_ascii = true; break; }
+            if (cc->ascii_lookup[b] != 0u) {
+              has_ascii = true;
+              break;
+            }
           }
           if (has_ascii) {
             program->is_pure_char_class_plus = true;

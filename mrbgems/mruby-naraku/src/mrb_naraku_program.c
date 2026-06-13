@@ -47,9 +47,14 @@ static mrb_value mrb_naraku_program_compile(mrb_state* mrb, mrb_value self) {
   size_t error_offset = 0;
   size_t error_length = 0;
   nk_error_t err = nk_program_compile(
-    parser->enc, root_node, parser->num_capture_groups,
-    parser->capture_entries, parser->capture_entries_len,
-    &program, &error_offset, &error_length
+    parser->enc,
+    root_node,
+    parser->num_capture_groups,
+    parser->capture_entries,
+    parser->capture_entries_len,
+    &program,
+    &error_offset,
+    &error_length
   );
 
   if (err != NK_SUCCESS) {

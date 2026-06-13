@@ -123,10 +123,10 @@ typedef struct {
 
 // Forward struct declaration for possessive pending list (functions defined later).
 typedef struct {
-  size_t   target_pos;
+  size_t target_pos;
   uint32_t state_index;
-  size_t   keep_pos;
-  caps_t*  caps;
+  size_t keep_pos;
+  caps_t* caps;
 } poss_pending_entry_t;
 
 typedef struct {
@@ -136,10 +136,8 @@ typedef struct {
 } poss_pending_t;
 
 // Forward declaration (function body is after br_deferred helpers).
-static nk_error_t poss_pending_push(
-  poss_pending_t* p, size_t target_pos,
-  uint32_t state_index, size_t keep_pos, caps_t* caps
-);
+static nk_error_t
+poss_pending_push(poss_pending_t* p, size_t target_pos, uint32_t state_index, size_t keep_pos, caps_t* caps);
 
 typedef struct {
   const nk_program_t* program;
@@ -568,9 +566,7 @@ static nk_error_t closure(vm_t* vm, uint32_t start_state, size_t keep_pos, caps_
           err = ie;
           goto fail;
         }
-        nk_error_t se = nk_program_search(
-          inner, vm->subject_bytes, vm->subject_bytes_end, vm->closure_pos, &ir
-        );
+        nk_error_t se = nk_program_search(inner, vm->subject_bytes, vm->subject_bytes_end, vm->closure_pos, &ir);
         bool poss_matched = (se == NK_SUCCESS && ir.caps[0] == vm->closure_pos);
         size_t poss_end = poss_matched ? ir.caps[1] : 0;
         if (se != NK_SUCCESS && se != NK_NO_MATCH) {
@@ -593,9 +589,7 @@ static nk_error_t closure(vm_t* vm, uint32_t start_state, size_t keep_pos, caps_
           }
         } else {
           // Multi-byte advance: defer continuation to the main loop at poss_end.
-          err = poss_pending_push(
-            &vm->poss_pending, poss_end, state->next, item.keep_pos, item.caps
-          );
+          err = poss_pending_push(&vm->poss_pending, poss_end, state->next, item.keep_pos, item.caps);
           if (err != NK_SUCCESS) {
             caps_unref(item.caps);
             goto fail;
@@ -618,13 +612,12 @@ static nk_error_t closure(vm_t* vm, uint32_t start_state, size_t keep_pos, caps_
         bool assertion_passed = false;
         if (state->lookaround_is_ahead) {
           // Lookahead: the sub-pattern must match starting exactly at closure_pos.
-          nk_error_t search_err = nk_program_search(
-            inner, vm->subject_bytes, vm->subject_bytes_end,
-            vm->closure_pos, &inner_region
-          );
+          nk_error_t search_err =
+            nk_program_search(inner, vm->subject_bytes, vm->subject_bytes_end, vm->closure_pos, &inner_region);
           if (search_err == NK_SUCCESS && inner_region.caps[0] == vm->closure_pos) {
             assertion_passed = state->lookaround_is_positive;
-          } else if (search_err == NK_NO_MATCH || (search_err == NK_SUCCESS && inner_region.caps[0] != vm->closure_pos)) {
+          } else if (search_err == NK_NO_MATCH ||
+                     (search_err == NK_SUCCESS && inner_region.caps[0] != vm->closure_pos)) {
             assertion_passed = !state->lookaround_is_positive;
           } else if (search_err != NK_SUCCESS) {
             nk_region_free(&inner_region);
@@ -640,10 +633,8 @@ static nk_error_t closure(vm_t* vm, uint32_t start_state, size_t keep_pos, caps_
             for (size_t k = 0; k < inner_region.num_caps * 2; k++) {
               inner_region.caps[k] = NK_REGION_POS_NONE;
             }
-            nk_error_t search_err = nk_program_search(
-              inner, vm->subject_bytes, vm->subject_bytes_end,
-              try_start, &inner_region
-            );
+            nk_error_t search_err =
+              nk_program_search(inner, vm->subject_bytes, vm->subject_bytes_end, try_start, &inner_region);
             if (search_err == NK_SUCCESS && inner_region.caps[1] == vm->closure_pos) {
               found = true;
               break;
@@ -716,11 +707,7 @@ static nk_error_t decode_char(
 // Decodes the code point that ends at byte position `pos` in `subject_bytes`.
 // Scans backward up to NK_ENC_MAX_MBC_WIDTH bytes to find a valid character.
 // Returns VM_NO_CHAR if pos == 0 or no valid boundary is found.
-static uint32_t decode_code_before(
-  const nk_encoding_t* enc,
-  const uint8_t* subject_bytes,
-  size_t pos
-) {
+static uint32_t decode_code_before(const nk_encoding_t* enc, const uint8_t* subject_bytes, size_t pos) {
   if (pos == 0) {
     return VM_NO_CHAR;
   }
@@ -908,8 +895,7 @@ static uint64_t bitset_transition_cached(const nk_program_t* program, uint64_t a
   }
 
   // Fibonacci hash of the (state_set, char) pair for good slot distribution.
-  uint32_t h = (uint32_t)((active * 11400714819323198485ULL ^ (uint64_t)cbyte) &
-               (uint64_t)(NK_LAZY_DFA_SLOTS - 1u));
+  uint32_t h = (uint32_t)((active * 11400714819323198485ULL ^ (uint64_t)cbyte) & (uint64_t)(NK_LAZY_DFA_SLOTS - 1u));
 
   for (uint32_t probe = 0; probe < NK_LAZY_DFA_SLOTS; probe++) {
     nk_lazy_dfa_slot_t* slot = &ld->slots[(h + probe) & (NK_LAZY_DFA_SLOTS - 1u)];
@@ -917,9 +903,9 @@ static uint64_t bitset_transition_cached(const nk_program_t* program, uint64_t a
       // Cache miss: compute, store, and return.
       uint64_t next = bitset_transition(program, active, curr_code);
       slot->state_key = active;
-      slot->next_key  = next;
+      slot->next_key = next;
       slot->char_byte = cbyte;
-      slot->occupied  = 1;
+      slot->occupied = 1;
       ld->fill++;
       return next;
     }
@@ -961,8 +947,7 @@ static nk_error_t search_impl_bitset(
     // current byte cannot begin a match, scan forward to the next candidate.
     // This replaces O(N) per-position closures with a fast byte scan for
     // patterns like `\d{n}` on non-matching inputs (e.g., `not-a-date`).
-    if (!program->is_anchored && program->first_byte_table_valid &&
-        active == start_active && curr_code < 128u &&
+    if (!program->is_anchored && program->first_byte_table_valid && active == start_active && curr_code < 128u &&
         program->first_byte_table[(uint8_t)curr_code] == 0u) {
       const uint8_t* p = subject_bytes + pos + 1u;
       while (p < subject_bytes_end && *p < 128u && program->first_byte_table[*p] == 0u) {
@@ -1028,13 +1013,8 @@ static void br_deferred_free(br_deferred_t* d) {
 }
 
 // Pushes a thread into the slot at `target_pos`, creating a new slot if needed.
-static nk_error_t br_deferred_push(
-  br_deferred_t* d,
-  size_t target_pos,
-  uint32_t state_index,
-  size_t keep_pos,
-  caps_t* caps
-) {
+static nk_error_t
+br_deferred_push(br_deferred_t* d, size_t target_pos, uint32_t state_index, size_t keep_pos, caps_t* caps) {
   // Find existing slot for target_pos
   for (size_t i = 0; i < d->len; i++) {
     if (d->items[i].target_pos == target_pos) {
@@ -1107,14 +1087,11 @@ static nk_error_t br_deferred_inject(br_deferred_t* d, size_t pos, thread_list_t
 // An entry deferred to a future position by NK_VM_OP_POSSESSIVE in closure().
 // When advance_pos reaches target_pos, closure(state_index) is called to inject
 // the continuation into next_threads.
-static nk_error_t poss_pending_push(
-  poss_pending_t* p, size_t target_pos,
-  uint32_t state_index, size_t keep_pos, caps_t* caps
-) {
+static nk_error_t
+poss_pending_push(poss_pending_t* p, size_t target_pos, uint32_t state_index, size_t keep_pos, caps_t* caps) {
   if (p->len == p->cap) {
     size_t new_cap = p->cap == 0 ? 4 : p->cap * 2;
-    poss_pending_entry_t* new_items =
-      (poss_pending_entry_t*)realloc(p->items, new_cap * sizeof(poss_pending_entry_t));
+    poss_pending_entry_t* new_items = (poss_pending_entry_t*)realloc(p->items, new_cap * sizeof(poss_pending_entry_t));
     if (new_items == NULL) {
       return NK_ERR_MEMORY_ALLOCATION_FAILED;
     }
@@ -1202,9 +1179,8 @@ static nk_error_t search_impl(
     const uint8_t* earliest = NULL;
     size_t earliest_len = 0;
     for (size_t i = 0; i < program->alt_literal_count; i++) {
-      const uint8_t* found = vm_memmem(scan_base, scan_len,
-                                        program->alt_literal_bytes[i],
-                                        program->alt_literal_lens[i]);
+      const uint8_t* found =
+        vm_memmem(scan_base, scan_len, program->alt_literal_bytes[i], program->alt_literal_lens[i]);
       if (found != NULL && (earliest == NULL || found < earliest)) {
         earliest = found;
         earliest_len = program->alt_literal_lens[i];
@@ -1234,9 +1210,7 @@ static nk_error_t search_impl(
     const uint8_t* earliest = NULL;
     size_t earliest_len = 0;
     for (size_t i = 0; i < program->full_alt_count; i++) {
-      const uint8_t* found = vm_memmem(scan_base, scan_len,
-                                        program->full_alt_bytes[i],
-                                        program->full_alt_lens[i]);
+      const uint8_t* found = vm_memmem(scan_base, scan_len, program->full_alt_bytes[i], program->full_alt_lens[i]);
       if (found != NULL && (earliest == NULL || found < earliest)) {
         earliest = found;
         earliest_len = program->full_alt_lens[i];
@@ -1378,7 +1352,9 @@ static nk_error_t search_impl(
 
   // For anchored patterns (\A), no new start threads will be injected past
   // position 0, so we can exit as soon as the active thread list is empty.
-  while (curr_code != VM_NO_CHAR && (threads.len > 0 || deferred.len > 0 || vm.poss_pending.len > 0 || !program->is_anchored) && !(vm.has_match && threads.len == 0 && deferred.len == 0 && vm.poss_pending.len == 0)) {
+  while (curr_code != VM_NO_CHAR &&
+         (threads.len > 0 || deferred.len > 0 || vm.poss_pending.len > 0 || !program->is_anchored) &&
+         !(vm.has_match && threads.len == 0 && deferred.len == 0 && vm.poss_pending.len == 0)) {
     // Inject any deferred threads (from BACK_REF continuations) that are ready
     // at the current position. They are appended before the run-scan so that
     // the run-scan guard (`threads.len == 1`) is respected correctly.
@@ -1411,10 +1387,10 @@ static nk_error_t search_impl(
           bool cc_can_scan = false;
           if (cc_next_idx < (uint32_t)program->states_len) {
             nk_vm_op_t cc_next_op = program->states[cc_next_idx].op;
-            cc_can_scan = (cc_next_op != NK_VM_OP_CODE && cc_next_op != NK_VM_OP_CHAR_CLASS &&
-                           cc_next_op != NK_VM_OP_DOT && cc_next_op != NK_VM_OP_MATCH &&
-                           cc_next_op != NK_VM_OP_CAP_BEGIN && cc_next_op != NK_VM_OP_CAP_END &&
-                           cc_next_op != NK_VM_OP_BACK_REF && cc_next_op != NK_VM_OP_POSSESSIVE);
+            cc_can_scan =
+              (cc_next_op != NK_VM_OP_CODE && cc_next_op != NK_VM_OP_CHAR_CLASS && cc_next_op != NK_VM_OP_DOT &&
+               cc_next_op != NK_VM_OP_MATCH && cc_next_op != NK_VM_OP_CAP_BEGIN && cc_next_op != NK_VM_OP_CAP_END &&
+               cc_next_op != NK_VM_OP_BACK_REF && cc_next_op != NK_VM_OP_POSSESSIVE);
           }
           if (cc_can_scan) {
             scan = pos + 1;
@@ -1426,8 +1402,7 @@ static nk_error_t search_impl(
             }
           }
         }
-      } else if (scan_state->op == NK_VM_OP_CODE &&
-                 state_matches_code(program, scan_state, curr_code)) {
+      } else if (scan_state->op == NK_VM_OP_CODE && state_matches_code(program, scan_state, curr_code)) {
         // Only scan a consecutive run when the state's successor is an epsilon
         // (non-consuming) state, indicating this is a loop-head (e.g., `a+`).
         // If the next state is a consuming op, this CODE is part of a sequence
@@ -1437,13 +1412,11 @@ static nk_error_t search_impl(
         uint32_t next_idx = scan_state->next;
         if (next_idx < (uint32_t)program->states_len) {
           nk_vm_op_t next_op = program->states[next_idx].op;
-          if (next_op != NK_VM_OP_CODE && next_op != NK_VM_OP_CHAR_CLASS &&
-              next_op != NK_VM_OP_DOT && next_op != NK_VM_OP_MATCH &&
-              next_op != NK_VM_OP_CAP_BEGIN && next_op != NK_VM_OP_CAP_END &&
+          if (next_op != NK_VM_OP_CODE && next_op != NK_VM_OP_CHAR_CLASS && next_op != NK_VM_OP_DOT &&
+              next_op != NK_VM_OP_MATCH && next_op != NK_VM_OP_CAP_BEGIN && next_op != NK_VM_OP_CAP_END &&
               next_op != NK_VM_OP_BACK_REF && next_op != NK_VM_OP_POSSESSIVE) {
             scan = pos + 1;
-            if ((scan_state->fold_flags & NK_FOLD_ASCII_ONLY) != 0 &&
-                scan_state->code < 0x80u) {
+            if ((scan_state->fold_flags & NK_FOLD_ASCII_ONLY) != 0 && scan_state->code < 0x80u) {
               // Fold both sides to lowercase for the inner scan loop.
               uint8_t fp = (uint8_t)scan_state->code;
               uint8_t fp_lower = (fp >= 'A' && fp <= 'Z') ? (uint8_t)(fp | 0x20u) : fp;
@@ -1505,17 +1478,23 @@ static nk_error_t search_impl(
         size_t cap_end = NK_REGION_POS_NONE;
         if (thread->caps != NULL && thread->caps != NO_CAPS_PTR) {
           cap_begin = thread->caps->data[2 * (size_t)state->cap_num];
-          cap_end   = thread->caps->data[2 * (size_t)state->cap_num + 1];
+          cap_end = thread->caps->data[2 * (size_t)state->cap_num + 1];
         }
 
         bool br_matched = false;
         size_t br_match_len = 0;
         if (cap_begin != NK_REGION_POS_NONE && cap_end != NK_REGION_POS_NONE) {
           err = back_ref_match(
-            enc, subject_bytes, subject_len, pos,
-            cap_begin, cap_end,
-            state->is_ignore_case, state->fold_flags,
-            &br_matched, &br_match_len
+            enc,
+            subject_bytes,
+            subject_len,
+            pos,
+            cap_begin,
+            cap_end,
+            state->is_ignore_case,
+            state->fold_flags,
+            &br_matched,
+            &br_match_len
           );
           if (err != NK_SUCCESS) {
             goto done;
@@ -1542,7 +1521,8 @@ static nk_error_t search_impl(
           }
           uint32_t br_next_code = VM_NO_CHAR;
           size_t br_next_width = 0;
-          err = decode_char(enc, subject_bytes + new_pos + br_curr_width, subject_bytes_end, &br_next_code, &br_next_width);
+          err =
+            decode_char(enc, subject_bytes + new_pos + br_curr_width, subject_bytes_end, &br_next_code, &br_next_width);
           if (err != NK_SUCCESS) {
             goto done;
           }
@@ -1569,9 +1549,7 @@ static nk_error_t search_impl(
             if (err == NK_SUCCESS) {
               for (size_t j = 0; j < br_temp.len; j++) {
                 thread_t* bt = &br_temp.items[j];
-                nk_error_t push_err = br_deferred_push(
-                  &deferred, new_pos, bt->state_index, bt->keep_pos, bt->caps
-                );
+                nk_error_t push_err = br_deferred_push(&deferred, new_pos, bt->state_index, bt->keep_pos, bt->caps);
                 if (push_err != NK_SUCCESS) {
                   // Unref remaining
                   for (size_t k = j; k < br_temp.len; k++) {
@@ -1634,7 +1612,7 @@ static nk_error_t search_impl(
     // Process possessive pending entries that have reached advance_pos.
     // Entries are processed in insertion order (highest priority first).
     // vm.closure_pos and the character window are already set to advance_pos.
-    for (size_t pi = 0; pi < vm.poss_pending.len; ) {
+    for (size_t pi = 0; pi < vm.poss_pending.len;) {
       poss_pending_entry_t* pe = &vm.poss_pending.items[pi];
       if (pe->target_pos == advance_pos) {
         caps_t* pc = pe->caps;

@@ -233,7 +233,8 @@ flowchart TD
 | ✨ コンパイラ用エラーコード | `include/naraku_error.h`, `src/error.c` | `-600` 番台 `NK_ERR_UNSUPPORTED_*` ほか 10 種 |
 | ✨ mruby マッチ API | `mrbgems/mruby-naraku/src/mrb_naraku_program.c` | `Naraku::Program` C ブリッジ |
 | ✨ mruby Ruby ラッパー | `mrbgems/mruby-naraku/mrblib/naraku/regexp.rb` | `Naraku::Regexp` / `MatchData` / `CompileError` |
-| ✨ Mtest テスト | `test/regexp_test.rb` | 372 テストケース(マッチング全体を網羅) |
+| ✨ Mtest テスト | `test/regexp_test.rb` | 381 テストケース(マッチング全体を網羅) |
+| ✨ 名前付きキャプチャ | `mrblib/naraku/regexp.rb` | `md[:name]` / `md['name']` / `md.names` / `md.named_captures` |
 | ✨ 対話型テスター | `tools/match.rb` | `bin/mruby` で動く Rubular ライク CLI |
 | ✨ 3 エンジン比較ベンチマーク | `ruby-prototype/benchmark/bench_compare.rb` + `tools/bench_pike_vm.rb` | Onigmo / DFA / Pike VM の速度比較 |
 | 🐛 バグ修正 | `src/cprop.c` | `code_in_code_range` の `size_t` アンダーフロー修正(`\b` 誤判定の根本原因) |
@@ -264,7 +265,7 @@ flowchart TD
 | **Pike VM 実行器** | `src/regex_vm.c` | 1,726 行 | ✅ `test/regexp_test.rb` | ✨ **追加** |
 | コンパイラ用エラーコード | `naraku_error.h`, `error.c` | -600〜-610 追加 | ✅ `test/regexp_test.rb` | ✨ **追加** |
 | 公開 API ヘッダ | `include/naraku_regex.h` | 349 行 | — | ✨ **追加** |
-| mruby マッチ API | `mrb_naraku_program.c`, `regexp.rb` | C 143 行 + Ruby 129 行 | ✅ 372 テスト | ✨ **追加** |
+| mruby マッチ API | `mrb_naraku_program.c`, `regexp.rb` | C 143 行 + Ruby 145 行 | ✅ 381 テスト | ✨ **追加** |
 | 対話型テスター | `tools/match.rb` | 75 行 | — | ✨ **追加** |
 | 3 エンジン比較ベンチマーク | `benchmark/bench_compare.rb` + `tools/bench_pike_vm.rb` | 計 255 行 | — | ✨ **追加** |
 | `\b` バグ修正 | `src/cprop.c` | `code_in_code_range` 修正 | ✅(既存テストが通る) | 🐛 **修正** |
@@ -288,7 +289,7 @@ Naraku(奈落)は Oniguruma(鬼車)→ Onigmo(鬼雲)の系譜に連なる
 | `.`(任意の 1 文字) | ✅ | ✅ | ✅ |
 | 量指定子 `* + ? {m,n}`(greedy/lazy) | ✅ | ✅ | ✅ |
 | 文字クラス(範囲・否定・`&&`・POSIX・`\p{...}`) | ✅ | ✅ | ✅ |
-| キャプチャ・非捕捉グループ | ✅ | ✅(番号のみ) | ✅(名前付き含む) |
+| キャプチャ・非捕捉グループ | ✅ | ✅(名前付き含む) | ✅(名前付き含む) |
 | アンカー `^ $ \A \z \Z \G \b \B` | ✅ | ✅ | ✅ |
 | `\K`(マッチ開始のリセット) | ✅ | ✅ | ✅ |
 | possessive 量指定子 `a*+` | ✅ | ✅ | ✅ |
@@ -797,6 +798,16 @@ md.captures    # => ["b"]
 
 re.match?("xabcbd")  # => true
 re =~ "xabcbd"       # => 1  (マッチ開始バイトオフセット)
+
+# 名前付きキャプチャ
+re2 = Naraku::Regexp.new("(?<year>\\d{4})-(?<month>\\d{2})-(?<day>\\d{2})")
+md2 = re2.match("2024-06-13")
+md2[:year]           # => "2024"  (Symbol キー)
+md2['month']         # => "06"    (String キー)
+md2[:day]            # => "13"
+md2[1]               # => "2024"  (整数インデックスも引き続き有効)
+md2.names            # => ["year", "month", "day"]
+md2.named_captures   # => {"year"=>"2024", "month"=>"06", "day"=>"13"}
 
 # 対話型テスター
 # bin/mruby tools/match.rb PATTERN SUBJECT

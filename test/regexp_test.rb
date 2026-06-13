@@ -487,6 +487,27 @@ class RegexpTest < Mtest::Test
     assert_equal "\xC3\x84", match_f("[\xC3\xA4]", "x\xC3\x84y")[0]
   end
 
+  # [ß]/i — char class with multi-char fold (CF3)
+  def test_full_fold_char_class_eszett_matches_ss
+    assert_equal 'ss', match_f("[\xC3\x9F]", 'xssy')[0]
+  end
+
+  def test_full_fold_char_class_eszett_matches_upper_ss
+    assert_equal 'SS', match_f("[\xC3\x9F]", 'xSSy')[0]
+  end
+
+  def test_full_fold_char_class_eszett_matches_mixed_ss
+    assert_equal 'Ss', match_f("[\xC3\x9F]", 'xSsy')[0]
+  end
+
+  def test_full_fold_char_class_eszett_matches_itself
+    assert_equal "\xC3\x9F", match_f("[\xC3\x9F]", "x\xC3\x9Fy")[0]
+  end
+
+  def test_full_fold_char_class_eszett_no_match_single_s
+    assert_nil match_f("[\xC3\x9F]", 'xsy')
+  end
+
   # ß does not match a single 's' (fold of ß is ss, not s)
   def test_full_fold_eszett_no_match_single_s
     assert_nil match_f("\xC3\x9F", 'xsy')
@@ -783,5 +804,76 @@ class RegexpTest < Mtest::Test
   def test_possessive_digit_no_backtrack
     # \d++ commits to "123", then \d at end fails
     assert_nil match('\\d++\\d', '123')
+  end
+
+  # ========================================================================
+  # Named captures (?<name>...)
+  # ========================================================================
+
+  def test_named_capture_integer_index
+    md = match('(?<year>\\d{4})-(?<month>\\d{2})', '2024-06')
+    assert !md.nil?
+    assert_equal '2024-06', md[0]
+    assert_equal '2024',    md[1]
+    assert_equal '06',      md[2]
+  end
+
+  def test_named_capture_string_key
+    md = match('(?<year>\\d{4})-(?<month>\\d{2})', '2024-06')
+    assert !md.nil?
+    assert_equal '2024', md['year']
+    assert_equal '06',   md['month']
+  end
+
+  def test_named_capture_symbol_key
+    md = match('(?<year>\\d{4})-(?<month>\\d{2})', '2024-06')
+    assert !md.nil?
+    assert_equal '2024', md[:year]
+    assert_equal '06',   md[:month]
+  end
+
+  def test_named_capture_unknown_key
+    md = match('(?<word>\\w+)', 'hello')
+    assert !md.nil?
+    assert_nil md['missing']
+    assert_nil md[:missing]
+  end
+
+  def test_named_capture_names
+    md = match('(?<year>\\d{4})-(?<month>\\d{2})', '2024-06')
+    assert !md.nil?
+    assert_equal %w[year month].sort, md.names.sort
+  end
+
+  def test_named_capture_named_captures
+    md = match('(?<year>\\d{4})-(?<month>\\d{2})', '2024-06')
+    assert !md.nil?
+    nc = md.named_captures
+    assert_equal '2024', nc['year']
+    assert_equal '06',   nc['month']
+  end
+
+  def test_named_capture_with_anonymous
+    md = match('(?<a>\\w+)-(\\d+)-(?<b>\\w+)', 'foo-42-bar')
+    assert !md.nil?
+    assert_equal 'foo-42-bar', md[0]
+    assert_equal 'foo',        md['a']
+    assert_equal 'bar',        md['b']
+  end
+
+  def test_named_capture_unmatched_nil
+    md = match('(?<a>x)?(?<b>y)', 'y')
+    assert !md.nil?
+    assert_nil md['a']
+    assert_nil md[:a]
+    assert_equal 'y', md['b']
+  end
+
+  def test_named_capture_duplicate_names
+    # (?<a>x)|(?<a>y) — same name appears twice; last matched group wins
+    md = match('(?<a>x)|(?<a>y)', 'y')
+    assert !md.nil?
+    assert_equal 'y', md['a']
+    assert_equal 'y', md[:a]
   end
 end

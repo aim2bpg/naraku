@@ -112,9 +112,9 @@ typedef struct {
 typedef struct {
   uint64_t state_key;  // NFA active-state bitmask (key)
   uint64_t next_key;   // resulting NFA bitmask after consuming char_byte
-  uint8_t  char_byte;  // ASCII byte 0–127
-  uint8_t  occupied;   // 0 = empty, 1 = in use
-  uint8_t  pad[6];     // explicit padding to keep the struct 24 bytes
+  uint8_t char_byte;   // ASCII byte 0–127
+  uint8_t occupied;    // 0 = empty, 1 = in use
+  uint8_t pad[6];      // explicit padding to keep the struct 24 bytes
 } nk_lazy_dfa_slot_t;
 
 /** Number of slots in the lazy DFA cache (must be a power of two). */
@@ -150,7 +150,7 @@ typedef struct nk_program {
   uint32_t num_epsilon_check_ids;
   nk_vm_char_class_t* char_classes;
   size_t char_classes_len;
-  bool is_anchored;       // true when the pattern is anchored to \A (never matches after position 0)
+  bool is_anchored;          // true when the pattern is anchored to \A (never matches after position 0)
   bool is_pure_literal;      // true when the entire pattern is one case-sensitive ASCII literal
   bool is_pure_alt_literal;  // true when the entire pattern is an alternation of ASCII literals with no capture groups
   // Non-ASCII pure literal/alternation bypass: like alt_literal_bytes but allows
@@ -158,8 +158,8 @@ typedef struct nk_program {
   // literals (any encoding) with no capture groups and is not already covered by
   // is_pure_literal / is_pure_alt_literal.  Used only for the VM bypass.
   uint8_t** full_alt_bytes;
-  size_t*   full_alt_lens;
-  size_t    full_alt_count;
+  size_t* full_alt_lens;
+  size_t full_alt_count;
   // Leading case-sensitive literal byte sequence extracted from the pattern.
   // Non-NULL only when all bytes are ASCII (<0x80), which is safe for all
   // supported encodings (ASCII bytes are never continuation bytes in UTF-8,
@@ -169,21 +169,21 @@ typedef struct nk_program {
   // Single ASCII byte that must appear in any match (prefilter for early no-match
   // rejection). Only set when `has_required_byte` is true and `literal_prefix_len`
   // is 0 (when a prefix is available it already implies this byte).
-  bool    has_required_byte;
+  bool has_required_byte;
   uint8_t required_byte;
   // Multi-literal alternation prefilter.  When the top-level pattern is a pure
   // alternation of case-sensitive ASCII literals (e.g., `foo|bar|baz`), all
   // literals are stored here so the VM can scan for the earliest occurrence
   // with multiple memmem calls before starting the NFA.  NULL when not applicable.
   uint8_t** alt_literal_bytes;
-  size_t*   alt_literal_lens;
-  size_t    alt_literal_count;
+  size_t* alt_literal_lens;
+  size_t alt_literal_count;
   // Thompson NFA bitset for fast boolean match? on small assertion-free programs.
   // Bit i in goto_mask[j] means "after consuming a char from consuming state j,
   // state i may be active". Bit 63 (NK_BITSET_MATCH_BIT) signals MATCH reachable.
   // NULL when states_len > 63 or any ASSERTION / KEEP state exists.
   uint64_t* goto_mask;    // [states_len] (only indices of consuming states are used)
-  uint64_t  initial_mask; // epsilon closure from initial_state (consuming bits + MATCH bit)
+  uint64_t initial_mask;  // epsilon closure from initial_state (consuming bits + MATCH bit)
   // Lazy DFA cache: populated by search_impl_bitset.  NULL when goto_mask is NULL.
   nk_lazy_dfa_t* lazy_dfa;
   // First-byte table for jump optimization in search_impl_bitset.
@@ -192,12 +192,12 @@ typedef struct nk_program {
   // can be skipped when the NFA is in the reset (initial_mask) state.
   // NULL when goto_mask is NULL or first-byte scan is not applicable (loops,
   // non-ASCII initial states, DOT initial states).
-  bool    first_byte_table_valid;
-  uint8_t first_byte_table[128]; // ASCII-only (bytes 0x00–0x7F)
+  bool first_byte_table_valid;
+  uint8_t first_byte_table[128];  // ASCII-only (bytes 0x00–0x7F)
   // Pure char-class loop bypass: true when the pattern is [X]+ (or \w+, \d+ etc.)
   // with min >= 1, no capture groups, and at least one ASCII member in the class.
   // Enables a direct ascii_lookup scan that skips the NFA entirely.
-  bool     is_pure_char_class_plus;
+  bool is_pure_char_class_plus;
   uint32_t pure_cc_index;  // index into char_classes[]
   // True when the program contains NK_VM_OP_BACK_REF states.
   // Disables the no_caps optimization (which would make caps->data invalid).

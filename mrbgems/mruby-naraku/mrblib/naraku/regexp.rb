@@ -26,10 +26,11 @@ module Naraku
   class MatchData
     attr_reader :string, :regexp
 
-    def initialize(string, regexp, caps)
+    def initialize(string, regexp, caps, names_to_capture_nums = nil)
       @string = string
       @regexp = regexp
       @caps = caps
+      @names_to_capture_nums = names_to_capture_nums || {}
     end
 
     # Returns the byte offset of the beginning of the nth capture (0 = whole match).
@@ -43,12 +44,28 @@ module Naraku
     end
 
     # Returns the matched string of the nth capture (0 = whole match).
+    # Integer: positional index; String/Symbol: named capture.
     def [](n)
-      b = byte_begin(n)
-      e = byte_end(n)
-      return nil if b.nil? || e.nil?
+      case n
+      when Integer
+        b = byte_begin(n)
+        e = byte_end(n)
+        return nil if b.nil? || e.nil?
 
-      @string.byteslice(b, e - b)
+        @string.byteslice(b, e - b)
+      when Symbol
+        self[n.to_s]
+      when String
+        cap_nums = @names_to_capture_nums[n]
+        return nil if cap_nums.nil?
+
+        result = nil
+        cap_nums.each do |num|
+          v = self[num]
+          result = v unless v.nil?
+        end
+        result
+      end
     end
 
     def size
@@ -93,6 +110,18 @@ module Naraku
     def to_s
       self[0]
     end
+
+    # Returns an array of capture group names (strings).
+    def names
+      @names_to_capture_nums.keys
+    end
+
+    # Returns a Hash mapping each capture name to its matched string (or nil).
+    def named_captures
+      result = {}
+      @names_to_capture_nums.each_key { |name| result[name] = self[name] }
+      result
+    end
   end
 
   class Regexp
@@ -102,6 +131,17 @@ module Naraku
       node = parser.parse
       parser.postprocess(node)
       @program = Naraku::Program._compile(parser, node)
+
+      if parser.has_named_captures
+        names_map = parser.capture_names_map
+        entries   = parser.capture_entries
+        @names_to_capture_nums = {}
+        names_map.each do |name, entry_index|
+          @names_to_capture_nums[name] = entries[entry_index][:capture_nums]
+        end
+      else
+        @names_to_capture_nums = {}
+      end
     end
 
     attr_reader :pattern
@@ -112,7 +152,7 @@ module Naraku
       caps = @program._search(string, byte_start)
       return nil if caps.nil?
 
-      MatchData.new(string, self, caps)
+      MatchData.new(string, self, caps, @names_to_capture_nums)
     end
 
     def match?(string, byte_start = 0)
