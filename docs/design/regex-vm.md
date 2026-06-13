@@ -125,8 +125,8 @@ flowchart TD
         enc["エンコーディング層<br/>encoding/*.c 5 種 + encoding_ascii/unicode.c<br/>UTF-8 / Shift_JIS / ISO-8859-1 / US-ASCII / ASCII-8BIT"]
         parser["パーサー/レキサー<br/>parse.c 4,338 行(Onigmo 互換構文)"]
         ast["AST 構築・後処理<br/>node.c 385 行 / postprocess.c 832 行"]
-        comp["VM コンパイラ<br/>regex_compile.c 2,411 行"]
-        vm["Pike VM 実行器<br/>regex_vm.c 1,726 行"]
+        comp["VM コンパイラ<br/>regex_compile.c 2,533 行"]
+        vm["Pike VM 実行器<br/>regex_vm.c 1,704 行"]
     end
 
     subgraph mrb["mruby バインディング層: mrbgems/mruby-naraku/"]
@@ -228,13 +228,15 @@ flowchart TD
 | 変更 | ファイル | 内容 |
 |---|---|---|
 | ✨ 公開 API ヘッダ | `include/naraku_regex.h` | `nk_program_compile` / `nk_program_search` ほか公開型定義 |
-| ✨ VM コンパイラ | `src/regex_compile.c` | AST → `nk_program_t` バイトコードコンパイラ(2,234 行) |
-| ✨ Pike VM 実行器 | `src/regex_vm.c` | Pike VM マッチング実行器(1,142 行) |
+| ✨ VM コンパイラ | `src/regex_compile.c` | AST → `nk_program_t` バイトコードコンパイラ(2,533 行) |
+| ✨ Pike VM 実行器 | `src/regex_vm.c` | Pike VM マッチング実行器(1,704 行) |
 | ✨ コンパイラ用エラーコード | `include/naraku_error.h`, `src/error.c` | `-600` 番台 `NK_ERR_UNSUPPORTED_*` ほか 10 種 |
 | ✨ mruby マッチ API | `mrbgems/mruby-naraku/src/mrb_naraku_program.c` | `Naraku::Program` C ブリッジ |
 | ✨ mruby Ruby ラッパー | `mrbgems/mruby-naraku/mrblib/naraku/regexp.rb` | `Naraku::Regexp` / `MatchData` / `CompileError` |
-| ✨ Mtest テスト | `test/regexp_test.rb` | 381 テストケース(マッチング全体を網羅) |
+| ✨ Mtest テスト | `test/regexp_test.rb` | 388 テストケース(マッチング全体を網羅) |
 | ✨ 名前付きキャプチャ | `mrblib/naraku/regexp.rb` | `md[:name]` / `md['name']` / `md.names` / `md.named_captures` |
+| 🐛 CF3 修正 | `src/regex_compile.c` | `[ß]/i` が `ss`/`SS`/`Ss` にマッチ — `compile_cc_with_multi_fold()` で multi-char fold SPLIT 代替を追加 |
+| 🐛 CF3 拡張 | `src/regex_compile.c` | `compile_char_type`(`\w`/`\d`)・`compile_char_prop`(`\p{...}`) も同ヘルパーを使用 |
 | ✨ 対話型テスター | `tools/match.rb` | `bin/mruby` で動く Rubular ライク CLI |
 | ✨ 3 エンジン比較ベンチマーク | `ruby-prototype/benchmark/bench_compare.rb` + `tools/bench_pike_vm.rb` | Onigmo / DFA / Pike VM の速度比較 |
 | 🐛 バグ修正 | `src/cprop.c` | `code_in_code_range` の `size_t` アンダーフロー修正(`\b` 誤判定の根本原因) |
@@ -261,11 +263,11 @@ flowchart TD
 | Unicode コード生成 | `tools/gen_*.rb` | 約 400 行 | (生成物をテストで担保) | 🟩 既存 |
 | Ruby プロトタイプ(VM の原本) | `ruby-prototype/lib/naraku_ruby/` | 2,513 行 | ✅ 932 行 | 🟩 既存 |
 | mruby バインディング(Parser/Encoding/Node) | `mrbgems/mruby-naraku/` | C 1,826 行 + Ruby 284 行 | ✅(test/ 経由) | 🟩 既存 |
-| **VM コンパイラ** | `src/regex_compile.c` | 2,411 行 | ✅ `test/regexp_test.rb` | ✨ **追加** |
-| **Pike VM 実行器** | `src/regex_vm.c` | 1,726 行 | ✅ `test/regexp_test.rb` | ✨ **追加** |
+| **VM コンパイラ** | `src/regex_compile.c` | 2,533 行 | ✅ `test/regexp_test.rb` | ✨ **追加** |
+| **Pike VM 実行器** | `src/regex_vm.c` | 1,704 行 | ✅ `test/regexp_test.rb` | ✨ **追加** |
 | コンパイラ用エラーコード | `naraku_error.h`, `error.c` | -600〜-610 追加 | ✅ `test/regexp_test.rb` | ✨ **追加** |
 | 公開 API ヘッダ | `include/naraku_regex.h` | 349 行 | — | ✨ **追加** |
-| mruby マッチ API | `mrb_naraku_program.c`, `regexp.rb` | C 143 行 + Ruby 145 行 | ✅ 381 テスト | ✨ **追加** |
+| mruby マッチ API | `mrb_naraku_program.c`, `regexp.rb` | C 181 行 + Ruby 169 行 | ✅ 388 テスト | ✨ **追加** |
 | 対話型テスター | `tools/match.rb` | 75 行 | — | ✨ **追加** |
 | 3 エンジン比較ベンチマーク | `benchmark/bench_compare.rb` + `tools/bench_pike_vm.rb` | 計 255 行 | — | ✨ **追加** |
 | `\b` バグ修正 | `src/cprop.c` | `code_in_code_range` 修正 | ✅(既存テストが通る) | 🐛 **修正** |
@@ -559,7 +561,14 @@ flowchart LR
 - `NK_FOLD_ASCII_ONLY`: `cc_ascii_fold_expand()` — A-Z ↔ a-z の対を `cc_set_t` に追加
 - それ以外: `cc_simple_fold_expand()` — `nk_enc_iterate_case_fold()` で全ペアをスキャン
 
-`cc_simple_fold_expand()` のコールバックは `fold_len != 1` をスキップするため、ß のような 1対多 fold は文字クラスで自動無視される(文字クラスは常に 1 文字にマッチするため、意味的にも正しい)。
+`cc_simple_fold_expand()` のコールバックは `fold_len != 1` をスキップするため、単純展開では 1対多 fold を `cc_set_t` に追加できない。代わりに `compile_cc_with_multi_fold()` が `NK_FOLD_FULL` / `NK_FOLD_TURKISH_AZERI` 有効時に以下の処理を追加する:
+
+1. `nk_enc_iterate_case_fold()` でクラス内コードポイントの multi-char fold を収集(重複除去)
+   - 例: `[ß]/i` → ß・ẞ 両方が [s, s] にフォールドするが dedup して 1 件
+2. 収集した各 fold 列を `compile_full_fold_seq()` でコンパイル
+3. 代替案の state index が確定した後に SPLIT チェーンを後置し全代替を接続
+
+`compile_char_class`・`compile_char_type`(`\w`/`\d` 等)・`compile_char_prop`(`\p{...}`) の 3 関数すべてがこのヘルパーを共用する。
 
 **Full fold のリテラル展開アルゴリズム(`compile_full_fold_seq`)**:
 
@@ -981,13 +990,15 @@ P6a(Ruby 実装 Lazy DFA)のみ YJIT/ZJIT の恩恵を受ける。P1〜P5・P6b�
 - [x] エラーコード(-600 番台) + メッセージ
 - [x] 公開ヘッダ `include/naraku_regex.h`
 - [x] 設計ドキュメント(本書)
-- [x] `src/regex_compile.c` 実装(2,411 行)
+- [x] `src/regex_compile.c` 実装(2,533 行)
 - [x] `src/regex_compile.c` の厳格フラグ(`-Wall -Werror -Wconversion` 等)でのビルド検証
-- [x] `src/regex_vm.c`(`nk_program_search`)実装(1,726 行)
+- [x] `src/regex_vm.c`(`nk_program_search`)実装(1,704 行)
 - [x] mruby バインディング(`mrb_naraku_program.c` + `regexp.rb`)
-- [x] Mtest マッチングテスト(372 テスト — リテラル・量指定子・キャプチャ・文字クラス・アンカー・UTF-8・先後読み・所有量指定子)
+- [x] Mtest マッチングテスト(388 テスト — リテラル・量指定子・キャプチャ・文字クラス・アンカー・UTF-8・先後読み・所有量指定子・名前付きキャプチャ・char class multi-char fold)
 - [x] ASan green(leak のみ、メモリ安全エラーなし)
 - [x] `/i` フラグ — ASCII-only fold(`NK_FOLD_ASCII_ONLY`)・Simple fold(`NK_FOLD_DEFAULT`)・Full fold(`NK_FOLD_FULL`)・Turkish/Azeri fold(`NK_FOLD_TURKISH_AZERI`)全対応
+- [x] CF3 修正 — `compile_cc_with_multi_fold()` で文字クラス内 multi-char fold を SPLIT 代替に展開(`[ß]/i` が `ss` にマッチ)
+- [x] CF3 拡張 — `compile_char_type` / `compile_char_prop` も同ヘルパーを共用
 - [x] `size_t` アンダーフローバグ修正(`code_in_code_range`、`\b` 誤判定の原因)
 - [x] 後方参照 `\1` `\k<name>` — 数値/名前参照・可変幅消費・case-insensitive fold 対応
 - [x] 先読み・後読み `(?=) (?!) (?<=) (?<!)` — サブプログラム方式・Pike VM ε 閉包で実行

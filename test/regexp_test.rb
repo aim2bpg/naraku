@@ -517,6 +517,16 @@ class RegexpTest < Mtest::Test
     assert_nil match_f("\xC3\x9F", 'xyz')
   end
 
+  # compile_char_type and compile_char_prop use the same multi-char fold path
+  def test_full_fold_char_type_word_basic
+    assert_equal 'hello', match_f('\\w+', 'hello')[0]
+  end
+
+  # \p{Lu} contains ẞ (U+1E9E); simple fold expand adds ß (U+00DF)
+  def test_full_fold_char_prop_uppercase_includes_eszett_lower
+    assert_equal "\xC3\x9F", match_f('\\p{Lu}', "\xC3\x9F")[0]
+  end
+
   # ========================================================================
   # Simple (1-to-1 Unicode) case folding — default i flag
   # ========================================================================

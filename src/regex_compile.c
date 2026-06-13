@@ -1006,37 +1006,24 @@ static nk_error_t compile_literal(compiler_t* c, const nk_node_t* node, uint32_t
   return hole_list_push(out_holes, prev_index, false);
 }
 
-static nk_error_t
-compile_char_class(compiler_t* c, const nk_node_t* node, uint32_t* out_initial, hole_list_t* out_holes) {
-  const nk_char_class_node_t* char_class = &node->char_class;
-
-  cc_set_t cc;
-  nk_error_t err = cc_from_unions(c, char_class->unions, char_class->unions_len, char_class->is_positive, &cc);
-  if (err != NK_SUCCESS) {
-    return err;
-  }
-
-  if (char_class->is_ignore_case) {
-    if ((char_class->fold_flags & NK_FOLD_ASCII_ONLY) != 0) {
-      err = cc_ascii_fold_expand(&cc);
-    } else {
-      err = cc_simple_fold_expand(c->enc, char_class->fold_flags, &cc);
-    }
+// Compiles a char class with optional multi-char fold SPLIT alternatives.
+// When fold_flags includes NK_FOLD_FULL or NK_FOLD_TURKISH_AZERI (and not
+// ASCII-only), unique multi-char fold sequences for code points in `cc` are
+// compiled via compile_full_fold_seq and wired in a SPLIT chain alongside the
+// base char class state. Falls back to compile_cc_state when no multi-char
+// folds apply. cc is always consumed (freed) by this function.
+static nk_error_t compile_cc_with_multi_fold(
+  compiler_t* c,
+  cc_set_t* cc,
+  nk_fold_flag_t fold_flags,
+  uint32_t* out_initial,
+  hole_list_t* out_holes
+) {
+  if ((fold_flags & NK_FOLD_ASCII_ONLY) == 0 && (fold_flags & (NK_FOLD_FULL | NK_FOLD_TURKISH_AZERI)) != 0) {
+    cc_multi_fold_ctx_t mf = {.cc = cc};
+    nk_error_t err = nk_enc_iterate_case_fold(c->enc, fold_flags, cc_multi_fold_cb, &mf);
     if (err != NK_SUCCESS) {
-      cc_free(&cc);
-      return err;
-    }
-  }
-
-  // When full fold is active, check for multi-char fold sequences (e.g. ß→ss).
-  // These cannot be added to the char class set (single code points only),
-  // so compile each unique fold sequence and wire them via SPLIT alternatives.
-  if (char_class->is_ignore_case && (char_class->fold_flags & NK_FOLD_ASCII_ONLY) == 0 &&
-      (char_class->fold_flags & (NK_FOLD_FULL | NK_FOLD_TURKISH_AZERI)) != 0) {
-    cc_multi_fold_ctx_t mf = {.cc = &cc};
-    err = nk_enc_iterate_case_fold(c->enc, char_class->fold_flags, cc_multi_fold_cb, &mf);
-    if (err != NK_SUCCESS) {
-      cc_free(&cc);
+      cc_free(cc);
       return err;
     }
 
@@ -1046,7 +1033,7 @@ compile_char_class(compiler_t* c, const nk_node_t* node, uint32_t* out_initial, 
       uint32_t cc_init;
       hole_list_t cc_holes;
       hole_list_init(&cc_holes);
-      err = compile_cc_state(c, &cc, &cc_init, &cc_holes);
+      err = compile_cc_state(c, cc, &cc_init, &cc_holes);
       if (err != NK_SUCCESS) {
         hole_list_free(&cc_holes);
         return err;
@@ -1057,15 +1044,7 @@ compile_char_class(compiler_t* c, const nk_node_t* node, uint32_t* out_initial, 
       size_t compiled = 0;
       for (size_t i = 0; i < mf.count; i++) {
         hole_list_init(&seq_holes[i]);
-        err = compile_full_fold_seq(
-          c,
-          c->enc,
-          char_class->fold_flags,
-          mf.folds[i],
-          mf.fold_lens[i],
-          &seq_inits[i],
-          &seq_holes[i]
-        );
+        err = compile_full_fold_seq(c, c->enc, fold_flags, mf.folds[i], mf.fold_lens[i], &seq_inits[i], &seq_holes[i]);
         if (err != NK_SUCCESS) {
           hole_list_free(&cc_holes);
           for (size_t j = 0; j < compiled; j++) hole_list_free(&seq_holes[j]);
@@ -1075,9 +1054,8 @@ compile_char_class(compiler_t* c, const nk_node_t* node, uint32_t* out_initial, 
         compiled++;
       }
 
-      // Step 2: emit SPLIT chain connecting all alternatives.
-      // Alternatives are compiled first so their state indices are stable;
-      // SPLIT states pointing backward into already-emitted states is valid.
+      // Step 2: emit SPLIT chain. Alternatives compiled first so their state
+      // indices are stable; SPLIT states pointing backward is valid in an NFA.
       size_t n = 1 + mf.count;
       uint32_t first_split = NK_VM_STATE_NONE;
       uint32_t prev_split = NK_VM_STATE_NONE;
@@ -1087,7 +1065,7 @@ compile_char_class(compiler_t* c, const nk_node_t* node, uint32_t* out_initial, 
         if (!is_last) {
           uint32_t split_idx;
           err = emit(c, NK_VM_OP_SPLIT, &split_idx);
-          if (err != NK_SUCCESS) goto multi_fold_fail;
+          if (err != NK_SUCCESS) goto mf_fail;
           c->program->states[split_idx].next = alt_init;
           if (first_split == NK_VM_STATE_NONE) first_split = split_idx;
           if (prev_split != NK_VM_STATE_NONE) c->program->states[prev_split].split_next = split_idx;
@@ -1103,24 +1081,48 @@ compile_char_class(compiler_t* c, const nk_node_t* node, uint32_t* out_initial, 
       // Step 3: merge all holes.
       err = hole_list_move_append(out_holes, &cc_holes);
       hole_list_free(&cc_holes);
-      if (err != NK_SUCCESS) goto multi_fold_holes_fail;
+      if (err != NK_SUCCESS) goto mf_holes_fail;
       for (size_t i = 0; i < mf.count; i++) {
         err = hole_list_move_append(out_holes, &seq_holes[i]);
         hole_list_free(&seq_holes[i]);
-        if (err != NK_SUCCESS) goto multi_fold_holes_fail;
+        if (err != NK_SUCCESS) goto mf_holes_fail;
       }
 
       *out_initial = first_split;
       return NK_SUCCESS;
 
-    multi_fold_fail:
+    mf_fail:
       hole_list_free(&cc_holes);
       for (size_t j = 0; j < compiled; j++) hole_list_free(&seq_holes[j]);
       return err;
-    multi_fold_holes_fail:
+    mf_holes_fail:
       for (size_t j = 0; j < mf.count; j++) hole_list_free(&seq_holes[j]);
       return err;
     }
+  }
+
+  return compile_cc_state(c, cc, out_initial, out_holes);
+}
+
+static nk_error_t
+compile_char_class(compiler_t* c, const nk_node_t* node, uint32_t* out_initial, hole_list_t* out_holes) {
+  const nk_char_class_node_t* char_class = &node->char_class;
+
+  cc_set_t cc;
+  nk_error_t err = cc_from_unions(c, char_class->unions, char_class->unions_len, char_class->is_positive, &cc);
+  if (err != NK_SUCCESS) return err;
+
+  if (char_class->is_ignore_case) {
+    if ((char_class->fold_flags & NK_FOLD_ASCII_ONLY) != 0) {
+      err = cc_ascii_fold_expand(&cc);
+    } else {
+      err = cc_simple_fold_expand(c->enc, char_class->fold_flags, &cc);
+    }
+    if (err != NK_SUCCESS) {
+      cc_free(&cc);
+      return err;
+    }
+    return compile_cc_with_multi_fold(c, &cc, char_class->fold_flags, out_initial, out_holes);
   }
 
   return compile_cc_state(c, &cc, out_initial, out_holes);
@@ -1147,6 +1149,7 @@ compile_char_type(compiler_t* c, const nk_node_t* node, uint32_t* out_initial, h
       cc_free(&cc);
       return err;
     }
+    return compile_cc_with_multi_fold(c, &cc, char_type->fold_flags, out_initial, out_holes);
   }
 
   return compile_cc_state(c, &cc, out_initial, out_holes);
@@ -1172,6 +1175,7 @@ compile_char_prop(compiler_t* c, const nk_node_t* node, uint32_t* out_initial, h
       cc_free(&cc);
       return err;
     }
+    return compile_cc_with_multi_fold(c, &cc, char_prop->fold_flags, out_initial, out_holes);
   }
 
   return compile_cc_state(c, &cc, out_initial, out_holes);
