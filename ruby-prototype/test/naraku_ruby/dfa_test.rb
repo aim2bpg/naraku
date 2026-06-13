@@ -337,6 +337,62 @@ module NarakuRuby
       refute dfa_match_p, "expected pattern #{pattern.inspect} to not match string #{string.inspect}"
     end
 
+    def test_match_data_to_a
+      md = NarakuRuby::DFA.match('(a)(b)', 'xabz')
+      refute_nil md
+      assert_equal %w[ab a b], md.to_a
+    end
+
+    def test_match_data_to_s
+      md = NarakuRuby::DFA.match('ab', 'xabz')
+      refute_nil md
+      assert_equal 'ab', md.to_s
+    end
+
+    def test_match_data_pre_and_post_match
+      md = NarakuRuby::DFA.match('b+', 'aabbc')
+      refute_nil md
+      assert_equal 'aa', md.pre_match
+      assert_equal 'c',  md.post_match
+    end
+
+    def test_match_data_pre_and_post_match_utf8
+      md = NarakuRuby::DFA.match('b', 'aΩb')
+      refute_nil md
+      assert_equal 'aΩ', md.pre_match
+      assert_equal '',   md.post_match
+    end
+
+    def test_match_data_values_at
+      md = NarakuRuby::DFA.match('(a)(b)(c)', 'abc')
+      refute_nil md
+      assert_equal %w[abc a c], md.values_at(0, 1, 3)
+    end
+
+    def test_match_data_inspect_no_captures
+      md = NarakuRuby::DFA.match('ab', 'xaby')
+      refute_nil md
+      assert_equal '#<MatchData "ab">', md.inspect
+    end
+
+    def test_match_data_inspect_with_captures
+      md = NarakuRuby::DFA.match('(a)(b)', 'ab')
+      refute_nil md
+      assert_equal '#<MatchData "ab" 1:"a" 2:"b">', md.inspect
+    end
+
+    def test_match_data_inspect_unmatched_capture
+      md = NarakuRuby::DFA.match('(a)?(b)', 'b')
+      refute_nil md
+      assert_equal '#<MatchData "b" 1:nil 2:"b">', md.inspect
+    end
+
+    def test_match_data_string_accessor
+      md = NarakuRuby::DFA.match('a+', 'xaaay')
+      refute_nil md
+      assert_equal 'xaaay', md.string
+    end
+
     def assert_match_consistency(dfa_program, string, pattern, pos: 0)
       dfa_match = dfa_program.match(string, pos)
       dfa_match_p = dfa_program.match?(string, pos)

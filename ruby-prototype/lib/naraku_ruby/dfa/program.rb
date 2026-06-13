@@ -1,6 +1,8 @@
 module NarakuRuby
   module DFA
     class MatchData
+      attr_reader :string
+
       def initialize(string, caps)
         @string = string
         @caps = caps
@@ -29,6 +31,42 @@ module NarakuRuby
 
       def captures
         (1...length).map { |i| self[i] }
+      end
+
+      def to_a
+        length.times.map { |i| self[i] }
+      end
+
+      def to_s
+        self[0]
+      end
+
+      def pre_match
+        b = self.begin(0)
+        return nil unless b
+
+        @string[0...b]
+      end
+
+      def post_match
+        e = self.end(0)
+        return nil unless e
+
+        @string[e..]
+      end
+
+      def values_at(*indices)
+        indices.map { |i| self[i] }
+      end
+
+      def inspect
+        s = "#<MatchData #{self[0].inspect}"
+        i = 1
+        while i < length
+          s = "#{s} #{i}:#{self[i].inspect}"
+          i += 1
+        end
+        "#{s}>"
       end
 
       private

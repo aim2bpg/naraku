@@ -62,6 +62,26 @@
 | `names` | 名前付きキャプチャの名前一覧 |
 | `named_captures` | `{名前 => [キャプチャ番号, ...]}` のハッシュ |
 
+### `NarakuRuby::DFA::MatchData`
+
+CRuby 側の DFA プロトタイプ（`ruby-prototype/`）の `MatchData`。  
+位置情報は**文字オフセット**（バイトオフセットではない）。名前付きキャプチャは DFA 非対応。
+
+| メソッド | 説明 |
+|---|---|
+| `[](n)` | n 番目のキャプチャ文字列（整数のみ） |
+| `begin(n=0)` / `end(n=0)` | キャプチャの文字オフセット |
+| `size` / `length` | キャプチャ数（全体マッチ含む） |
+| `captures` | 1 番目以降のキャプチャ配列 |
+| `to_a` | 全キャプチャ配列（全体マッチ含む） |
+| `to_s` | 全体マッチ文字列 |
+| `pre_match` / `post_match` | マッチ前後の文字列 |
+| `values_at(*indices)` | 複数インデックスの一括取得 |
+| `inspect` | `#<MatchData "match" 1:"cap">` 形式の文字列表現 |
+| `string` | マッチ対象の文字列 |
+
+> **VM 側との主な違い**: オフセットが文字単位（VM は `byte_begin`/`byte_end` でバイト単位）。名前付きキャプチャ非対応。
+
 ## TODO
 
 書く予定のこと:
