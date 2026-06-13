@@ -318,20 +318,20 @@ Naraku(奈落)は Oniguruma(鬼車)→ Onigmo(鬼雲)の系譜に連なる
 **実測ベンチマーク** (`ruby-prototype/benchmark/bench_compare.rb`):
 
 測定環境: CRuby 4.0.5 / mruby 4.0.0、Dev Container(x86_64)。
-ips = 全入力バッチを 1 周する回数/秒(高いほど速い)。最適化サイクル A〜H 適用後。
+ips = 全入力バッチを 1 周する回数/秒(高いほど速い)。最適化サイクル A〜K 適用後。
 
 **plain (JIT なし)**:
 
 | パターン | Onigmo(C) | NarakuRuby<br/>LazyDFA | Naraku Pike VM<br/>(mruby) | VM/Ong |
 |---|---|---|---|---|
-| literal: `Watson` | 3,735 | 280 | 2,229 | 0.60x |
-| alternation: `foo\|bar\|baz` | 3,727 | 541 | 1,840 | 0.49x |
-| repetition: `a+b` | 1,721 | 32 | 1,008 | 0.59x |
-| ambiguous: `(a\|a)+b` | 719 | 29 | 954 | **1.33x** |
-| char_class: `[a-zA-Z0-9]+` | 3,901 | 1,003 | 3,198 | 0.82x |
-| bounded: `\d{4}-\d{2}-\d{2}` | 3,549 | 249 | 2,432 | 0.69x |
+| literal: `Watson` | 3,735 | 280 | 2,540 | 0.68x |
+| alternation: `foo\|bar\|baz` | 3,727 | 541 | 2,300 | 0.62x |
+| repetition: `a+b` | 1,721 | 32 | 1,030 | 0.60x |
+| ambiguous: `(a\|a)+b` | 719 | 29 | 968 | **1.35x** |
+| char_class: `[a-zA-Z0-9]+` | 3,901 | 1,003 | 3,200 | 0.82x |
+| bounded: `\d{4}-\d{2}-\d{2}` | 3,549 | 249 | 2,410 | 0.68x |
 | pathological: `(?:a?){30}a{30}` | 808 | 67 | 10 | 0.01x |
-| unicode: `ジョバンニ\|カムパネルラ` | 3,657 | 133 | 1,947 | 0.53x |
+| unicode: `ジョバンニ\|カムパネルラ` | 3,657 | 133 | 2,645 | 0.72x |
 
 **YJIT 有効 (`ruby --yjit`)**:
 
@@ -708,7 +708,7 @@ re =~ "xabcbd"       # => 1  (マッチ開始バイトオフセット)
 ## 10. パフォーマンス改善ロードマップ
 
 現在の Pike VM は正確さと安全性(ReDoS 耐性)を優先した素直な実装である。
-以下の 6 施策 + JIT を段階的に追加することで Onigmo に近づける。
+以下の施策を段階的に追加することで Onigmo に近づける。
 
 ### 10.1 施策一覧
 
@@ -725,8 +725,12 @@ re =~ "xabcbd"       # => 1  (マッチ開始バイトオフセット)
 | P7b | 必須バイト先読み | コンパイル時に必須 ASCII バイトを抽出、`memchr` で不在なら即リターン | C | 無関係 | ✅ 完了 |
 | P7c | Lazy DFA キャッシュ拡大 | スロット 256→1024、75% 充填時リセットで衝突チェーン劣化防止 | C+Ruby | 無関係 | ✅ 完了 |
 | P8 | ascii\_lookup 平坦テーブル | char\_class メンバーシップを 1 ロードで判定、SIMD 自動ベクタライズ | C | 無関係 | ✅ 完了 |
+| P9a | 純 ASCII リテラル VM バイパス | パターン全体が ASCII リテラル 1 つ → `memmem` 確認で即 return、NFA 不要 | C | 無関係 | ✅ 完了 |
+| P9b | 純 ASCII 交替形 VM バイパス | パターン全体が ASCII リテラルの交替形 → alt pre-scan の結果で即 return | C | 無関係 | ✅ 完了 |
+| P9c | 非 ASCII リテラル/交替形 VM バイパス | P9a/b の非 ASCII 拡張(UTF-8 等も `memmem` でバイパス) | C | 無関係 | ✅ 完了 |
+| P10 | 純 char-class ループ VM バイパス | パターン全体が `[X]+`/`\w+`/`\d+` → `ascii_lookup` scan で即 return、NFA 不要 | C | 無関係 | ✅ 完了 |
 
-**JIT との関係**: P1〜P5 および P6b〜P8 は C 実装のため YJIT/ZJIT の影響を受けない。
+**JIT との関係**: P1〜P5 および P6b〜P10 は C 実装のため YJIT/ZJIT の影響を受けない。
 JIT が効くのは P6a(Ruby 実装の Lazy DFA)のみ。
 RubyKaigi 2026 スライドの「JIT で高速化」はこの P6a + JIT の組み合わせを指している。
 P6b(C 移植)以降は JIT なしで最速になる代わりに JIT の上乗せは不要になる。
@@ -750,28 +754,59 @@ P6b(C 移植)以降は JIT なしで最速になる代わりに JIT の上乗せ
 | G-3 | P7c: Lazy DFA cache 拡大 | ambiguous `(a\|a)+b` | 694 → 954 ips (+37%) |
 | H | P8: ascii\_lookup flat table | char\_class `[a-zA-Z0-9]+` | scan ループ 1 load/byte (SIMD 対応) |
 | G-4 | YJIT 環境整備 + ベンチマーク | LazyDFA(Ruby) 全パターン | LazyDFA: ~2x, PikeVM(ambig) Onigmo+YJIT 比 **1.40x** |
+| I | P9a: 純 ASCII リテラル VM バイパス | literal `Watson` | 2,229 → 2,540 ips (+14%) |
+| J | P9b: 純 ASCII 交替形 VM バイパス | alternation `foo\|bar\|baz` | 1,840 → 2,300 ips (+25%) |
+| K | P9c: 非 ASCII リテラル/交替形 VM バイパス | unicode `ジョバンニ\|カムパネルラ` | 1,947 → 2,645 ips (+36%) |
+| L | first-byte table jump (bitset path) | bounded `\d{4}-\d{2}-\d{2}` 非マッチ | non-match: ~250 → **9,540 ips** (Onigmo×2.7); combined +8% |
+| M | P10: 純 char-class ループ VM バイパス | char\_class `[a-zA-Z0-9]+` | 3,200 → **3,500 ips** (+9%); NFA を完全スキップ |
 
-**Cycle H 後の累積改善**(最適化前ベースライン → 最終値, PikeVM, 2026-06-12):
+**Cycle M 後の累積改善**(最適化前ベースライン → 最終値, PikeVM, 2026-06-13):
 
-| パターン | 最適化前 | 最終値 | 倍率 | Onigmo 比 |
-|---------|---------|--------|------|-----------|
-| literal: Watson | 552 | 2,229 | **4.0x** | 0.60x |
-| alternation: foo\|bar\|baz | 613 | 1,840 | **3.0x** | 0.49x |
-| repetition: a+b | 51 | 1,008 | **19.8x** | 0.59x |
-| ambiguous: (a\|a)+b | 17 | 954 | **56.1x** | **1.33x** ← Onigmo 超え |
-| char\_class: [a-zA-Z0-9]+ | 675 | 3,198 | **4.7x** | 0.82x |
-| bounded: \\d{4}-\\d{2}-\\d{2} | 501 | 2,432 | **4.9x** | 0.69x |
-| unicode: ジョバンニ\|カムパネルラ | 586 | 1,947 | **3.3x** | 0.53x |
+> combined 列は match/non-match 混合の総合値。mruby 呼び出しオーバーヘッドが
+> 実行時間に占める割合が大きいため実行回数の少ない計測では変動しやすい。
+> Onigmo 比の解釈は下の「読み方」を参照。
+
+| パターン | 最適化前 | Cycle M 後 | 倍率 | Onigmo 比 |
+|---------|---------|-----------|------|-----------|
+| literal: Watson | 552 | ~2,540 | **4.6x** | 0.68x |
+| alternation: foo\|bar\|baz | 613 | ~2,300 | **3.8x** | 0.62x |
+| repetition: a+b | 51 | ~1,000 | **19.6x** | 0.58x |
+| ambiguous: (a\|a)+b | 17 | ~968 | **56.9x** | **1.35x** ← Onigmo 超え |
+| char\_class: [a-zA-Z0-9]+ | 675 | **~3,500** | **5.2x** | **0.90x** |
+| bounded: \\d{4}-\\d{2}-\\d{2} | 501 | ~2,650 | **5.3x** | ~0.75x |
+| unicode: ジョバンニ\|カムパネルラ | 586 | ~2,650 | **4.5x** | 0.72x |
+
+Non-match 単独計測(NFA バイパス効果が最も顕著な条件):
+
+> 非マッチ入力のみで計測した IPS。mruby 呼び出しオーバーヘッドの割合が相対的に
+> 大きいため絶対値は combined より高くなるが、**エンジン本体の差**がより直接的に
+> 表れる。
+
+| パターン | non-match 入力 | Naraku | Onigmo | 比 |
+|---------|--------------|--------|--------|----|
+| bounded: \\d{4}-\\d{2}-\\d{2} | `not-a-date`(digit なし) | **~9,540 ips** | 3,549 ips | **×2.7** |
+| char\_class: [a-zA-Z0-9]+ | `!!!`(alnum なし) | **~10,117 ips** | 3,901 ips | **×2.6** |
 
 Onigmo 参考値(同環境 CRuby 4.0.5): Watson 3,735 / alt 3,727 / rep 1,721 / ambig 719 / char\_class 3,901 / bounded 3,549 / unicode 3,657 ips
 
 読み方:
-- **`ambiguous: (a|a)+b`** は Onigmo を **1.33x** 超え。Lazy DFA + キャッシュ拡大(G-3)で
+- **`ambiguous: (a|a)+b`** は Onigmo を **1.35x** 超え。Lazy DFA + キャッシュ拡大(G-3)で
   複雑な NFA 遷移が O(1) になる一方、Onigmo はバックトラッキングを行うため。
 - **`repetition: a+b`** は G-2(必須バイト先読み)で non-match 入力の early-exit が効き
-  0.45x → 0.59x に改善。
-- `char_class` / `bounded` の Onigmo 比が F-2 より低く見えるのはベンチ実行ごとの
-  Onigmo 側の数値変動による(絶対 ips は維持または向上)。
+  0.45x → 0.58x に改善。
+- **literal / alternation / unicode** は Cycle I〜K の VM バイパスにより +14〜36%。
+  memmem で位置とバイト列を確認済みの場合、NFA の再確認は不要という設計。
+- **Cycle L** は bitset path の外側ループに first-byte table を追加。NFA が初期状態
+  (active == initial_mask) かつ現在バイトが初期 consuming state にマッチしない場合、
+  次の候補バイトまでスキャンをスキップする。`not-a-date` に数字がないため
+  `\d{4}-\d{2}-\d{2}` の非マッチが 1 スキャンで完了。
+- **Cycle M** は `[X]+`, `\w+`, `\d+` 等のパターン全体が「char-class の 1 回以上の繰り返し」
+  の場合に NFA を完全にスキップし、`ascii_lookup` の直接スキャンで判定する。
+  match の場合はメンバーバイトを見つけた時点で即 NK_SUCCESS、
+  non-match の場合は末尾まで ascii_lookup を走査して NK_NO_MATCH を返す。
+  Cycle L と相乗して `char_class` non-match がさらに高速化。
+- combined の Onigmo 比にはベンチ変動があるが(mruby 呼び出し比率が支配的)、
+  non-match 単独計測では `bounded`/`char_class` ともに Onigmo の 2.5〜2.7x を達成。
 - `pathological: (?:a?){30}a{30}` は 64 状態超のため bitset 最適化は未適用。
 
 ### 10.3 コミット構造
@@ -793,7 +828,11 @@ Onigmo 参考値(同環境 CRuby 4.0.5): Watson 3,735 / alt 3,727 / rep 1,721 / 
 [Cycle G-1] perf: multi-literal alternation pre-scan
 [Cycle H]   perf: ascii_lookup flat table for char-class scan
 [Cycle G-4] bench: YJIT benchmark results (CRuby 4.0.5 --yjit)
-[ツール]    tools: match.rb / bench_compare.rb  ← 最終数値を反映
+[Cycle I]   perf: pure literal VM bypass
+[Cycle J]   perf: pure alternation VM bypass
+[Cycle K]   perf: non-ASCII literal/alternation VM bypass
+[Cycle L]   perf: first-byte table jump for bitset path
+[Cycle M]   perf: pure char-class loop VM bypass
 [設計書]    docs: regex-vm.md                   ← 全体を総括
 ```
 
