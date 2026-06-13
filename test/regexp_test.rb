@@ -273,8 +273,113 @@ class RegexpTest < Mtest::Test
   # Compile errors for unsupported features
   # ========================================================================
 
-  def test_compile_error_atomic_group
-    assert_compile_error('(?>a+)', 'atomic')
+  def test_compile_error_absence_group
+    assert_compile_error('(?~a+)', 'absence')
+  end
+
+  def test_compile_error_subexp_call
+    assert_compile_error('(a)\\g<1>', 'sub-expression')
+  end
+
+  # ========================================================================
+  # \R — Unicode newline sequence
+  # ========================================================================
+
+  def test_newline_r_matches_lf
+    md = match('\\R', "a\nb")
+    assert !md.nil?
+    assert_equal "\n", md[0]
+  end
+
+  def test_newline_r_matches_cr
+    md = match('\\R', "a\rb")
+    assert !md.nil?
+    assert_equal "\r", md[0]
+  end
+
+  def test_newline_r_matches_crlf_as_unit
+    md = match('\\R', "a\r\nb")
+    assert !md.nil?
+    assert_equal "\r\n", md[0]
+  end
+
+  def test_newline_r_crlf_priority_over_cr
+    # \R should consume \r\n together, not just \r
+    md = match('\\Rx', "\r\nx")
+    assert !md.nil?
+    assert_equal "\r\nx", md[0]
+  end
+
+  def test_newline_r_matches_vt
+    md = match('\\R', "a\vb")
+    assert !md.nil?
+    assert_equal "\v", md[0]
+  end
+
+  def test_newline_r_matches_ff
+    md = match('\\R', "a\fb")
+    assert !md.nil?
+    assert_equal "\f", md[0]
+  end
+
+  def test_newline_r_no_match_non_newline
+    assert_nil match('\\R', 'abc')
+  end
+
+  def test_newline_r_plus_quantifier
+    md = match('a\\R+b', "a\r\n\nb")
+    assert !md.nil?
+    assert_equal "a\r\n\nb", md[0]
+  end
+
+  def test_newline_r_in_alternation
+    md = match('\\R|x', 'ax')
+    assert !md.nil?
+    assert_equal 'x', md[0]
+  end
+
+  # ========================================================================
+  # (?>...) — atomic groups
+  # ========================================================================
+
+  def test_atomic_group_basic_match
+    md = match('(?>a+)b', 'aaab')
+    assert !md.nil?
+    assert_equal 'aaab', md[0]
+  end
+
+  def test_atomic_group_prevents_backtrack
+    # (?>a+) greedily consumes all a's; trailing a has nothing left to match
+    assert_nil match('(?>a+)a', 'aaa')
+  end
+
+  def test_atomic_group_vs_non_atomic
+    # non-atomic: NFA explores both "abc" and "ab" alternatives — falls back to "ab" then 'c'
+    assert_equal 'abc', match('(?:abc|ab)c', 'abc')[0]
+    # atomic: commits to the first-priority branch "abc"; no fallback to "ab"
+    assert_nil match('(?>abc|ab)c', 'abc')
+  end
+
+  def test_atomic_group_with_star
+    md = match('(?>a*)b', 'aaab')
+    assert !md.nil?
+    assert_equal 'aaab', md[0]
+  end
+
+  def test_atomic_group_empty_match
+    md = match('(?>a*)b', 'b')
+    assert !md.nil?
+    assert_equal 'b', md[0]
+  end
+
+  def test_atomic_group_no_match
+    assert_nil match('(?>b+)', 'aaa')
+  end
+
+  def test_atomic_group_mid_string
+    md = match('x(?>a+)y', 'xaaay')
+    assert !md.nil?
+    assert_equal 'xaaay', md[0]
   end
 
   # ========================================================================

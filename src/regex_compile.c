@@ -768,12 +768,13 @@ static bool node_can_match_empty(const nk_node_t* node) {
         }
       }
       return false;
+    case NK_NODE_TYPE_ATOMIC:
+      return node_can_match_empty(node->atomic.child);
     // These are rejected by the compiler before the answer matters; be
     // conservative so a surrounding loop still gets the epsilon guard.
     case NK_NODE_TYPE_UNKNOWN:
     case NK_NODE_TYPE_BACK_REF:
     case NK_NODE_TYPE_CALL:
-    case NK_NODE_TYPE_ATOMIC:
     case NK_NODE_TYPE_ABSENCE:
     case NK_NODE_TYPE_CONDITIONAL:
       return true;
@@ -1642,6 +1643,85 @@ compile_quantifier(compiler_t* c, const nk_node_t* node, uint32_t* out_initial, 
   return NK_SUCCESS;
 }
 
+// Compiles \R: matches CRLF as a unit (priority) or any single Unicode newline.
+// Equivalent to: \r\n | [\n\v\f\r\x85  ]
+static nk_error_t compile_newline(compiler_t* c, uint32_t* out_initial, hole_list_t* out_holes) {
+  uint32_t split_idx;
+  nk_error_t err = emit(c, NK_VM_OP_SPLIT, &split_idx);
+  if (err != NK_SUCCESS) return err;
+  *out_initial = split_idx;
+
+  // CRLF path (priority = next): CODE(CR) → CODE(LF) → hole
+  uint32_t cr_idx;
+  err = emit(c, NK_VM_OP_CODE, &cr_idx);
+  if (err != NK_SUCCESS) return err;
+  c->program->states[cr_idx].code = 0x0D;
+  c->program->states[split_idx].next = cr_idx;
+
+  uint32_t lf_idx;
+  err = emit(c, NK_VM_OP_CODE, &lf_idx);
+  if (err != NK_SUCCESS) return err;
+  c->program->states[lf_idx].code = 0x0A;
+  c->program->states[cr_idx].next = lf_idx;
+  err = hole_list_push(out_holes, lf_idx, false);
+  if (err != NK_SUCCESS) return err;
+
+  // Single-char path (split_next): CHAR_CLASS([\n\v\f\r\x85  ])
+  cc_set_t cc;
+  cc_init(&cc);
+  static const uint32_t nl_codes[] = {0x0A, 0x0B, 0x0C, 0x0D, 0x85, 0x2028, 0x2029};
+  for (size_t i = 0; i < 7; i++) {
+    err = cc_add_range(&cc, nl_codes[i], nl_codes[i]);
+    if (err != NK_SUCCESS) {
+      cc_free(&cc);
+      return err;
+    }
+  }
+  uint32_t cc_initial;
+  err = compile_cc_state(c, &cc, &cc_initial, out_holes);
+  if (err != NK_SUCCESS) return err;
+  c->program->states[split_idx].split_next = cc_initial;
+
+  return NK_SUCCESS;
+}
+
+// Compiles (?>child): atomic group — commits to child's match without backtrack.
+// Reuses NK_VM_OP_POSSESSIVE, the same instruction used by possessive quantifiers.
+static nk_error_t compile_atomic(compiler_t* c, const nk_node_t* node, uint32_t* out_initial, hole_list_t* out_holes) {
+  nk_program_t* inner_prog = NULL;
+  size_t inner_err_off = 0;
+  size_t inner_err_len = 0;
+  nk_error_t inner_err = nk_program_compile(
+    c->enc,
+    node->atomic.child,
+    c->num_capture_groups,
+    c->capture_entries,
+    c->capture_entries_len,
+    &inner_prog,
+    &inner_err_off,
+    &inner_err_len
+  );
+  if (inner_err != NK_SUCCESS) return inner_err;
+
+  size_t new_len = c->program->sub_programs_len + 1;
+  nk_program_t** new_arr = (nk_program_t**)realloc(c->program->sub_programs, new_len * sizeof(nk_program_t*));
+  if (new_arr == NULL) {
+    nk_program_free(inner_prog);
+    return NK_ERR_MEMORY_ALLOCATION_FAILED;
+  }
+  new_arr[c->program->sub_programs_len] = inner_prog;
+  c->program->sub_programs = new_arr;
+  uint32_t prog_idx = (uint32_t)c->program->sub_programs_len;
+  c->program->sub_programs_len = new_len;
+
+  uint32_t poss_idx;
+  nk_error_t pe = emit(c, NK_VM_OP_POSSESSIVE, &poss_idx);
+  if (pe != NK_SUCCESS) return pe;
+  c->program->states[poss_idx].possessive_prog_idx = prog_idx;
+  *out_initial = poss_idx;
+  return hole_list_push(out_holes, poss_idx, false);
+}
+
 static nk_error_t
 compile_node_dispatch(compiler_t* c, const nk_node_t* node, uint32_t* out_initial, hole_list_t* out_holes) {
   switch (node->base.type) {
@@ -1759,15 +1839,16 @@ compile_node_dispatch(compiler_t* c, const nk_node_t* node, uint32_t* out_initia
     case NK_NODE_TYPE_CALL:
       return NK_ERR_UNSUPPORTED_SUBEXP_CALL;
     case NK_NODE_TYPE_ATOMIC:
-      return NK_ERR_UNSUPPORTED_ATOMIC_GROUP;
+      return compile_atomic(c, node, out_initial, out_holes);
     case NK_NODE_TYPE_ABSENCE:
       return NK_ERR_UNSUPPORTED_ABSENCE_GROUP;
     case NK_NODE_TYPE_CONDITIONAL:
       return NK_ERR_UNSUPPORTED_CONDITIONAL;
     case NK_NODE_TYPE_UNKNOWN:
-    case NK_NODE_TYPE_NEWLINE:
     case NK_NODE_TYPE_GRAPHEME_CLUSTER:
       return NK_ERR_UNSUPPORTED_FEATURE;
+    case NK_NODE_TYPE_NEWLINE:
+      return compile_newline(c, out_initial, out_holes);
   }
 
   return NK_ERR_INTERNAL_ERROR;
