@@ -426,6 +426,13 @@ class RegexpTest < Mtest::Test
     assert_equal 'aa', match_a('A+', 'xaaBy')[0]
   end
 
+  # Run-scan optimisation: long mixed-case run is scanned without per-char NFA step
+  def test_ascii_fold_run_scan_long
+    input = 'AaAaAaAaAaAaAaAaAaAa'
+    assert_equal input, match_a('a+', input)[0]
+    assert_equal input, match_a('A+', input)[0]
+  end
+
   # CF6 regression: [s]s must NOT behave like ss for fold purposes.
   # With ASCII-only fold, [s] is a char class (not a literal), so
   # /[s]s/A does NOT match "ß" (ß is non-ASCII and never folded).

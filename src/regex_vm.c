@@ -974,8 +974,8 @@ static nk_error_t search_impl(
             scan++;
           }
         }
-      } else if (scan_state->op == NK_VM_OP_CODE && scan_state->fold_flags == NK_FOLD_DEFAULT &&
-                 curr_code == scan_state->code) {
+      } else if (scan_state->op == NK_VM_OP_CODE &&
+                 state_matches_code(program, scan_state, curr_code)) {
         // Only scan a consecutive run when the state's successor is an epsilon
         // (non-consuming) state, indicating this is a loop-head (e.g., `a+`).
         // If the next state is a consuming op, this CODE is part of a sequence
@@ -985,10 +985,23 @@ static nk_error_t search_impl(
           nk_vm_op_t next_op = program->states[next_idx].op;
           if (next_op != NK_VM_OP_CODE && next_op != NK_VM_OP_CHAR_CLASS &&
               next_op != NK_VM_OP_DOT && next_op != NK_VM_OP_MATCH) {
-            uint8_t code_byte = (uint8_t)scan_state->code;
             scan = pos + 1;
-            while (scan < subject_len && subject_bytes[scan] == code_byte) {
-              scan++;
+            if ((scan_state->fold_flags & NK_FOLD_ASCII_ONLY) != 0 &&
+                scan_state->code < 0x80u) {
+              // Fold both sides to lowercase for the inner scan loop.
+              uint8_t fp = (uint8_t)scan_state->code;
+              uint8_t fp_lower = (fp >= 'A' && fp <= 'Z') ? (uint8_t)(fp | 0x20u) : fp;
+              while (scan < subject_len) {
+                uint8_t b = subject_bytes[scan];
+                uint8_t bl = (b >= 'A' && b <= 'Z') ? (uint8_t)(b | 0x20u) : b;
+                if (bl != fp_lower) break;
+                scan++;
+              }
+            } else {
+              uint8_t code_byte = (uint8_t)scan_state->code;
+              while (scan < subject_len && subject_bytes[scan] == code_byte) {
+                scan++;
+              }
             }
           }
         }
