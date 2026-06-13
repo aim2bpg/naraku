@@ -826,6 +826,49 @@ static nk_error_t search_impl(
     return NK_SUCCESS;
   }
 
+  // Pure char-class loop bypass: [X]+, \w+, \d+ etc. with no captures.
+  // Scan ascii_lookup directly — the NFA is not needed to confirm a match.
+  if (program->is_pure_char_class_plus) {
+    const nk_vm_char_class_t* cc = &program->char_classes[program->pure_cc_index];
+    const uint8_t* p = subject_bytes + start_offset;
+    while (p < subject_bytes_end) {
+      if (*p < 128u) {
+        if (cc->ascii_lookup[*p] != 0u) {
+          if (out_region != NULL && out_region->caps != NULL) {
+            size_t ms = (size_t)(p - subject_bytes);
+            const uint8_t* q = p + 1;
+            while (q < subject_bytes_end && *q < 128u && cc->ascii_lookup[*q] != 0u) {
+              q++;
+            }
+            out_region->caps[0] = ms;
+            out_region->caps[1] = (size_t)(q - subject_bytes);
+            for (size_t i = 2; i < 2u * out_region->num_caps; i++) {
+              out_region->caps[i] = NK_REGION_POS_NONE;
+            }
+          }
+          return NK_SUCCESS;
+        }
+        p++;
+      } else {
+        int8_t sw = nk_enc_scan_mbc_width(program->enc, p, subject_bytes_end);
+        size_t w = (sw > 0) ? (size_t)sw : 1u;
+        uint32_t code = (sw > 0) ? nk_enc_decode_mbc(program->enc, p, subject_bytes_end) : 0xFFFFFFFFu;
+        if (char_class_contains(cc, code)) {
+          if (out_region != NULL && out_region->caps != NULL) {
+            out_region->caps[0] = (size_t)(p - subject_bytes);
+            out_region->caps[1] = (size_t)(p - subject_bytes) + w;
+            for (size_t i = 2; i < 2u * out_region->num_caps; i++) {
+              out_region->caps[i] = NK_REGION_POS_NONE;
+            }
+          }
+          return NK_SUCCESS;
+        }
+        p += w;
+      }
+    }
+    return NK_NO_MATCH;
+  }
+
   // Fast Thompson NFA bitset path: no allocation, O(active_states) per char.
   if (no_caps && out_region == NULL && program->goto_mask != NULL) {
     return search_impl_bitset(program, subject_bytes, subject_bytes_end, start_offset);

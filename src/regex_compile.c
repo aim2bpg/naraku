@@ -1324,6 +1324,17 @@ static const nk_node_t* node_unwrap(const nk_node_t* node) {
   return node;
 }
 
+// Returns true when `node` (after unwrapping) is a char-class–like AST node
+// (NK_NODE_TYPE_CHAR_CLASS, CHAR_TYPE, or CHAR_PROP) — all of which compile to
+// NK_VM_OP_CHAR_CLASS in the VM.
+static bool node_is_char_class_like(const nk_node_t* node) {
+  node = node_unwrap(node);
+  if (node == NULL) return false;
+  return node->base.type == NK_NODE_TYPE_CHAR_CLASS ||
+         node->base.type == NK_NODE_TYPE_CHAR_TYPE  ||
+         node->base.type == NK_NODE_TYPE_CHAR_PROP;
+}
+
 // Returns true when `node` (after unwrapping captures/groups) is a
 // case-sensitive, all-ASCII literal.  Writes its length to `*out_len` and
 // a pointer to its bytes to `*out_bytes` (pointing into the AST; do not free).
@@ -1756,6 +1767,8 @@ nk_error_t nk_program_compile(
   program->lazy_dfa = NULL;
   program->first_byte_table_valid = false;
   memset(program->first_byte_table, 0, sizeof(program->first_byte_table));
+  program->is_pure_char_class_plus = false;
+  program->pure_cc_index = 0u;
 
   compiler_t compiler = {
     .enc = enc,
@@ -1882,6 +1895,30 @@ nk_error_t nk_program_compile(
 
   compute_goto_masks(program);
   compute_first_byte_table(program);
+
+  // Pure char-class loop bypass: detect [X]+, \w+, \d+ etc. with no captures.
+  // Requires states[] to be finalised (after compile), so runs after goto_masks.
+  if (root_node != NULL && !program->is_anchored && program->num_capture_groups == 0u) {
+    const nk_node_t* r = node_unwrap(root_node);
+    if (r != NULL && r->base.type == NK_NODE_TYPE_QUANTIFIER &&
+        r->quantifier.min >= 1u && node_is_char_class_like(r->quantifier.child)) {
+      for (size_t si = 0; si < program->states_len; si++) {
+        if (program->states[si].op == NK_VM_OP_CHAR_CLASS) {
+          uint32_t ci = program->states[si].char_class_index;
+          const nk_vm_char_class_t* cc = &program->char_classes[ci];
+          bool has_ascii = false;
+          for (uint32_t b = 0; b < 128u; b++) {
+            if (cc->ascii_lookup[b] != 0u) { has_ascii = true; break; }
+          }
+          if (has_ascii) {
+            program->is_pure_char_class_plus = true;
+            program->pure_cc_index = ci;
+          }
+          break;
+        }
+      }
+    }
+  }
 
   *out_program = program;
   return NK_SUCCESS;

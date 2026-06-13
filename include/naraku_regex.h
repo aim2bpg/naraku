@@ -177,6 +177,11 @@ typedef struct nk_program {
   // non-ASCII initial states, DOT initial states).
   bool    first_byte_table_valid;
   uint8_t first_byte_table[128]; // ASCII-only (bytes 0x00–0x7F)
+  // Pure char-class loop bypass: true when the pattern is [X]+ (or \w+, \d+ etc.)
+  // with min >= 1, no capture groups, and at least one ASCII member in the class.
+  // Enables a direct ascii_lookup scan that skips the NFA entirely.
+  bool     is_pure_char_class_plus;
+  uint32_t pure_cc_index;  // index into char_classes[]
 } nk_program_t;
 
 /** Bit 63 of a bitset mask signals that a MATCH state is reachable. */
