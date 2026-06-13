@@ -42,6 +42,7 @@ typedef enum {
   NK_VM_OP_CHECK_EPSILON,  // leave the loop if the body matched empty
   NK_VM_OP_BACK_REF,       // match a back reference to a capture group (`\1`, `\k<name>`)
   NK_VM_OP_LOOKAROUND,     // zero-width lookahead/lookbehind sub-pattern test
+  NK_VM_OP_POSSESSIVE,     // possessive quantifier — commit to greedy max, no backtrack
   NK_VM_OP_MATCH,          // accept
 } nk_vm_op_t;
 
@@ -78,6 +79,8 @@ typedef struct {
   uint32_t lookaround_prog_idx;
   bool lookaround_is_positive;
   bool lookaround_is_ahead;
+  // For `NK_VM_OP_POSSESSIVE`: index of the greedy sub-program to run.
+  uint32_t possessive_prog_idx;
 } nk_vm_state_t;
 
 /**

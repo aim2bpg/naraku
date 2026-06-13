@@ -277,10 +277,6 @@ class RegexpTest < Mtest::Test
     assert_compile_error('(?>a+)', 'atomic')
   end
 
-  def test_compile_error_possessive_quantifier
-    assert_compile_error('a*+', 'possessive')
-  end
-
   # ========================================================================
   # MatchData helpers
   # ========================================================================
@@ -705,5 +701,87 @@ class RegexpTest < Mtest::Test
     assert_equal '', md[0]
     assert_equal 2, md.byte_begin(0)
     assert_equal 2, md.byte_end(0)
+  end
+
+  # ========================================================================
+  # Possessive quantifiers (a*+, a++, a?+, a{m,n}+)
+  # ========================================================================
+
+  def test_possessive_star_match
+    md = match('a*+b', 'aaab')
+    assert_equal 'aaab', md[0]
+  end
+
+  def test_possessive_star_zero_match
+    md = match('a*+b', 'b')
+    assert_equal 'b', md[0]
+  end
+
+  def test_possessive_star_no_backtrack
+    # a*+ commits to "aaa", then a fails at pos=3 → no match
+    assert_nil match('a*+a', 'aaa')
+  end
+
+  def test_possessive_plus_match
+    md = match('a++b', 'aaab')
+    assert_equal 'aaab', md[0]
+  end
+
+  def test_possessive_plus_no_match_no_a
+    assert_nil match('a++', 'b')
+  end
+
+  def test_possessive_plus_no_backtrack
+    # a++ commits to "aaa", then a at pos=3 fails → no match
+    assert_nil match('a++a', 'aaa')
+  end
+
+  def test_possessive_question_with_char
+    md = match('a?+b', 'ab')
+    assert_equal 'ab', md[0]
+  end
+
+  def test_possessive_question_zero
+    md = match('a?+b', 'b')
+    assert_equal 'b', md[0]
+  end
+
+  def test_possessive_question_no_backtrack
+    # a?+ commits to "a", then a at pos=1 fails → no match
+    assert_nil match('a?+a', 'a')
+  end
+
+  def test_possessive_bounded_max
+    md = match('a{2,4}+', 'aaaaa')
+    assert_equal 'aaaa', md[0]
+  end
+
+  def test_possessive_bounded_min_fail
+    assert_nil match('a{2,4}+b', 'ab')
+  end
+
+  def test_possessive_char_class
+    md = match('[a-z]++', 'hello world')
+    assert_equal 'hello', md[0]
+  end
+
+  def test_possessive_dot
+    md = match('.++', 'abc')
+    assert_equal 'abc', md[0]
+  end
+
+  def test_possessive_group
+    md = match('(ab)++', 'ababc')
+    assert_equal 'abab', md[0]
+  end
+
+  def test_possessive_mid_string
+    md = match('\\d++', 'abc123def')
+    assert_equal '123', md[0]
+  end
+
+  def test_possessive_digit_no_backtrack
+    # \d++ commits to "123", then \d at end fails
+    assert_nil match('\\d++\\d', '123')
   end
 end

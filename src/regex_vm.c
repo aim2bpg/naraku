@@ -121,6 +121,26 @@ typedef struct {
   caps_t* caps;  // owned reference; NULL for mark items
 } work_item_t;
 
+// Forward struct declaration for possessive pending list (functions defined later).
+typedef struct {
+  size_t   target_pos;
+  uint32_t state_index;
+  size_t   keep_pos;
+  caps_t*  caps;
+} poss_pending_entry_t;
+
+typedef struct {
+  poss_pending_entry_t* items;
+  size_t len;
+  size_t cap;
+} poss_pending_t;
+
+// Forward declaration (function body is after br_deferred helpers).
+static nk_error_t poss_pending_push(
+  poss_pending_t* p, size_t target_pos,
+  uint32_t state_index, size_t keep_pos, caps_t* caps
+);
+
 typedef struct {
   const nk_program_t* program;
   size_t num_caps;  // num_capture_groups + 1
@@ -145,9 +165,13 @@ typedef struct {
   uint32_t curr_code;
   uint32_t next_code;
 
-  // Subject byte range, needed by the LOOKAROUND handler inside closure().
+  // Subject byte range, needed by the LOOKAROUND/POSSESSIVE handlers in closure().
   const uint8_t* subject_bytes;
   const uint8_t* subject_bytes_end;
+
+  // Possessive-quantifier pending list: entries injected by NK_VM_OP_POSSESSIVE
+  // in closure() that need to fire at a future advance_pos.
+  poss_pending_t poss_pending;
 
   // The best match recorded so far. Every newly recorded match comes from a
   // higher-priority thread than the previous one (lower-priority work is
@@ -533,6 +557,52 @@ static nk_error_t closure(vm_t* vm, uint32_t start_state, size_t keep_pos, caps_
           goto fail;
         }
         break;
+
+      case NK_VM_OP_POSSESSIVE:
+      {
+        const nk_program_t* inner = vm->program->sub_programs[state->possessive_prog_idx];
+        nk_region_t ir;
+        nk_error_t ie = nk_region_init(&ir, inner->num_capture_groups);
+        if (ie != NK_SUCCESS) {
+          caps_unref(item.caps);
+          err = ie;
+          goto fail;
+        }
+        nk_error_t se = nk_program_search(
+          inner, vm->subject_bytes, vm->subject_bytes_end, vm->closure_pos, &ir
+        );
+        bool poss_matched = (se == NK_SUCCESS && ir.caps[0] == vm->closure_pos);
+        size_t poss_end = poss_matched ? ir.caps[1] : 0;
+        if (se != NK_SUCCESS && se != NK_NO_MATCH) {
+          nk_region_free(&ir);
+          caps_unref(item.caps);
+          err = se;
+          goto fail;
+        }
+        nk_region_free(&ir);
+
+        if (!poss_matched) {
+          caps_unref(item.caps);
+          break;
+        }
+        if (poss_end == vm->closure_pos) {
+          // Zero-width match: epsilon transition (e.g., a*+ with no 'a' here).
+          err = push_state(vm, state->next, item.keep_pos, item.epsilon_bits, item.caps);
+          if (err != NK_SUCCESS) {
+            goto fail;
+          }
+        } else {
+          // Multi-byte advance: defer continuation to the main loop at poss_end.
+          err = poss_pending_push(
+            &vm->poss_pending, poss_end, state->next, item.keep_pos, item.caps
+          );
+          if (err != NK_SUCCESS) {
+            caps_unref(item.caps);
+            goto fail;
+          }
+        }
+        break;
+      }
 
       case NK_VM_OP_LOOKAROUND:
       {
@@ -1028,6 +1098,41 @@ static nk_error_t br_deferred_inject(br_deferred_t* d, size_t pos, thread_list_t
   return NK_SUCCESS;
 }
 
+// ============================================================================
+//
+// Possessive quantifier pending list:
+//
+// ============================================================================
+
+// An entry deferred to a future position by NK_VM_OP_POSSESSIVE in closure().
+// When advance_pos reaches target_pos, closure(state_index) is called to inject
+// the continuation into next_threads.
+static nk_error_t poss_pending_push(
+  poss_pending_t* p, size_t target_pos,
+  uint32_t state_index, size_t keep_pos, caps_t* caps
+) {
+  if (p->len == p->cap) {
+    size_t new_cap = p->cap == 0 ? 4 : p->cap * 2;
+    poss_pending_entry_t* new_items =
+      (poss_pending_entry_t*)realloc(p->items, new_cap * sizeof(poss_pending_entry_t));
+    if (new_items == NULL) {
+      return NK_ERR_MEMORY_ALLOCATION_FAILED;
+    }
+    p->items = new_items;
+    p->cap = new_cap;
+  }
+  poss_pending_entry_t e = {target_pos, state_index, keep_pos, caps};
+  p->items[p->len++] = e;
+  return NK_SUCCESS;
+}
+
+static void poss_pending_free(poss_pending_t* p) {
+  for (size_t i = 0; i < p->len; i++) {
+    caps_unref(p->items[i].caps);
+  }
+  free(p->items);
+}
+
 static nk_error_t search_impl(
   const nk_program_t* program,
   const uint8_t* subject_bytes,
@@ -1273,7 +1378,7 @@ static nk_error_t search_impl(
 
   // For anchored patterns (\A), no new start threads will be injected past
   // position 0, so we can exit as soon as the active thread list is empty.
-  while (curr_code != VM_NO_CHAR && (threads.len > 0 || deferred.len > 0 || !program->is_anchored) && !(vm.has_match && threads.len == 0 && deferred.len == 0)) {
+  while (curr_code != VM_NO_CHAR && (threads.len > 0 || deferred.len > 0 || vm.poss_pending.len > 0 || !program->is_anchored) && !(vm.has_match && threads.len == 0 && deferred.len == 0 && vm.poss_pending.len == 0)) {
     // Inject any deferred threads (from BACK_REF continuations) that are ready
     // at the current position. They are appended before the run-scan so that
     // the run-scan guard (`threads.len == 1`) is respected correctly.
@@ -1309,7 +1414,7 @@ static nk_error_t search_impl(
             cc_can_scan = (cc_next_op != NK_VM_OP_CODE && cc_next_op != NK_VM_OP_CHAR_CLASS &&
                            cc_next_op != NK_VM_OP_DOT && cc_next_op != NK_VM_OP_MATCH &&
                            cc_next_op != NK_VM_OP_CAP_BEGIN && cc_next_op != NK_VM_OP_CAP_END &&
-                           cc_next_op != NK_VM_OP_BACK_REF);
+                           cc_next_op != NK_VM_OP_BACK_REF && cc_next_op != NK_VM_OP_POSSESSIVE);
           }
           if (cc_can_scan) {
             scan = pos + 1;
@@ -1335,7 +1440,7 @@ static nk_error_t search_impl(
           if (next_op != NK_VM_OP_CODE && next_op != NK_VM_OP_CHAR_CLASS &&
               next_op != NK_VM_OP_DOT && next_op != NK_VM_OP_MATCH &&
               next_op != NK_VM_OP_CAP_BEGIN && next_op != NK_VM_OP_CAP_END &&
-              next_op != NK_VM_OP_BACK_REF) {
+              next_op != NK_VM_OP_BACK_REF && next_op != NK_VM_OP_POSSESSIVE) {
             scan = pos + 1;
             if ((scan_state->fold_flags & NK_FOLD_ASCII_ONLY) != 0 &&
                 scan_state->code < 0x80u) {
@@ -1526,6 +1631,31 @@ static nk_error_t search_impl(
     }
     threads.len = 0;
 
+    // Process possessive pending entries that have reached advance_pos.
+    // Entries are processed in insertion order (highest priority first).
+    // vm.closure_pos and the character window are already set to advance_pos.
+    for (size_t pi = 0; pi < vm.poss_pending.len; ) {
+      poss_pending_entry_t* pe = &vm.poss_pending.items[pi];
+      if (pe->target_pos == advance_pos) {
+        caps_t* pc = pe->caps;
+        pe->caps = NULL;
+        uint32_t psi = pe->state_index;
+        size_t pkp = pe->keep_pos;
+        vm.poss_pending.items[pi] = vm.poss_pending.items[--vm.poss_pending.len];
+        // Skip lower-priority entries: an earlier-starting match already won.
+        if (vm.has_match && vm.match_keep_pos < pkp) {
+          caps_unref(pc);
+        } else {
+          err = closure(&vm, psi, pkp, pc, &next_threads);
+          if (err != NK_SUCCESS) {
+            goto done;
+          }
+        }
+      } else {
+        pi++;
+      }
+    }
+
     // Non-anchored search: while no match has been found, also try starting
     // at the new position, with the lowest priority. Skipped for \A-anchored
     // patterns because the start assertion will never pass after position 0.
@@ -1568,6 +1698,7 @@ done:
   thread_list_free(&threads);
   thread_list_free(&next_threads);
   br_deferred_free(&deferred);
+  poss_pending_free(&vm.poss_pending);
   drain_stack(&vm);
   free(vm.stack);
   caps_unref(vm.match_caps);

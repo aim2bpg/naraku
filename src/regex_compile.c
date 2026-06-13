@@ -372,6 +372,7 @@ static nk_error_t emit(compiler_t* c, nk_vm_op_t op, uint32_t* out_index) {
   state->lookaround_prog_idx = 0;
   state->lookaround_is_positive = false;
   state->lookaround_is_ahead = false;
+  state->possessive_prog_idx = 0;
 
   switch (op) {
     case NK_VM_OP_CODE:
@@ -1405,7 +1406,43 @@ compile_quantifier(compiler_t* c, const nk_node_t* node, uint32_t* out_initial, 
   const nk_quantifier_node_t* quantifier = &node->quantifier;
 
   if (quantifier->type == NK_QUANTIFIER_TYPE_POSSESSIVE) {
-    return NK_ERR_UNSUPPORTED_POSSESSIVE_QUANTIFIER;
+    // Compile the greedy version of this quantifier as a sub-program, then emit
+    // a single NK_VM_OP_POSSESSIVE state that runs it at match time and commits
+    // to the maximum match without offering any backtrack alternative.
+    nk_node_t greedy_node = *node;
+    greedy_node.quantifier.type = NK_QUANTIFIER_TYPE_GREEDY;
+    nk_program_t* inner_prog = NULL;
+    size_t inner_err_off = 0;
+    size_t inner_err_len = 0;
+    nk_error_t inner_err = nk_program_compile(
+      c->enc, &greedy_node, c->num_capture_groups,
+      c->capture_entries, c->capture_entries_len,
+      &inner_prog, &inner_err_off, &inner_err_len
+    );
+    if (inner_err != NK_SUCCESS) {
+      return inner_err;
+    }
+    size_t new_len = c->program->sub_programs_len + 1;
+    nk_program_t** new_arr = (nk_program_t**)realloc(
+      c->program->sub_programs, new_len * sizeof(nk_program_t*)
+    );
+    if (new_arr == NULL) {
+      nk_program_free(inner_prog);
+      return NK_ERR_MEMORY_ALLOCATION_FAILED;
+    }
+    new_arr[c->program->sub_programs_len] = inner_prog;
+    c->program->sub_programs = new_arr;
+    uint32_t prog_idx = (uint32_t)c->program->sub_programs_len;
+    c->program->sub_programs_len = new_len;
+
+    uint32_t poss_idx;
+    nk_error_t pe = emit(c, NK_VM_OP_POSSESSIVE, &poss_idx);
+    if (pe != NK_SUCCESS) {
+      return pe;
+    }
+    c->program->states[poss_idx].possessive_prog_idx = prog_idx;
+    *out_initial = poss_idx;
+    return hole_list_push(out_holes, poss_idx, false);
   }
   bool is_greedy = quantifier->type == NK_QUANTIFIER_TYPE_GREEDY;
 
@@ -1995,7 +2032,7 @@ static void compute_goto_masks(nk_program_t* program) {
   for (uint32_t i = 0; i < n; i++) {
     nk_vm_op_t op = program->states[i].op;
     if (op == NK_VM_OP_ASSERTION || op == NK_VM_OP_KEEP || op == NK_VM_OP_BACK_REF ||
-        op == NK_VM_OP_LOOKAROUND) {
+        op == NK_VM_OP_LOOKAROUND || op == NK_VM_OP_POSSESSIVE) {
       return;
     }
   }
