@@ -784,13 +784,151 @@ static nk_error_t compile_cc_state(compiler_t* c, cc_set_t* cc, uint32_t* out_in
   return hole_list_push(out_holes, state_index, false);
 }
 
+// Builds an alternation NFA matching any code point (or short sequence) whose
+// case fold equals `folded_codes[0..folded_len-1]`.
+//
+// The identity (the folded code itself) is always the first alternative, and
+// nk_enc_expand_case_unfold() supplies any additional code points. Continuations
+// are compiled once per unique consumed count and shared across alternatives,
+// keeping NFA size linear in `folded_len` rather than exponential.
+//
+// Example: folded_codes=[s,s] (from pattern "ß" with NK_FOLD_FULL)
+//   identity {s,len=1} + expand → {S,len=1}, {ß,len=2}
+//   Compiled as: SPLIT(CODE(s)→cont[s] | SPLIT(CODE(S)→cont[s] | CODE(ß)))
+//   where cont[s] = SPLIT(CODE(s) | CODE(S))
+static nk_error_t compile_full_fold_seq(
+  compiler_t* c,
+  const nk_encoding_t* enc,
+  nk_fold_flag_t flags,
+  const uint32_t* folded_codes,
+  size_t folded_len,
+  uint32_t* out_initial,
+  hole_list_t* out_holes
+) {
+  if (folded_len == 0) {
+    return compile_epsilon(c, out_initial, out_holes);
+  }
+
+  // Build alternatives: identity first, then whatever expand_case_unfold finds.
+  nk_unfold_item_t items[NK_ENC_MAX_UNFOLD_ITEMS + 1];
+  items[0].unfolded_code = folded_codes[0];
+  items[0].folded_codes_len = 1;
+  size_t prefix_len = folded_len < NK_ENC_MAX_FOLDED_CODES ? folded_len : NK_ENC_MAX_FOLDED_CODES;
+  size_t items_count = 1 + nk_enc_expand_case_unfold(enc, flags, folded_codes, prefix_len, items + 1);
+
+  // Compile one continuation per unique consumed count and store its entry state.
+  // Indexed by consumed count (1..NK_ENC_MAX_FOLDED_CODES); index 0 is unused.
+  uint32_t cont_initial_by_n[NK_ENC_MAX_FOLDED_CODES + 1];
+  bool     cont_done_by_n[NK_ENC_MAX_FOLDED_CODES + 1];
+  for (size_t j = 0; j <= NK_ENC_MAX_FOLDED_CODES; j++) {
+    cont_initial_by_n[j] = NK_VM_STATE_NONE;
+    cont_done_by_n[j] = false;
+  }
+  for (size_t i = 0; i < items_count; i++) {
+    size_t consumed = items[i].folded_codes_len;
+    if (!cont_done_by_n[consumed]) {
+      hole_list_t cont_holes;
+      hole_list_init(&cont_holes);
+      nk_error_t err = compile_full_fold_seq(
+        c, enc, flags,
+        folded_codes + consumed, folded_len - consumed,
+        &cont_initial_by_n[consumed], &cont_holes
+      );
+      if (err != NK_SUCCESS) {
+        hole_list_free(&cont_holes);
+        return err;
+      }
+      cont_done_by_n[consumed] = true;
+      err = hole_list_move_append(out_holes, &cont_holes);
+      hole_list_free(&cont_holes);
+      if (err != NK_SUCCESS) {
+        return err;
+      }
+    }
+  }
+
+  // Emit a SPLIT chain + CODE state for each alternative.
+  // CODE.next is filled from the pre-compiled continuation table above.
+  uint32_t initial = NK_VM_STATE_NONE;
+  uint32_t prev_split_idx = NK_VM_STATE_NONE;
+
+  for (size_t i = 0; i < items_count; i++) {
+    bool is_last = (i == items_count - 1);
+    uint32_t split_idx = NK_VM_STATE_NONE;
+
+    if (!is_last) {
+      nk_error_t err = emit(c, NK_VM_OP_SPLIT, &split_idx);
+      if (err != NK_SUCCESS) {
+        return err;
+      }
+      if (initial == NK_VM_STATE_NONE) {
+        initial = split_idx;
+      } else {
+        c->program->states[prev_split_idx].split_next = split_idx;
+      }
+      prev_split_idx = split_idx;
+    }
+
+    uint32_t code_idx;
+    nk_error_t err = emit(c, NK_VM_OP_CODE, &code_idx);
+    if (err != NK_SUCCESS) {
+      return err;
+    }
+    c->program->states[code_idx].code = items[i].unfolded_code;
+    c->program->states[code_idx].next = cont_initial_by_n[items[i].folded_codes_len];
+
+    if (split_idx != NK_VM_STATE_NONE) {
+      c->program->states[split_idx].next = code_idx;
+    } else if (prev_split_idx != NK_VM_STATE_NONE) {
+      c->program->states[prev_split_idx].split_next = code_idx;
+    } else {
+      initial = code_idx;
+    }
+  }
+
+  *out_initial = initial;
+  return NK_SUCCESS;
+}
+
 static nk_error_t compile_literal(compiler_t* c, const nk_node_t* node, uint32_t* out_initial, hole_list_t* out_holes) {
   const nk_literal_node_t* literal = &node->literal;
 
+  // Full fold and Turkish/Azeri: a single pattern code point may fold to
+  // multiple code points (e.g. ß→ss), so we expand the literal into an
+  // alternation NFA instead of emitting plain CODE states with is_ignore_case.
   if (literal->is_ignore_case &&
       ((literal->fold_flags & NK_FOLD_FULL) != 0 ||
        (literal->fold_flags & NK_FOLD_TURKISH_AZERI) != 0)) {
-    return NK_ERR_UNSUPPORTED_IGNORE_CASE;
+    const uint8_t* bytes = literal->buf.bytes;
+    const uint8_t* bytes_end = literal->buf.bytes_end;
+    if (bytes == bytes_end) {
+      return compile_epsilon(c, out_initial, out_holes);
+    }
+    size_t byte_count = (size_t)(bytes_end - bytes);
+    uint32_t* folded_codes = (uint32_t*)malloc(byte_count * NK_ENC_MAX_FOLDED_CODES * sizeof(uint32_t));
+    if (folded_codes == NULL) {
+      return NK_ERR_MEMORY_ALLOCATION_FAILED;
+    }
+    size_t folded_len = 0;
+    while (bytes < bytes_end) {
+      int8_t width = nk_enc_scan_mbc_width(c->enc, bytes, bytes_end);
+      if (width <= 0) {
+        free(folded_codes);
+        return NK_ERR_INTERNAL_ERROR;
+      }
+      uint32_t code = nk_enc_decode_mbc(c->enc, bytes, bytes_end);
+      uint32_t fold_buf[NK_ENC_MAX_FOLDED_CODES];
+      size_t fold_n = nk_enc_get_case_fold(c->enc, literal->fold_flags, code, fold_buf);
+      for (size_t j = 0; j < fold_n; j++) {
+        folded_codes[folded_len++] = fold_buf[j];
+      }
+      bytes += (size_t)width;
+    }
+    nk_error_t err = compile_full_fold_seq(
+      c, c->enc, literal->fold_flags, folded_codes, folded_len, out_initial, out_holes
+    );
+    free(folded_codes);
+    return err;
   }
 
   const uint8_t* bytes = literal->buf.bytes;
@@ -837,12 +975,6 @@ static nk_error_t
 compile_char_class(compiler_t* c, const nk_node_t* node, uint32_t* out_initial, hole_list_t* out_holes) {
   const nk_char_class_node_t* char_class = &node->char_class;
 
-  if (char_class->is_ignore_case &&
-      ((char_class->fold_flags & NK_FOLD_FULL) != 0 ||
-       (char_class->fold_flags & NK_FOLD_TURKISH_AZERI) != 0)) {
-    return NK_ERR_UNSUPPORTED_IGNORE_CASE;
-  }
-
   cc_set_t cc;
   nk_error_t err = cc_from_unions(c, char_class->unions, char_class->unions_len, char_class->is_positive, &cc);
   if (err != NK_SUCCESS) {
@@ -867,12 +999,6 @@ compile_char_class(compiler_t* c, const nk_node_t* node, uint32_t* out_initial, 
 static nk_error_t
 compile_char_type(compiler_t* c, const nk_node_t* node, uint32_t* out_initial, hole_list_t* out_holes) {
   const nk_char_type_node_t* char_type = &node->char_type;
-
-  if (char_type->is_ignore_case &&
-      ((char_type->fold_flags & NK_FOLD_FULL) != 0 ||
-       (char_type->fold_flags & NK_FOLD_TURKISH_AZERI) != 0)) {
-    return NK_ERR_UNSUPPORTED_IGNORE_CASE;
-  }
 
   cc_set_t cc;
   nk_error_t err =
@@ -899,12 +1025,6 @@ compile_char_type(compiler_t* c, const nk_node_t* node, uint32_t* out_initial, h
 static nk_error_t
 compile_char_prop(compiler_t* c, const nk_node_t* node, uint32_t* out_initial, hole_list_t* out_holes) {
   const nk_char_prop_node_t* char_prop = &node->char_prop;
-
-  if (char_prop->is_ignore_case &&
-      ((char_prop->fold_flags & NK_FOLD_FULL) != 0 ||
-       (char_prop->fold_flags & NK_FOLD_TURKISH_AZERI) != 0)) {
-    return NK_ERR_UNSUPPORTED_IGNORE_CASE;
-  }
 
   cc_set_t cc;
   nk_error_t err = cc_from_cprop(c, char_prop->cprop, false, char_prop->is_positive, &cc);

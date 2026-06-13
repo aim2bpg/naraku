@@ -441,9 +441,75 @@ class RegexpTest < Mtest::Test
     assert_nil match_a('s[s]', "\xC3\x9F")
   end
 
-  # full fold (ß→ss etc.) is not yet supported
-  def test_full_fold_raises_compile_error
-    assert_compile_error('hello', 'not supported', is_ignore_case: true, fold_flags: [:full])
+  # ========================================================================
+  # Full (1-to-many Unicode) case folding
+  # ========================================================================
+  # ß (U+00DF) folds to ss under NK_FOLD_FULL.  Pattern ß should match ß
+  # itself plus all uppercase/lowercase variants of the two-char sequence ss.
+
+  def match_f(pattern, subject)
+    match(pattern, subject, is_ignore_case: true, fold_flags: [:full])
+  end
+
+  def test_full_fold_eszett_matches_itself
+    assert_equal "\xC3\x9F", match_f("\xC3\x9F", "x\xC3\x9Fy")[0]
+  end
+
+  def test_full_fold_eszett_matches_ss
+    assert_equal 'ss', match_f("\xC3\x9F", 'xssy')[0]
+  end
+
+  def test_full_fold_eszett_matches_upper_lower_s
+    assert_equal 'Ss', match_f("\xC3\x9F", 'xSsy')[0]
+  end
+
+  def test_full_fold_eszett_matches_lower_upper_s
+    assert_equal 'sS', match_f("\xC3\x9F", 'xsSy')[0]
+  end
+
+  def test_full_fold_eszett_matches_upper_ss
+    assert_equal 'SS', match_f("\xC3\x9F", 'xSSy')[0]
+  end
+
+  # Pattern ss should match ß and all case variants
+  def test_full_fold_ss_matches_eszett
+    assert_equal "\xC3\x9F", match_f('ss', "x\xC3\x9Fy")[0]
+  end
+
+  def test_full_fold_ss_matches_upper_ss
+    assert_equal 'SS', match_f('ss', 'xSSy')[0]
+  end
+
+  # ASCII letters still fold under full fold
+  def test_full_fold_ascii_letters
+    assert_equal 'HELLO', match_f('hello', 'HELLO')[0]
+  end
+
+  # Mixed literal: pattern i + ß should match iss, ISS, etc.
+  def test_full_fold_mixed_literal_lower
+    assert_equal "i\xC3\x9F", match_f("i\xC3\x9F", "xi\xC3\x9Fy")[0]
+  end
+
+  def test_full_fold_mixed_literal_ss
+    assert_equal 'iss', match_f("i\xC3\x9F", 'xissy')[0]
+  end
+
+  def test_full_fold_mixed_literal_upper
+    assert_equal 'ISS', match_f("i\xC3\x9F", 'xISSy')[0]
+  end
+
+  # Char class with full fold: 1:1 fold pairs are still expanded
+  def test_full_fold_char_class_simple_pair
+    assert_equal "\xC3\x84", match_f("[\xC3\xA4]", "x\xC3\x84y")[0]
+  end
+
+  # ß does not match a single 's' (fold of ß is ss, not s)
+  def test_full_fold_eszett_no_match_single_s
+    assert_nil match_f("\xC3\x9F", 'xsy')
+  end
+
+  def test_full_fold_no_match
+    assert_nil match_f("\xC3\x9F", 'xyz')
   end
 
   # ========================================================================

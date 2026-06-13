@@ -125,8 +125,8 @@ flowchart TD
         enc["エンコーディング層<br/>encoding/*.c 5 種 + encoding_ascii/unicode.c<br/>UTF-8 / Shift_JIS / ISO-8859-1 / US-ASCII / ASCII-8BIT"]
         parser["パーサー/レキサー<br/>parse.c 4,338 行(Onigmo 互換構文)"]
         ast["AST 構築・後処理<br/>node.c 385 行 / postprocess.c 832 行"]
-        comp["VM コンパイラ<br/>regex_compile.c 1,389 行"]
-        vm["Pike VM 実行器<br/>regex_vm.c 702 行"]
+        comp["VM コンパイラ<br/>regex_compile.c 2,234 行"]
+        vm["Pike VM 実行器<br/>regex_vm.c 1,142 行"]
     end
 
     subgraph mrb["mruby バインディング層: mrbgems/mruby-naraku/"]
@@ -228,8 +228,8 @@ flowchart TD
 | 変更 | ファイル | 内容 |
 |---|---|---|
 | ✨ 公開 API ヘッダ | `include/naraku_regex.h` | `nk_program_compile` / `nk_program_search` ほか公開型定義 |
-| ✨ VM コンパイラ | `src/regex_compile.c` | AST → `nk_program_t` バイトコードコンパイラ(1,389 行) |
-| ✨ Pike VM 実行器 | `src/regex_vm.c` | Pike VM マッチング実行器(702 行) |
+| ✨ VM コンパイラ | `src/regex_compile.c` | AST → `nk_program_t` バイトコードコンパイラ(2,234 行) |
+| ✨ Pike VM 実行器 | `src/regex_vm.c` | Pike VM マッチング実行器(1,142 行) |
 | ✨ コンパイラ用エラーコード | `include/naraku_error.h`, `src/error.c` | `-600` 番台 `NK_ERR_UNSUPPORTED_*` ほか 10 種 |
 | ✨ mruby マッチ API | `mrbgems/mruby-naraku/src/mrb_naraku_program.c` | `Naraku::Program` C ブリッジ |
 | ✨ mruby Ruby ラッパー | `mrbgems/mruby-naraku/mrblib/naraku/regexp.rb` | `Naraku::Regexp` / `MatchData` / `CompileError` |
@@ -260,8 +260,8 @@ flowchart TD
 | Unicode コード生成 | `tools/gen_*.rb` | 約 400 行 | (生成物をテストで担保) | 🟩 既存 |
 | Ruby プロトタイプ(VM の原本) | `ruby-prototype/lib/naraku_ruby/` | 2,513 行 | ✅ 932 行 | 🟩 既存 |
 | mruby バインディング(Parser/Encoding/Node) | `mrbgems/mruby-naraku/` | C 1,826 行 + Ruby 284 行 | ✅(test/ 経由) | 🟩 既存 |
-| **VM コンパイラ** | `src/regex_compile.c` | 1,389 行 | ✅ `test/regexp_test.rb` | ✨ **追加** |
-| **Pike VM 実行器** | `src/regex_vm.c` | 702 行 | ✅ `test/regexp_test.rb` | ✨ **追加** |
+| **VM コンパイラ** | `src/regex_compile.c` | 2,234 行 | ✅ `test/regexp_test.rb` | ✨ **追加** |
+| **Pike VM 実行器** | `src/regex_vm.c` | 1,142 行 | ✅ `test/regexp_test.rb` | ✨ **追加** |
 | コンパイラ用エラーコード | `naraku_error.h`, `error.c` | -600〜-610 追加 | ✅ `test/regexp_test.rb` | ✨ **追加** |
 | 公開 API ヘッダ | `include/naraku_regex.h` | 213 行 | — | ✨ **追加** |
 | mruby マッチ API | `mrb_naraku_program.c`, `regexp.rb` | C 143 行 + Ruby 129 行 | ✅ 46 テスト | ✨ **追加** |
@@ -292,7 +292,7 @@ Naraku(奈落)は Oniguruma(鬼車)→ Onigmo(鬼雲)の系譜に連なる
 | アンカー `^ $ \A \z \Z \G \b \B` | ✅ | ✅ | ✅ |
 | `\K`(マッチ開始のリセット) | ✅ | ✅ | ✅ |
 | possessive 量指定子 `a*+` | ✅ | ❌ 明示エラー | ⭕ 予定 |
-| `/i`(大文字小文字無視) | ✅ | ❌ 明示エラー | ⭕ 予定 |
+| `/i`(ASCII-only / Simple / Full Unicode fold) | ✅ | ✅ | ✅ |
 | 後方参照 `\1` `\k<name>` | ✅ | ❌ 明示エラー | ⭕ 予定 |
 | 先読み・後読み `(?=) (?!) (?<=) (?<!)` | ✅ | ❌ 明示エラー | ⭕ 予定 |
 | アトミックグループ `(?>)`・不在 `(?~)`・条件分岐 | ✅ | ❌ 明示エラー | ⭕ 検討 |
@@ -307,6 +307,8 @@ Naraku(奈落)は Oniguruma(鬼車)→ Onigmo(鬼雲)の系譜に連なる
 
 ### 5.3 実行方式の理論比較と実測
 
+**理論比較:**
+
 | 観点 | Onigmo(バックトラッキング) | Naraku(Pike VM) |
 |---|---|---|
 | 時間計算量 | 平均は高速、**最悪 O(2ⁿ)** | **常に O(n × m)**(n=文字列長, m=プログラムサイズ) |
@@ -317,44 +319,40 @@ Naraku(奈落)は Oniguruma(鬼車)→ Onigmo(鬼雲)の系譜に連なる
 
 **実測ベンチマーク** (`ruby-prototype/benchmark/bench_compare.rb`):
 
-測定環境: CRuby 4.0.5 / mruby 4.0.0、Dev Container(x86_64)。
-ips = 全入力バッチを 1 周する回数/秒(高いほど速い)。最適化サイクル A〜K 適用後。
+> 測定環境: CRuby 4.0.5 / mruby 4.0.0、Dev Container (x86_64)。
+> ips = 全入力バッチを 1 周する回数/秒(高いほど速い)。
+> Naraku Pike VM は最適化サイクル A〜M 適用後の値。
 
-**plain (JIT なし)**:
+**JIT なし:**
 
-| パターン | Onigmo(C) | NarakuRuby<br/>LazyDFA | Naraku Pike VM<br/>(mruby) | VM/Ong |
-|---|---|---|---|---|
-| literal: `Watson` | 3,735 | 280 | 2,540 | 0.68x |
-| alternation: `foo\|bar\|baz` | 3,727 | 541 | 2,300 | 0.62x |
-| repetition: `a+b` | 1,721 | 32 | 1,030 | 0.60x |
-| ambiguous: `(a\|a)+b` | 719 | 29 | 968 | **1.35x** |
-| char_class: `[a-zA-Z0-9]+` | 3,901 | 1,003 | 3,200 | 0.82x |
-| bounded: `\d{4}-\d{2}-\d{2}` | 3,549 | 249 | 2,410 | 0.68x |
-| pathological: `(?:a?){30}a{30}` | 808 | 67 | 10 | 0.01x |
-| unicode: `ジョバンニ\|カムパネルラ` | 3,657 | 133 | 2,645 | 0.72x |
+| パターン | Onigmo | NarakuRuby LazyDFA | Naraku Pike VM | Naraku/Onigmo |
+|---|---:|---:|---:|---:|
+| `Watson` (literal) | 3,735 | 280 | 2,540 | 0.68x |
+| `foo\|bar\|baz` (alternation) | 3,727 | 541 | 2,300 | 0.62x |
+| `a+b` (repetition) | 1,721 | 32 | 1,030 | 0.60x |
+| `(a\|a)+b` (ambiguous) | 719 | 29 | 968 | **1.35x** ↑ |
+| `[a-zA-Z0-9]+` (char_class) | 3,901 | 1,003 | 3,500 | **0.90x** |
+| `\d{4}-\d{2}-\d{2}` (bounded) | 3,549 | 249 | 2,650 | 0.75x |
+| `(?:a?){30}a{30}` (pathological) | 808 | 67 | 10 | 0.01x |
+| `ジョバンニ\|カムパネルラ` (unicode) | 3,657 | 133 | 2,650 | 0.72x |
 
-**YJIT 有効 (`ruby --yjit`)**:
+**YJIT 有効 (`ruby --yjit`):**
 
-| パターン | Onigmo(C)+YJIT | NarakuRuby<br/>LazyDFA+YJIT | YJIT 倍率<br/>(LazyDFA) | VM/Ong+YJIT |
-|---|---|---|---|---|
-| literal: `Watson` | 4,766 | 566 | **2.02x** | 0.47x |
-| alternation: `foo\|bar\|baz` | 4,687 | 1,123 | **2.08x** | 0.46x |
-| repetition: `a+b` | 1,806 | 63 | **1.97x** | 0.57x |
-| ambiguous: `(a\|a)+b` | 686 | 63 | **2.17x** | **1.40x** |
-| char_class: `[a-zA-Z0-9]+` | 4,823 | 2,312 | **2.30x** | 0.66x |
-| bounded: `\d{4}-\d{2}-\d{2}` | 4,136 | 523 | **2.10x** | 0.50x |
-| pathological: `(?:a?){30}a{30}` | 846 | 109 | 1.63x | 0.01x |
-| unicode: `ジョバンニ\|カムパネルラ` | 4,574 | 247 | **1.86x** | 0.42x |
+| パターン | Onigmo+YJIT | NarakuRuby LazyDFA+YJIT | LazyDFA YJIT 倍率 | Naraku VM/Onigmo+YJIT |
+|---|---:|---:|---:|---:|
+| `Watson` (literal) | 4,766 | 566 | **2.0x** | 0.47x |
+| `foo\|bar\|baz` (alternation) | 4,687 | 1,123 | **2.1x** | 0.46x |
+| `a+b` (repetition) | 1,806 | 63 | **2.0x** | 0.57x |
+| `(a\|a)+b` (ambiguous) | 686 | 63 | **2.2x** | **1.40x** ↑ |
+| `[a-zA-Z0-9]+` (char_class) | 4,823 | 2,312 | **2.3x** | 0.66x |
+| `\d{4}-\d{2}-\d{2}` (bounded) | 4,136 | 523 | **2.1x** | 0.50x |
+| `(?:a?){30}a{30}` (pathological) | 846 | 109 | 1.6x | 0.01x |
+| `ジョバンニ\|カムパネルラ` (unicode) | 4,574 | 247 | **1.9x** | 0.42x |
 
-読み方:
-- **Pike VM(mruby) は JIT なしで Onigmo+YJIT を凌駕** — `ambiguous` で **1.40x**。
-- **LazyDFA(Ruby) は YJIT で約 2 倍** になる(1.63x〜2.30x)。P6a の設計意図通り。
-- **`ambiguous: (a|a)+b`** は Lazy DFA + キャッシュ拡大(G-3)で複雑な NFA 遷移が O(1)に。
-  Onigmo はバックトラッキングで指数的に増える遷移を処理するため差が開く。
-- **`repetition: a+b`** は G-2(必須バイト先読み)により non-match 入力が early-exit。
-- **NarakuRuby LazyDFA(CRuby)** は assertion-free パターン全般に適用(Cycle F-1)。
-- **pathological ケース(`(?:a?){30}a{30}`)**: 64 状態超のため bitset/Lazy DFA 最適化は未適用。
-  **両方とも O(n) で完走**している点が重要。ReDoS 耐性は確認済み。
+**読み方:**
+- `ambiguous: (a|a)+b` — Pike VM が **JIT なしで Onigmo+YJIT を 1.40x 超え**。Lazy DFA + キャッシュ(G-3)でバックトラッキングの指数的な遷移数を O(1) に圧縮できるため。
+- LazyDFA(Ruby) は YJIT で **約 2×** に加速(P6a の設計意図)。C 実装の Pike VM は JIT の恩恵を受けないが、YJIT 無効の Onigmo も超えられるパターンがある。
+- `pathological` — 64 状態超のため bitset 最適化は未適用。それでも **O(n) で完走**。ReDoS 耐性は確認済み。
 
 ---
 
@@ -536,6 +534,72 @@ flowchart LR
 `nk_enc_decode_mbc` でデコードし、コード点ごとの `CODE` 命令列にする。
 コンパイル後のプログラムは AST・パターン文字列から独立する(§3.3)。
 
+#### ケースフォールディング(`/i` フラグ)
+
+`/i` フラグ付きコンパイルは、fold の種類ごとに異なる戦略を採る。
+
+| フラグ | 種類 | 戦略 |
+|--------|------|------|
+| `NK_FOLD_ASCII_ONLY` | A-Z ↔ a-z のみ | **実行時 fold**: `CODE` 状態に `is_ignore_case` を付与し、VM が `tolower()` 相当で両辺を比較 |
+| `NK_FOLD_DEFAULT` (Simple) | 1対1 Unicode fold(ä↔Ä 等) | **実行時 fold**: 同上。`nk_enc_get_case_fold()` で両辺を fold して比較 |
+| `NK_FOLD_FULL` | 1対多 Unicode fold(ß→ss 等) | **コンパイル時展開**: `compile_full_fold_seq()` で交替形 NFA に展開 |
+| `NK_FOLD_TURKISH_AZERI` | トルコ語/アゼルバイジャン語 fold | **コンパイル時展開**: `compile_full_fold_seq()` で展開(I↔ı 等) |
+
+**ASCII-only / Simple fold のリテラル**: `CODE` 状態に `is_ignore_case = true` と `fold_flags` を付与する。VM の `state_matches_code()` が実行時に fold して比較する。
+
+**文字クラスのケースフォールディング**: fold 種別によらずコンパイル時に `cc_set_t` を展開する。
+
+- `NK_FOLD_ASCII_ONLY`: `cc_ascii_fold_expand()` — A-Z ↔ a-z の対を `cc_set_t` に追加
+- それ以外: `cc_simple_fold_expand()` — `nk_enc_iterate_case_fold()` で全ペアをスキャン
+
+`cc_simple_fold_expand()` のコールバックは `fold_len != 1` をスキップするため、ß のような 1対多 fold は文字クラスで自動無視される(文字クラスは常に 1 文字にマッチするため、意味的にも正しい)。
+
+**Full fold のリテラル展開アルゴリズム(`compile_full_fold_seq`)**:
+
+```
+1. パターン literal を get_case_fold() で正規化 → folded_codes[]
+   例: "ß" → [s, s]   "iß" → [i, s, s]
+
+2. folded_codes[] を再帰的に処理:
+   各位置 p で…
+     a. identity = folded_codes[p] そのもの (len=1)
+     b. expand_case_unfold(folded_codes[p..], FULL) で追加の code point を取得
+        例: [s, s] → {S(len=1), ß(len=2)} を返す
+     c. identity + expand 結果 = 交替形リスト
+        例: [s, s] → {s(len=1), S(len=1), ß(len=2)}
+
+     ─── 指数爆発防止 ───
+     d. 同じ len を持つ交替形は継続を 1 回だけコンパイルして共有
+        (len=1 の s/S は同じ cont[p+1] を参照 → 線形状態数)
+     ─────────────────
+
+     e. SPLIT チェーン + CODE ステートとして emit
+        CODE.next = 共有された継続の initial state
+
+3. 生成された NFA は通常の CODE ステート(is_ignore_case=false)なので VM 無改修
+```
+
+```mermaid
+flowchart LR
+    subgraph "folded=[s,s]"
+        SP0{SPLIT} -->|next| Cs["CODE(s)"]
+        SP0 -->|split_next| SP1{SPLIT}
+        SP1 -->|next| CS["CODE(S)"]
+        SP1 -->|split_next| CB["CODE(ß)"]
+    end
+    subgraph "cont[s]"
+        SP2{SPLIT} -->|next| Cs2["CODE(s)"]
+        SP2 -->|split_next| CS2["CODE(S)"]
+    end
+    Cs --> SP2
+    CS --> SP2
+    CB --> done["ε (hole)"]
+    Cs2 --> hole["ε (hole)"]
+    CS2 --> hole
+```
+
+(共有された `cont[s]` を s と S の両 CODE が参照することで状態数が O(folded\_len) になる。)
+
 #### エラー方針
 
 - 未対応機能はノード種別ごとに `NK_ERR_UNSUPPORTED_*`(-600 番台)を返す
@@ -692,7 +756,6 @@ re =~ "xabcbd"       # => 1  (マッチ開始バイトオフセット)
 
 | 機能 | エラー |
 |---|---|
-| `/i`(literal/char_class/char_type/char_prop の `is_ignore_case`) | `NK_ERR_UNSUPPORTED_IGNORE_CASE` |
 | 後方参照 `\1` `\k<name>` | `NK_ERR_UNSUPPORTED_BACK_REF` |
 | 部分式呼び出し `\g<...>` | `NK_ERR_UNSUPPORTED_SUBEXP_CALL` |
 | 先読み・後読み `(?=) (?!) (?<=) (?<!)` | `NK_ERR_UNSUPPORTED_LOOKAROUND` |
@@ -707,122 +770,114 @@ re =~ "xabcbd"       # => 1  (マッチ開始バイトオフセット)
 
 ## 10. パフォーマンス改善ロードマップ
 
-現在の Pike VM は正確さと安全性(ReDoS 耐性)を優先した素直な実装である。
-以下の施策を段階的に追加することで Onigmo に近づける。
+### 10.1 施策の全体像
 
-### 10.1 施策一覧
+Pike VM は正確さと ReDoS 耐性を優先した素直な実装をベースに、
+3 つのアプローチで Onigmo に近づける。
 
-| # | 施策 | 対象 | 実装先 | JIT 関係 | 状態 |
-|---|---|---|---|---|---|
-| P1 | `match?` no-capture モード + `\A` アンカースキップ | `match?` / `=~` 限定の caps 確保ゼロ化 | C | 無関係 | ✅ 完了 |
-| P2 | リテラルプレフィックス高速スキップ | 先頭が固定文字列なら `memmem` でジャンプ | C | 無関係 | ✅ 完了 |
-| P3 | ASCII ラン スキャン(CHAR\_CLASS) | 文字クラス連続ランを一括スキップ | C | 無関係 | ✅ 完了 |
-| P4 | ASCII ラン スキャン(CODE) | 固定バイトの連続ランを一括スキップ | C | 無関係 | ✅ 完了 |
-| P5 | Thompson NFA state bitset | プログラム ≤ 63 状態を `uint64_t` 1 本で管理 | C | 無関係 | ✅ 完了 |
-| P6a | Lazy DFA(**Ruby** 実装) | NFA 状態集合をキャッシュして DFA 遷移を再利用 | Ruby | **YJIT/ZJIT で効く** | ✅ 完了 |
-| P6b | Lazy DFA(**C** 実装) | bitset VM に (NFA ビットマスク, バイト) → 次ビットマスク キャッシュを追加 | C | 無関係 | ✅ 完了 |
-| P7a | 交替形リテラル先読み | 全枝リテラルの交替形を multi-memmem pre-scan で即判定 | C | 無関係 | ✅ 完了 |
-| P7b | 必須バイト先読み | コンパイル時に必須 ASCII バイトを抽出、`memchr` で不在なら即リターン | C | 無関係 | ✅ 完了 |
-| P7c | Lazy DFA キャッシュ拡大 | スロット 256→1024、75% 充填時リセットで衝突チェーン劣化防止 | C+Ruby | 無関係 | ✅ 完了 |
-| P8 | ascii\_lookup 平坦テーブル | char\_class メンバーシップを 1 ロードで判定、SIMD 自動ベクタライズ | C | 無関係 | ✅ 完了 |
-| P9a | 純 ASCII リテラル VM バイパス | パターン全体が ASCII リテラル 1 つ → `memmem` 確認で即 return、NFA 不要 | C | 無関係 | ✅ 完了 |
-| P9b | 純 ASCII 交替形 VM バイパス | パターン全体が ASCII リテラルの交替形 → alt pre-scan の結果で即 return | C | 無関係 | ✅ 完了 |
-| P9c | 非 ASCII リテラル/交替形 VM バイパス | P9a/b の非 ASCII 拡張(UTF-8 等も `memmem` でバイパス) | C | 無関係 | ✅ 完了 |
-| P10 | 純 char-class ループ VM バイパス | パターン全体が `[X]+`/`\w+`/`\d+` → `ascii_lookup` scan で即 return、NFA 不要 | C | 無関係 | ✅ 完了 |
+```mermaid
+flowchart LR
+    Input["入力バイト列"]
 
-**JIT との関係**: P1〜P5 および P6b〜P10 は C 実装のため YJIT/ZJIT の影響を受けない。
-JIT が効くのは P6a(Ruby 実装の Lazy DFA)のみ。
-RubyKaigi 2026 スライドの「JIT で高速化」はこの P6a + JIT の組み合わせを指している。
-P6b(C 移植)以降は JIT なしで最速になる代わりに JIT の上乗せは不要になる。
+    subgraph pre["① プリフィルタ\n(NFA を動かす前に絞る)"]
+        P2["P2: memmem プリスキャン"]
+        P7a["P7a: alt multi-memmem"]
+        P7b["P7b: 必須バイト memchr"]
+    end
 
-### 10.2 実装サイクルと結果
+    subgraph bypass["② パターン別 NFA バイパス\n(NFA を完全スキップ)"]
+        P9a["P9a/b/c: リテラル・交替形\n→ memmem 結果で即 return"]
+        P10["P10: char-class ループ\n→ ascii_lookup scan で即 return"]
+        PL["L: first-byte table jump\n→ 候補外バイトをまとめてスキップ"]
+    end
+
+    subgraph nfa["③ NFA 高速化\n(NFA を動かすが内部を最適化)"]
+        P1["P1: no-caps モード"]
+        P5["P5: Thompson bitset"]
+        P6b["P6b: Lazy DFA (C)"]
+        P3P4["P3/P4: ASCII ランスキャン"]
+        P8["P8: ascii_lookup テーブル"]
+    end
+
+    Input --> pre --> bypass
+    pre --> nfa
+    bypass -->|"即 return"| Result["NK_SUCCESS / NK_NO_MATCH"]
+    nfa --> Result
+```
+
+P6a(Ruby 実装 Lazy DFA)のみ YJIT/ZJIT の恩恵を受ける。P1〜P5・P6b〜P10 は C 実装のため JIT と無関係。
+
+### 10.2 各サイクルの決定的ポイント
 
 各サイクルは「実装 → ベンチマーク確認 → コミット」を 1 単位とした。
-ベンチマークは `bin/mruby tools/bench_pike_vm.rb` で取得。
+**ここが決定的**列はそのサイクルで最も効いたメカニズムの核心を 1 文で示す。
 
-| Cycle | 施策 | 主な改善パターン | 代表的な改善幅 |
-|-------|------|----------------|---------------|
-| A | P1: match? no-capture + \\A skip | すべての `match?` 呼び出し | caps malloc ゼロ化 |
-| B | P2: literal prefix memmem | literal / bounded | ミスマッチ即リターン |
-| C | P3: CHAR\_CLASS run scan | char\_class `[a-zA-Z0-9]+` | 675 → 1671 ips (+148%) |
-| D | P4: CODE run scan | repetition `a+b` | 62 → 305 ips (+392%) |
-| E | P5: Thompson NFA bitset | 全 ≤63 状態パターン | ambiguous 24 → 260 ips (+983%) |
-| F-1 | P6a: Lazy DFA (Ruby) | assertion-free 全パターン(DFA) | char\_class 398 → 1,082 ips (+172%) |
-| F-2 | P6b: Lazy DFA (C) | 全 ≤63 状態パターン(PikeVM) | ambiguous 273 → 694 ips (+154%) |
-| G-1 | P7a: alt-literal pre-scan | alternation `foo\|bar\|baz` | non-match を multi-memmem で即リターン |
-| G-2 | P7b: required-byte prefilter | repetition `a+b`(non-match 入力) | 757 → 1,008 ips (+33%) |
-| G-3 | P7c: Lazy DFA cache 拡大 | ambiguous `(a\|a)+b` | 694 → 954 ips (+37%) |
-| H | P8: ascii\_lookup flat table | char\_class `[a-zA-Z0-9]+` | scan ループ 1 load/byte (SIMD 対応) |
-| G-4 | YJIT 環境整備 + ベンチマーク | LazyDFA(Ruby) 全パターン | LazyDFA: ~2x, PikeVM(ambig) Onigmo+YJIT 比 **1.40x** |
-| I | P9a: 純 ASCII リテラル VM バイパス | literal `Watson` | 2,229 → 2,540 ips (+14%) |
-| J | P9b: 純 ASCII 交替形 VM バイパス | alternation `foo\|bar\|baz` | 1,840 → 2,300 ips (+25%) |
-| K | P9c: 非 ASCII リテラル/交替形 VM バイパス | unicode `ジョバンニ\|カムパネルラ` | 1,947 → 2,645 ips (+36%) |
-| L | first-byte table jump (bitset path) | bounded `\d{4}-\d{2}-\d{2}` 非マッチ | non-match: ~250 → **9,540 ips** (Onigmo×2.7); combined +8% |
-| M | P10: 純 char-class ループ VM バイパス | char\_class `[a-zA-Z0-9]+` | 3,200 → **3,500 ips** (+9%); NFA を完全スキップ |
+| Cycle | 施策 | ここが決定的 | 主なターゲット | 代表改善幅 |
+|-------|------|------------|-------------|-----------|
+| A | no-caps モード + `\A` スキップ | `match?` で caps 配列の malloc を完全排除 | 全パターンの基礎コスト | — |
+| B | literal prefix `memmem` | NFA を動かす前にリテラル先頭を `memmem` で検索、開始位置をジャンプ | literal / bounded | non-match 即 return |
+| C | CHAR_CLASS ランスキャン | 1スレッド状態のとき文字クラスの連続ランをまとめてスキャン | `[a-zA-Z0-9]+` | +148% |
+| D | CODE ランスキャン | 固定バイトのε-next が単純なとき同様に連続ランをスキャン | `a+b` | +392% |
+| E | **Thompson NFA bitset** | スレッドリストを廃止。全スレッドを `uint64_t` 1 本に圧縮、分岐が OR 演算 1 回 | ≤63 状態の全パターン | ambiguous +983% |
+| F-1 | Lazy DFA (Ruby) | NFA 状態集合 → 次状態集合の遷移をハッシュキャッシュ。同じ状態集合への再計算をゼロに | assertion-free 全パターン | YJIT で +100% |
+| F-2 | Lazy DFA (C) | bitset に `(mask, byte) → next_mask` のキャッシュを追加。bitset 演算を繰り返さない | ≤63 状態の全パターン | ambiguous +154% |
+| G-1 | 交替形 multi-memmem | 全枝がリテラルの交替形は `memmem` を全枝に並走させ最左位置を先取り | alternation non-match | 即 return |
+| G-2 | 必須バイト prefilter | 「どのマッチにも必ず登場する ASCII バイト」を `memchr` で先行確認。なければ即 return | repetition non-match | +33% |
+| G-3 | Lazy DFA cache 拡大 | 256→1024 スロット + 75% 充填でリセット。キャッシュヒット率向上 | `(a\|a)+b` | +37% |
+| H | ascii_lookup 平坦テーブル | char_class の ASCII 判定を bitset 演算 → 配列 1 ロードに変更。SIMD 自動ベクタライズ | char_class スキャン全般 | 定数倍 ↓ |
+| G-4 | YJIT 計測 | LazyDFA+YJIT で ambiguous が Onigmo+YJIT を 1.40x 超えを確認 | — | — |
+| I | **リテラル VM バイパス** | 純リテラルは `memmem` の結果がそのまま答え。NFA を一切走らせない | `Watson` 等 | +14% |
+| J | **交替形 VM バイパス** | 純 ASCII 交替形は alt pre-scan の最左位置がそのまま答え | `foo\|bar\|baz` | +25% |
+| K | **非 ASCII VM バイパス** | 非 ASCII リテラル・交替形も `memmem` バイパスに対応 | `ジョバンニ\|カムパネルラ` | +36% |
+| L | **first-byte table jump** | コンパイル時に「有効な先頭バイト集合」を 128 エントリ表で事前計算。NFA 初期状態で候補外バイトをバッチスキップ | bounded non-match | non-match ×2.7 vs Onigmo |
+| M | **char-class ループバイパス** | `[X]+`/`\w+`/`\d+` は `ascii_lookup` を直接スキャンして NFA を完全排除 | char_class | 0.82x → 0.90x vs Onigmo |
 
-**Cycle M 後の累積改善**(最適化前ベースライン → 最終値, PikeVM, 2026-06-13):
+### 10.3 ベンチマーク結果
 
-> combined 列は match/non-match 混合の総合値。mruby 呼び出しオーバーヘッドが
-> 実行時間に占める割合が大きいため実行回数の少ない計測では変動しやすい。
-> Onigmo 比の解釈は下の「読み方」を参照。
+> 測定: `bin/mruby tools/bench_pike_vm.rb`、Dev Container (x86_64)、2026-06-13。
+> **combined** = match + non-match 混合バッチ。mruby 呼び出しのオーバーヘッドが
+> 一定量含まれるため絶対値は変動しやすい。**non-match 単独**はエンジン本体の差が
+> 最も直接的に現れる条件。
 
-| パターン | 最適化前 | Cycle M 後 | 倍率 | Onigmo 比 |
-|---------|---------|-----------|------|-----------|
-| literal: Watson | 552 | ~2,540 | **4.6x** | 0.68x |
-| alternation: foo\|bar\|baz | 613 | ~2,300 | **3.8x** | 0.62x |
-| repetition: a+b | 51 | ~1,000 | **19.6x** | 0.58x |
-| ambiguous: (a\|a)+b | 17 | ~968 | **56.9x** | **1.35x** ← Onigmo 超え |
-| char\_class: [a-zA-Z0-9]+ | 675 | **~3,500** | **5.2x** | **0.90x** |
-| bounded: \\d{4}-\\d{2}-\\d{2} | 501 | ~2,650 | **5.3x** | ~0.75x |
-| unicode: ジョバンニ\|カムパネルラ | 586 | ~2,650 | **4.5x** | 0.72x |
+**累積改善 — combined (最適化前 → Cycle M 後):**
 
-Non-match 単独計測(NFA バイパス効果が最も顕著な条件):
+| パターン | 最適化前 (ips) | Cycle M 後 (ips) | 自己比 | Onigmo (ips) | Onigmo 比 |
+|---------|-------------:|----------------:|------:|-------------:|----------:|
+| `Watson` (literal) | 552 | ~2,540 | **4.6x** | 3,735 | 0.68x |
+| `foo\|bar\|baz` (alternation) | 613 | ~2,300 | **3.8x** | 3,727 | 0.62x |
+| `a+b` (repetition) | 51 | ~1,000 | **19.6x** | 1,721 | 0.58x |
+| `(a\|a)+b` (ambiguous) | 17 | ~968 | **56.9x** | 719 | **1.35x** ↑ |
+| `[a-zA-Z0-9]+` (char_class) | 675 | ~3,500 | **5.2x** | 3,901 | **0.90x** |
+| `\d{4}-\d{2}-\d{2}` (bounded) | 501 | ~2,650 | **5.3x** | 3,549 | 0.75x |
+| `ジョバンニ\|カムパネルラ` (unicode) | 586 | ~2,650 | **4.5x** | 3,657 | 0.72x |
+| `(?:a?){30}a{30}` (pathological) | 10 | 10 | 1.0x | 808 | 0.01x |
 
-> 非マッチ入力のみで計測した IPS。mruby 呼び出しオーバーヘッドの割合が相対的に
-> 大きいため絶対値は combined より高くなるが、**エンジン本体の差**がより直接的に
-> 表れる。
+**non-match 単独 — NFA バイパスの効果が最も顕著な条件:**
 
-| パターン | non-match 入力 | Naraku | Onigmo | 比 |
-|---------|--------------|--------|--------|----|
-| bounded: \\d{4}-\\d{2}-\\d{2} | `not-a-date`(digit なし) | **~9,540 ips** | 3,549 ips | **×2.7** |
-| char\_class: [a-zA-Z0-9]+ | `!!!`(alnum なし) | **~10,117 ips** | 3,901 ips | **×2.6** |
+| パターン | non-match 入力 | Naraku (ips) | Onigmo (ips) | Naraku/Onigmo |
+|---------|-------------|------------:|------------:|-------------:|
+| `\d{4}-\d{2}-\d{2}` | `not-a-date` (digit なし) | **~9,540** | 3,549 | **×2.7** ↑ |
+| `[a-zA-Z0-9]+` | `!!!` (alnum なし) | **~10,117** | 3,901 | **×2.6** ↑ |
 
-Onigmo 参考値(同環境 CRuby 4.0.5): Watson 3,735 / alt 3,727 / rep 1,721 / ambig 719 / char\_class 3,901 / bounded 3,549 / unicode 3,657 ips
+**注目ポイント:**
+- `ambiguous: (a|a)+b` — Lazy DFA + キャッシュ(E/F-2/G-3)で Onigmo 比 **1.35x**。バックトラッキングの指数的な分岐数を O(1) に圧縮。
+- `bounded`/`char_class` の non-match — first-byte table(L) と ascii_lookup バイパス(M)の相乗で **Onigmo の 2.6〜2.7x**。NFA を動かさずにスキャン終了。
+- `pathological` — 64 状態超のため bitset 最適化は未適用。それでも O(n) で完走(ReDoS 耐性は設計上保証)。
 
-読み方:
-- **`ambiguous: (a|a)+b`** は Onigmo を **1.35x** 超え。Lazy DFA + キャッシュ拡大(G-3)で
-  複雑な NFA 遷移が O(1) になる一方、Onigmo はバックトラッキングを行うため。
-- **`repetition: a+b`** は G-2(必須バイト先読み)で non-match 入力の early-exit が効き
-  0.45x → 0.58x に改善。
-- **literal / alternation / unicode** は Cycle I〜K の VM バイパスにより +14〜36%。
-  memmem で位置とバイト列を確認済みの場合、NFA の再確認は不要という設計。
-- **Cycle L** は bitset path の外側ループに first-byte table を追加。NFA が初期状態
-  (active == initial_mask) かつ現在バイトが初期 consuming state にマッチしない場合、
-  次の候補バイトまでスキャンをスキップする。`not-a-date` に数字がないため
-  `\d{4}-\d{2}-\d{2}` の非マッチが 1 スキャンで完了。
-- **Cycle M** は `[X]+`, `\w+`, `\d+` 等のパターン全体が「char-class の 1 回以上の繰り返し」
-  の場合に NFA を完全にスキップし、`ascii_lookup` の直接スキャンで判定する。
-  match の場合はメンバーバイトを見つけた時点で即 NK_SUCCESS、
-  non-match の場合は末尾まで ascii_lookup を走査して NK_NO_MATCH を返す。
-  Cycle L と相乗して `char_class` non-match がさらに高速化。
-- combined の Onigmo 比にはベンチ変動があるが(mruby 呼び出し比率が支配的)、
-  non-match 単独計測では `bounded`/`char_class` ともに Onigmo の 2.5〜2.7x を達成。
-- `pathological: (?:a?){30}a{30}` は 64 状態超のため bitset 最適化は未適用。
+### 10.4 コミット構造
 
-### 10.3 コミット構造
-
-ツール(`tools/match.rb`, `bench_compare.rb`)と設計ドキュメント(本書)は
-**各サイクルの後ろ**に置く。ベンチマークコミットが最新の数値を反映した状態で
-固定されるようにするため。
+各サイクルの `perf:` コミットが最新ベンチを反映した状態で確定するよう、
+`docs:` コミットは末尾 1 本にまとめる。
 
 ```
 [コア実装]  feat: compiler / executor / bindings / tests
-[Cycle A]   perf: ... / bench: Cycle A results
-[Cycle B]   perf: ... / bench: Cycle B results
-...
-[Cycle E]   perf: Thompson NFA bitset / bench: Cycle E results
-[Cycle F-1] perf: Lazy DFA Ruby / bench: Cycle F-1 results
-[Cycle F-2] perf: Lazy DFA C bitset VM / bench: Cycle F-2 results
+[Cycle A]   perf: match? no-capture + \A anchor skip
+[Cycle B]   perf: literal prefix memmem pre-scan
+[Cycle C]   perf: CHAR_CLASS ASCII run scan
+[Cycle D]   perf: CODE ASCII run scan
+[Cycle E]   perf: Thompson NFA bitset
+[Cycle F-1] perf: Lazy DFA (Ruby)
+[Cycle F-2] perf: Lazy DFA (C bitset VM)
 [Cycle G-3] perf: Lazy DFA cache 1024 slots + reset-on-75%-full
 [Cycle G-2] perf: required-byte prefilter (memchr early exit)
 [Cycle G-1] perf: multi-literal alternation pre-scan
@@ -849,12 +904,13 @@ Onigmo 参考値(同環境 CRuby 4.0.5): Watson 3,735 / alt 3,727 / rep 1,721 / 
 - [x] エラーコード(-600 番台) + メッセージ
 - [x] 公開ヘッダ `include/naraku_regex.h`
 - [x] 設計ドキュメント(本書)
-- [x] `src/regex_compile.c` 実装(1,389 行)
+- [x] `src/regex_compile.c` 実装(2,234 行)
 - [x] `src/regex_compile.c` の厳格フラグ(`-Wall -Werror -Wconversion` 等)でのビルド検証
-- [x] `src/regex_vm.c`(`nk_program_search`)実装(702 行)
+- [x] `src/regex_vm.c`(`nk_program_search`)実装(1,142 行)
 - [x] mruby バインディング(`mrb_naraku_program.c` + `regexp.rb`)
 - [x] Mtest マッチングテスト(46 テスト — リテラル・量指定子・キャプチャ・文字クラス・アンカー・UTF-8)
 - [x] ASan green(leak のみ、メモリ安全エラーなし)
+- [x] `/i` フラグ — ASCII-only fold(`NK_FOLD_ASCII_ONLY`)・Simple fold(`NK_FOLD_DEFAULT`)・Full fold(`NK_FOLD_FULL`)・Turkish/Azeri fold(`NK_FOLD_TURKISH_AZERI`)全対応
 - [x] `size_t` アンダーフローバグ修正(`code_in_code_range`、`\b` 誤判定の原因)
 - [x] 対話型テスター `tools/match.rb`
 - [x] 3 エンジン比較ベンチマーク `ruby-prototype/benchmark/bench_compare.rb`
