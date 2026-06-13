@@ -40,6 +40,7 @@ typedef enum {
   NK_VM_OP_CHECK_VISITED,  // dedup point for merged epsilon paths
   NK_VM_OP_MARK_EPSILON,   // mark entering an empty-matchable loop body
   NK_VM_OP_CHECK_EPSILON,  // leave the loop if the body matched empty
+  NK_VM_OP_BACK_REF,       // match a back reference to a capture group (`\1`, `\k<name>`)
   NK_VM_OP_MATCH,          // accept
 } nk_vm_op_t;
 
@@ -188,6 +189,9 @@ typedef struct nk_program {
   // Enables a direct ascii_lookup scan that skips the NFA entirely.
   bool     is_pure_char_class_plus;
   uint32_t pure_cc_index;  // index into char_classes[]
+  // True when the program contains NK_VM_OP_BACK_REF states.
+  // Disables the no_caps optimization (which would make caps->data invalid).
+  bool has_back_refs;
 } nk_program_t;
 
 /** Bit 63 of a bitset mask signals that a MATCH state is reachable. */
@@ -267,6 +271,8 @@ nk_error_t nk_program_compile(
   const nk_encoding_t* enc,
   const nk_node_t* root_node,
   uint32_t num_capture_groups,
+  const nk_capture_entry_t* capture_entries,  // nullable; only needed when pattern has back-refs
+  size_t capture_entries_len,
   nk_program_t** out_program,
   size_t* out_error_offset,  // nullable
   size_t* out_error_length   // nullable

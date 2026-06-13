@@ -519,6 +519,16 @@ static nk_error_t closure(vm_t* vm, uint32_t start_state, size_t keep_pos, caps_
         }
         break;
       }
+
+      case NK_VM_OP_BACK_REF:
+        // BACK_REF is a variable-width consumer: skip dedup because two threads
+        // at the same BACK_REF state with different caps advance different amounts.
+        err = thread_list_push(out_threads, item.state_index, item.keep_pos, item.caps);
+        if (err != NK_SUCCESS) {
+          caps_unref(item.caps);
+          goto fail;
+        }
+        break;
     }
   }
 
@@ -560,6 +570,125 @@ static nk_error_t decode_char(
   *out_code = nk_enc_decode_mbc(enc, bytes, bytes_end);
   *out_width = (size_t)width;
   return NK_SUCCESS;
+}
+
+// Decodes the code point that ends at byte position `pos` in `subject_bytes`.
+// Scans backward up to NK_ENC_MAX_MBC_WIDTH bytes to find a valid character.
+// Returns VM_NO_CHAR if pos == 0 or no valid boundary is found.
+static uint32_t decode_code_before(
+  const nk_encoding_t* enc,
+  const uint8_t* subject_bytes,
+  size_t pos
+) {
+  if (pos == 0) {
+    return VM_NO_CHAR;
+  }
+  size_t max_back = pos < (size_t)NK_ENC_MAX_MBC_WIDTH ? pos : (size_t)NK_ENC_MAX_MBC_WIDTH;
+  for (size_t back = 1; back <= max_back; back++) {
+    const uint8_t* p = subject_bytes + pos - back;
+    const uint8_t* end = subject_bytes + pos;
+    int8_t w = nk_enc_scan_mbc_width(enc, p, end);
+    if (w > 0 && (size_t)w == back) {
+      return nk_enc_decode_mbc(enc, p, end);
+    }
+  }
+  return VM_NO_CHAR;
+}
+
+// Compares the captured string (subject[cap_begin..cap_end)) against the subject
+// starting at `match_pos`. Sets `*out_matched` and `*out_match_len` (bytes consumed
+// from subject at match_pos). Handles case-insensitive folding, including full-fold
+// (CF2: fold("ß")=[s,s] matches "ss" and vice versa).
+static nk_error_t back_ref_match(
+  const nk_encoding_t* enc,
+  const uint8_t* subject,
+  size_t subject_len,
+  size_t match_pos,
+  size_t cap_begin,
+  size_t cap_end,
+  bool is_ignore_case,
+  nk_fold_flag_t fold_flags,
+  bool* out_matched,
+  size_t* out_match_len
+) {
+  size_t cap_len = cap_end - cap_begin;
+
+  if (cap_len == 0) {
+    *out_matched = true;
+    *out_match_len = 0;
+    return NK_SUCCESS;
+  }
+
+  if (!is_ignore_case) {
+    if (match_pos + cap_len > subject_len) {
+      *out_matched = false;
+      return NK_SUCCESS;
+    }
+    *out_matched = (memcmp(subject + cap_begin, subject + match_pos, cap_len) == 0);
+    if (*out_matched) {
+      *out_match_len = cap_len;
+    }
+    return NK_SUCCESS;
+  }
+
+  // Case-insensitive: fold both sides to code-point sequences and compare.
+  // Uses a pair of small queues (each at most NK_ENC_MAX_FOLDED_CODES codes) to
+  // handle 1-to-N fold expansion without dynamic allocation.
+  const uint8_t* cap_ptr = subject + cap_begin;
+  const uint8_t* cap_end_ptr = subject + cap_end;
+  const uint8_t* subj_ptr = subject + match_pos;
+  const uint8_t* subj_end_ptr = subject + subject_len;
+
+  uint32_t cap_q[NK_ENC_MAX_FOLDED_CODES];
+  size_t cap_q_len = 0;
+  size_t cap_q_pos = 0;
+  uint32_t subj_q[NK_ENC_MAX_FOLDED_CODES];
+  size_t subj_q_len = 0;
+  size_t subj_q_pos = 0;
+
+  while (true) {
+    bool cap_done = (cap_ptr >= cap_end_ptr && cap_q_pos >= cap_q_len);
+    if (cap_done) {
+      *out_matched = (subj_q_pos >= subj_q_len);
+      if (*out_matched) {
+        *out_match_len = (size_t)(subj_ptr - (subject + match_pos));
+      }
+      return NK_SUCCESS;
+    }
+
+    if (cap_q_pos >= cap_q_len) {
+      int8_t cap_w = nk_enc_scan_mbc_width(enc, cap_ptr, cap_end_ptr);
+      if (cap_w <= 0) {
+        return NK_ERR_INVALID_BYTE_SEQUENCE;
+      }
+      uint32_t cap_code = nk_enc_decode_mbc(enc, cap_ptr, cap_end_ptr);
+      cap_ptr += (size_t)cap_w;
+      cap_q_pos = 0;
+      cap_q_len = nk_enc_get_case_fold(enc, fold_flags, cap_code, cap_q);
+    }
+
+    if (subj_q_pos >= subj_q_len) {
+      if (subj_ptr >= subj_end_ptr) {
+        *out_matched = false;
+        return NK_SUCCESS;
+      }
+      int8_t subj_w = nk_enc_scan_mbc_width(enc, subj_ptr, subj_end_ptr);
+      if (subj_w <= 0) {
+        return NK_ERR_INVALID_BYTE_SEQUENCE;
+      }
+      uint32_t subj_code = nk_enc_decode_mbc(enc, subj_ptr, subj_end_ptr);
+      subj_ptr += (size_t)subj_w;
+      subj_q_pos = 0;
+      subj_q_len = nk_enc_get_case_fold(enc, fold_flags, subj_code, subj_q);
+    }
+
+    if (cap_q[cap_q_pos] != subj_q[subj_q_pos]) {
+      *out_matched = false;
+      return NK_SUCCESS;
+    }
+    cap_q_pos++;
+    subj_q_pos++;
+  }
 }
 
 // Bumps the visited-set generation, recovering from (unlikely) wraparound.
@@ -729,6 +858,105 @@ static nk_error_t search_impl_bitset(
   return NK_NO_MATCH;
 }
 
+// ============================================================================
+//
+// Deferred thread slots for BACK_REF variable-width consumers:
+//
+// ============================================================================
+
+// A slot of threads deferred to a future position (produced by BACK_REF).
+typedef struct {
+  size_t target_pos;
+  thread_list_t threads;
+} br_slot_t;
+
+typedef struct {
+  br_slot_t* items;
+  size_t len;
+  size_t cap;
+} br_deferred_t;
+
+static void br_deferred_free(br_deferred_t* d) {
+  for (size_t i = 0; i < d->len; i++) {
+    thread_list_free(&d->items[i].threads);
+  }
+  free(d->items);
+  d->items = NULL;
+  d->len = 0;
+  d->cap = 0;
+}
+
+// Pushes a thread into the slot at `target_pos`, creating a new slot if needed.
+static nk_error_t br_deferred_push(
+  br_deferred_t* d,
+  size_t target_pos,
+  uint32_t state_index,
+  size_t keep_pos,
+  caps_t* caps
+) {
+  // Find existing slot for target_pos
+  for (size_t i = 0; i < d->len; i++) {
+    if (d->items[i].target_pos == target_pos) {
+      return thread_list_push(&d->items[i].threads, state_index, keep_pos, caps);
+    }
+  }
+  // Create new slot
+  if (d->len == d->cap) {
+    size_t new_cap = d->cap == 0 ? 4 : d->cap * 2;
+    br_slot_t* new_items = (br_slot_t*)realloc(d->items, new_cap * sizeof(br_slot_t));
+    if (new_items == NULL) {
+      return NK_ERR_MEMORY_ALLOCATION_FAILED;
+    }
+    d->items = new_items;
+    d->cap = new_cap;
+  }
+  br_slot_t* slot = &d->items[d->len++];
+  memset(&slot->threads, 0, sizeof(slot->threads));
+  slot->target_pos = target_pos;
+  return thread_list_push(&slot->threads, state_index, keep_pos, caps);
+}
+
+// Extracts all threads for `pos` from the deferred list and injects them into
+// `threads` (appended at the end). The slot is freed and removed.
+static nk_error_t br_deferred_inject(br_deferred_t* d, size_t pos, thread_list_t* threads) {
+  for (size_t i = 0; i < d->len; i++) {
+    if (d->items[i].target_pos != pos) {
+      continue;
+    }
+    thread_list_t* slot_threads = &d->items[i].threads;
+    for (size_t j = 0; j < slot_threads->len; j++) {
+      thread_t* t = &slot_threads->items[j];
+      nk_error_t err = thread_list_push(threads, t->state_index, t->keep_pos, t->caps);
+      if (err != NK_SUCCESS) {
+        // Unref remaining threads in slot
+        for (size_t k = j; k < slot_threads->len; k++) {
+          caps_unref(slot_threads->items[k].caps);
+        }
+        slot_threads->len = 0;
+        // Compact the slot list
+        free(slot_threads->items);
+        d->len--;
+        if (i < d->len) {
+          d->items[i] = d->items[d->len];
+        }
+        return err;
+      }
+      t->caps = NULL;  // transferred
+    }
+    free(slot_threads->items);
+    slot_threads->items = NULL;
+    slot_threads->len = 0;
+    slot_threads->cap = 0;
+    // Remove slot from list
+    d->len--;
+    if (i < d->len) {
+      d->items[i] = d->items[d->len];
+    }
+    return NK_SUCCESS;
+  }
+  return NK_SUCCESS;
+}
+
 static nk_error_t search_impl(
   const nk_program_t* program,
   const uint8_t* subject_bytes,
@@ -745,6 +973,11 @@ static nk_error_t search_impl(
   size_t subject_len = (size_t)(subject_bytes_end - subject_bytes);
   if (start_offset > subject_len) {
     return NK_NO_MATCH;
+  }
+
+  // BACK_REF requires reading captures; disable the no-allocation fast path.
+  if (program->has_back_refs) {
+    no_caps = false;
   }
 
   // Required-byte prefilter: if the pattern mandates an ASCII byte in every
@@ -907,6 +1140,9 @@ static nk_error_t search_impl(
   memset(&threads, 0, sizeof(threads));
   memset(&next_threads, 0, sizeof(next_threads));
 
+  br_deferred_t deferred;
+  memset(&deferred, 0, sizeof(deferred));
+
   nk_error_t err = NK_SUCCESS;
 
   // Walk the prefix before `start_offset` to find the previous character for
@@ -964,24 +1200,52 @@ static nk_error_t search_impl(
 
   // For anchored patterns (\A), no new start threads will be injected past
   // position 0, so we can exit as soon as the active thread list is empty.
-  while (curr_code != VM_NO_CHAR && (threads.len > 0 || !program->is_anchored) && !(vm.has_match && threads.len == 0)) {
+  while (curr_code != VM_NO_CHAR && (threads.len > 0 || deferred.len > 0 || !program->is_anchored) && !(vm.has_match && threads.len == 0 && deferred.len == 0)) {
+    // Inject any deferred threads (from BACK_REF continuations) that are ready
+    // at the current position. They are appended before the run-scan so that
+    // the run-scan guard (`threads.len == 1`) is respected correctly.
+    if (deferred.len > 0) {
+      err = br_deferred_inject(&deferred, pos, &threads);
+      if (err != NK_SUCCESS) {
+        goto done;
+      }
+    }
+
     // ASCII run scan: when exactly one thread is at a single-character state
     // (CHAR_CLASS or CODE) and the current character matches, fast-advance
     // through the entire consecutive run to replace O(N) epsilon closures with
     // O(1). CODE scan is guarded to loop-head states only (next is epsilon).
-    if (threads.len == 1 && curr_code < 0x80u && !vm.has_match) {
+    // Disabled for programs with back-references: the greedy scan would
+    // consume quantifier runs at maximum length, preventing the NFA from
+    // exploring shorter matches that are required for back-reference patterns
+    // like `(\w+)\1`.
+    if (threads.len == 1 && curr_code < 0x80u && !vm.has_match && !program->has_back_refs) {
       const nk_vm_state_t* scan_state = &program->states[threads.items[0].state_index];
       size_t scan = 0;
 
       if (scan_state->op == NK_VM_OP_CHAR_CLASS) {
         const nk_vm_char_class_t* cc = &program->char_classes[scan_state->char_class_index];
         if (cc->ascii_lookup[curr_code] != 0u) {
-          scan = pos + 1;
-          // Use the flat ascii_lookup table (0xFF for members, 0 otherwise) so
-          // this inner loop reduces to a single load per byte — the compiler
-          // can auto-vectorise it with SSE2/AVX when compiled with -march=native.
-          while (scan < subject_len && cc->ascii_lookup[subject_bytes[scan]] != 0u) {
-            scan++;
+          // Only scan for a loop-head state: if the next state records a capture
+          // boundary (CAP_BEGIN/CAP_END) or starts a back-reference, scanning
+          // past multiple characters would set capture positions incorrectly.
+          uint32_t cc_next_idx = scan_state->next;
+          bool cc_can_scan = false;
+          if (cc_next_idx < (uint32_t)program->states_len) {
+            nk_vm_op_t cc_next_op = program->states[cc_next_idx].op;
+            cc_can_scan = (cc_next_op != NK_VM_OP_CODE && cc_next_op != NK_VM_OP_CHAR_CLASS &&
+                           cc_next_op != NK_VM_OP_DOT && cc_next_op != NK_VM_OP_MATCH &&
+                           cc_next_op != NK_VM_OP_CAP_BEGIN && cc_next_op != NK_VM_OP_CAP_END &&
+                           cc_next_op != NK_VM_OP_BACK_REF);
+          }
+          if (cc_can_scan) {
+            scan = pos + 1;
+            // Use the flat ascii_lookup table (0xFF for members, 0 otherwise) so
+            // this inner loop reduces to a single load per byte — the compiler
+            // can auto-vectorise it with SSE2/AVX when compiled with -march=native.
+            while (scan < subject_len && cc->ascii_lookup[subject_bytes[scan]] != 0u) {
+              scan++;
+            }
           }
         }
       } else if (scan_state->op == NK_VM_OP_CODE &&
@@ -990,11 +1254,15 @@ static nk_error_t search_impl(
         // (non-consuming) state, indicating this is a loop-head (e.g., `a+`).
         // If the next state is a consuming op, this CODE is part of a sequence
         // like "foo" and scanning would incorrectly consume the wrong literal.
+        // CAP_BEGIN/CAP_END/BACK_REF must also be excluded: scanning past
+        // multiple characters would record capture positions at the wrong offset.
         uint32_t next_idx = scan_state->next;
         if (next_idx < (uint32_t)program->states_len) {
           nk_vm_op_t next_op = program->states[next_idx].op;
           if (next_op != NK_VM_OP_CODE && next_op != NK_VM_OP_CHAR_CLASS &&
-              next_op != NK_VM_OP_DOT && next_op != NK_VM_OP_MATCH) {
+              next_op != NK_VM_OP_DOT && next_op != NK_VM_OP_MATCH &&
+              next_op != NK_VM_OP_CAP_BEGIN && next_op != NK_VM_OP_CAP_END &&
+              next_op != NK_VM_OP_BACK_REF) {
             scan = pos + 1;
             if ((scan_state->fold_flags & NK_FOLD_ASCII_ONLY) != 0 &&
                 scan_state->code < 0x80u) {
@@ -1052,7 +1320,118 @@ static nk_error_t search_impl(
     for (size_t i = 0; i < threads.len; i++) {
       thread_t* thread = &threads.items[i];
       const nk_vm_state_t* state = &program->states[thread->state_index];
-      if (state_matches_code(program, state, curr_code)) {
+
+      if (state->op == NK_VM_OP_BACK_REF) {
+        // Get capture bounds (no_caps is always false here due to has_back_refs).
+        size_t cap_begin = NK_REGION_POS_NONE;
+        size_t cap_end = NK_REGION_POS_NONE;
+        if (thread->caps != NULL && thread->caps != NO_CAPS_PTR) {
+          cap_begin = thread->caps->data[2 * (size_t)state->cap_num];
+          cap_end   = thread->caps->data[2 * (size_t)state->cap_num + 1];
+        }
+
+        bool br_matched = false;
+        size_t br_match_len = 0;
+        if (cap_begin != NK_REGION_POS_NONE && cap_end != NK_REGION_POS_NONE) {
+          err = back_ref_match(
+            enc, subject_bytes, subject_len, pos,
+            cap_begin, cap_end,
+            state->is_ignore_case, state->fold_flags,
+            &br_matched, &br_match_len
+          );
+          if (err != NK_SUCCESS) {
+            goto done;
+          }
+        }
+
+        if (br_matched) {
+          size_t new_pos = pos + br_match_len;
+
+          // Save vm closure state (assertions depend on prev/curr/next_code).
+          size_t saved_closure_pos = vm.closure_pos;
+          uint32_t saved_prev_code = vm.prev_code;
+          uint32_t saved_curr_code = vm.curr_code;
+          uint32_t saved_next_code = vm.next_code;
+
+          // Set up vm for new_pos.
+          vm.closure_pos = new_pos;
+          vm.prev_code = decode_code_before(enc, subject_bytes, new_pos);
+          uint32_t br_curr_code = VM_NO_CHAR;
+          size_t br_curr_width = 0;
+          err = decode_char(enc, subject_bytes + new_pos, subject_bytes_end, &br_curr_code, &br_curr_width);
+          if (err != NK_SUCCESS) {
+            goto done;
+          }
+          uint32_t br_next_code = VM_NO_CHAR;
+          size_t br_next_width = 0;
+          err = decode_char(enc, subject_bytes + new_pos + br_curr_width, subject_bytes_end, &br_next_code, &br_next_width);
+          if (err != NK_SUCCESS) {
+            goto done;
+          }
+          vm.curr_code = br_curr_code;
+          vm.next_code = br_next_code;
+
+          // Fresh dedup token: BACK_REF continuations at new_pos must not share
+          // dedup namespace with other positions.
+          next_token(&vm);
+
+          uint64_t version_before = vm.match_version;
+          caps_t* caps = thread->caps;
+          thread->caps = NULL;
+
+          if (new_pos == advance_pos) {
+            // Common case: BACK_REF consumed exactly one character width.
+            // Put continuation directly into next_threads.
+            err = closure(&vm, state->next, thread->keep_pos, caps, &next_threads);
+          } else {
+            // Multi-char or zero-char BACK_REF: use deferred threads.
+            thread_list_t br_temp;
+            memset(&br_temp, 0, sizeof(br_temp));
+            err = closure(&vm, state->next, thread->keep_pos, caps, &br_temp);
+            if (err == NK_SUCCESS) {
+              for (size_t j = 0; j < br_temp.len; j++) {
+                thread_t* bt = &br_temp.items[j];
+                nk_error_t push_err = br_deferred_push(
+                  &deferred, new_pos, bt->state_index, bt->keep_pos, bt->caps
+                );
+                if (push_err != NK_SUCCESS) {
+                  // Unref remaining
+                  for (size_t k = j; k < br_temp.len; k++) {
+                    caps_unref(br_temp.items[k].caps);
+                  }
+                  free(br_temp.items);
+                  err = push_err;
+                  break;
+                }
+                bt->caps = NULL;
+              }
+            }
+            free(br_temp.items);
+          }
+
+          // Restore vm closure state for subsequent threads.
+          vm.closure_pos = saved_closure_pos;
+          vm.prev_code = saved_prev_code;
+          vm.curr_code = saved_curr_code;
+          vm.next_code = saved_next_code;
+          // Restore token so subsequent regular threads share this step's dedup.
+          next_token(&vm);
+
+          if (err != NK_SUCCESS) {
+            goto done;
+          }
+          if (vm.match_version != version_before) {
+            for (size_t j = i + 1; j < threads.len; j++) {
+              caps_unref(threads.items[j].caps);
+              threads.items[j].caps = NULL;
+            }
+            break;
+          }
+        } else {
+          caps_unref(thread->caps);
+          thread->caps = NULL;
+        }
+      } else if (state_matches_code(program, state, curr_code)) {
         uint64_t version_before = vm.match_version;
         caps_t* caps = thread->caps;
         thread->caps = NULL;
@@ -1115,6 +1494,7 @@ done:
 
   thread_list_free(&threads);
   thread_list_free(&next_threads);
+  br_deferred_free(&deferred);
   drain_stack(&vm);
   free(vm.stack);
   caps_unref(vm.match_caps);

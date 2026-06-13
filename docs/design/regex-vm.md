@@ -233,7 +233,7 @@ flowchart TD
 | ✨ コンパイラ用エラーコード | `include/naraku_error.h`, `src/error.c` | `-600` 番台 `NK_ERR_UNSUPPORTED_*` ほか 10 種 |
 | ✨ mruby マッチ API | `mrbgems/mruby-naraku/src/mrb_naraku_program.c` | `Naraku::Program` C ブリッジ |
 | ✨ mruby Ruby ラッパー | `mrbgems/mruby-naraku/mrblib/naraku/regexp.rb` | `Naraku::Regexp` / `MatchData` / `CompileError` |
-| ✨ Mtest テスト | `test/regexp_test.rb` | 46 テストケース(マッチング全体を網羅) |
+| ✨ Mtest テスト | `test/regexp_test.rb` | 342 テストケース(マッチング全体を網羅) |
 | ✨ 対話型テスター | `tools/match.rb` | `bin/mruby` で動く Rubular ライク CLI |
 | ✨ 3 エンジン比較ベンチマーク | `ruby-prototype/benchmark/bench_compare.rb` + `tools/bench_pike_vm.rb` | Onigmo / DFA / Pike VM の速度比較 |
 | 🐛 バグ修正 | `src/cprop.c` | `code_in_code_range` の `size_t` アンダーフロー修正(`\b` 誤判定の根本原因) |
@@ -264,7 +264,7 @@ flowchart TD
 | **Pike VM 実行器** | `src/regex_vm.c` | 1,142 行 | ✅ `test/regexp_test.rb` | ✨ **追加** |
 | コンパイラ用エラーコード | `naraku_error.h`, `error.c` | -600〜-610 追加 | ✅ `test/regexp_test.rb` | ✨ **追加** |
 | 公開 API ヘッダ | `include/naraku_regex.h` | 213 行 | — | ✨ **追加** |
-| mruby マッチ API | `mrb_naraku_program.c`, `regexp.rb` | C 143 行 + Ruby 129 行 | ✅ 46 テスト | ✨ **追加** |
+| mruby マッチ API | `mrb_naraku_program.c`, `regexp.rb` | C 143 行 + Ruby 129 行 | ✅ 342 テスト | ✨ **追加** |
 | 対話型テスター | `tools/match.rb` | 75 行 | — | ✨ **追加** |
 | 3 エンジン比較ベンチマーク | `benchmark/bench_compare.rb` + `tools/bench_pike_vm.rb` | 計 255 行 | — | ✨ **追加** |
 | `\b` バグ修正 | `src/cprop.c` | `code_in_code_range` 修正 | ✅(既存テストが通る) | 🐛 **修正** |
@@ -293,7 +293,7 @@ Naraku(奈落)は Oniguruma(鬼車)→ Onigmo(鬼雲)の系譜に連なる
 | `\K`(マッチ開始のリセット) | ✅ | ✅ | ✅ |
 | possessive 量指定子 `a*+` | ✅ | ❌ 明示エラー | ⭕ 予定 |
 | `/i`(ASCII-only / Simple / Full Unicode fold) | ✅ | ✅ | ✅ |
-| 後方参照 `\1` `\k<name>` | ✅ | ❌ 明示エラー | ⭕ 予定 |
+| 後方参照 `\1` `\k<name>` | ✅ | ✅ | ✅ |
 | 先読み・後読み `(?=) (?!) (?<=) (?<!)` | ✅ | ❌ 明示エラー | ⭕ 予定 |
 | アトミックグループ `(?>)`・不在 `(?~)`・条件分岐 | ✅ | ❌ 明示エラー | ⭕ 検討 |
 | 部分式呼び出し `\g<...>` | ✅ | ❌ 明示エラー | ⭕ 検討 |
@@ -438,6 +438,7 @@ C 1,826 行)が既に完成しており、マッチ API を足すだけで「動
 | `CHECK_VISITED` | ε 経路合流点の重複排除 | ε | `check_id` |
 | `MARK_EPSILON` | 空マッチ可能ループ本体への突入を記録 | ε | `check_id`(ε 用 id) |
 | `CHECK_EPSILON` | 本体が空マッチなら `split_next`(脱出)、消費していれば `next`(継続) | ε | `check_id`, `next`, `split_next` |
+| `BACK_REF` | 後方参照(`\1`/`\k<name>`)とマッチ — キャプチャの長さ分を消費 | 可変 | `cap_num`, `is_ignore_case`, `fold_flags` |
 | `MATCH` | 受理 | — | `check_id` |
 
 - 「消費 = ε」は文字を読まずに移動できる命令(ε 遷移)。
@@ -445,6 +446,9 @@ C 1,826 行)が既に完成しており、マッチ API を足すだけで「動
   重複排除キー。ε 閉包内で同じ id を二度通らないために使う。
 - `MARK_EPSILON` / `CHECK_EPSILON` の id は別系列で、上限 64
   (スレッドの `epsilon_bits` を `uint64_t` 1 個で持つため。D8)。
+- `BACK_REF` は **可変幅**消費命令: 参照先キャプチャの長さ(0 以上)を消費する。
+  継続スレッドは通常の 1 文字幅と一致しない場合に `br_deferred_t` で将来位置へ延期。
+  `has_back_refs=true` のプログラムはランスキャン最適化と bitset/goto_mask パスを無効化する。
 
 ### 7.2 コンパイラ(`src/regex_compile.c`)
 
@@ -684,6 +688,38 @@ sequenceDiagram
 | `\G` | `pos == start_pos` |
 | `\b` / `\B` | `is_word(prev) != is_word(curr)` / 同値。`is_word` は `nk_enc_code_is_cprop(enc, code, NK_CPROP_WORD)`(ASCII 版は `code < 0x80 &&`) |
 
+#### 後方参照(`BACK_REF`)
+
+後方参照はキャプチャが確定した位置でなければ評価できない(参照先が未確定の場合は false 扱い)。また消費バイト数がキャプチャ長に依存し **可変幅** となる。これを Pike VM の「1 文字ずつ前進」設計に組み込む実装は次の 2 点がポイント。
+
+**① ランスキャン最適化の無効化**
+
+`has_back_refs=true` のプログラムでは、ASCII ランスキャン(CODE/CHAR_CLASS の連続ランを 1 ステップに圧縮する最適化)を **全面無効化** する。ランスキャンは量指定子ループ(`a+` 等)内でのみ正しく、キャプチャ境界やバックレファレンスが絡むとキャプチャ位置がずれる。同様に greedy スキャンが量指定子を最大幅で消費すると NFA が中間分割を探索できなくなるため(例: `(\w+)\k<name>` で word="hello" の分割が試せなくなる)、バックレファレンス付きパターンでは走査は常にスレッドリストを使う。
+
+**② 可変幅スレッドの延期(`br_deferred_t`)**
+
+`BACK_REF` がキャプチャ `cap_len` バイトにマッチしたとき、`new_pos = pos + cap_len` が現在の `advance_pos`(= `pos + curr_width`)と一致しないことがある。
+
+- `new_pos == advance_pos`(1 文字丁度)→ 継続スレッドをそのまま `next_threads` に追加(ゼロオーバーヘッド)
+- `new_pos != advance_pos`(0 バイト or 複数バイト)→ `br_deferred_t` に `(new_pos, state_index, keep_pos, caps)` を記録し、外部ループの先頭で `pos == new_pos` になったときに `threads` へ注入
+
+```
+br_deferred_t:
+  slots[]  ← (pos, state_index, keep_pos, caps*) の可変長配列
+  len      ← 使用中スロット数
+```
+
+外部ループは `deferred.len > 0` の間も継続する(while 条件に組み込み済み)。
+これにより O(n×m) の Pike VM 保証を維持しながら可変幅バックレファレンスを正確に実行できる。
+
+**③ case-insensitive マッチング(`back_ref_match`)**
+
+折り畳み比較は `back_ref_match()` が担う。fold なし・ASCII fold・Simple fold・Full fold(ß→ss 等 1-to-N)のいずれにも対応し、双方のコード点ストリームをキューで並走させて 1 対 1 に比較する。Full fold では最大 `NK_ENC_MAX_FOLDED_CODES`(3)コード点に展開しうる。
+
+**④ 複数同名キャプチャの優先順位(BR1 修正)**
+
+`(?<name>a)|(?<name>b)\k<name>` のように同名グループが複数ある場合、バックレファレンスは **最後に定義されたグループを優先的に試みる** という Onigmo 互換の動作を実装する。コンパイラは capture_nums を逆順に並べた SPLIT チェーンを生成し、実行時には優先分岐として処理される。
+
 ---
 
 ## 8. mruby バインディング
@@ -756,7 +792,6 @@ re =~ "xabcbd"       # => 1  (マッチ開始バイトオフセット)
 
 | 機能 | エラー |
 |---|---|
-| 後方参照 `\1` `\k<name>` | `NK_ERR_UNSUPPORTED_BACK_REF` |
 | 部分式呼び出し `\g<...>` | `NK_ERR_UNSUPPORTED_SUBEXP_CALL` |
 | 先読み・後読み `(?=) (?!) (?<=) (?<!)` | `NK_ERR_UNSUPPORTED_LOOKAROUND` |
 | アトミックグループ `(?>)` | `NK_ERR_UNSUPPORTED_ATOMIC_GROUP` |
@@ -912,6 +947,7 @@ P6a(Ruby 実装 Lazy DFA)のみ YJIT/ZJIT の恩恵を受ける。P1〜P5・P6b�
 - [x] ASan green(leak のみ、メモリ安全エラーなし)
 - [x] `/i` フラグ — ASCII-only fold(`NK_FOLD_ASCII_ONLY`)・Simple fold(`NK_FOLD_DEFAULT`)・Full fold(`NK_FOLD_FULL`)・Turkish/Azeri fold(`NK_FOLD_TURKISH_AZERI`)全対応
 - [x] `size_t` アンダーフローバグ修正(`code_in_code_range`、`\b` 誤判定の原因)
+- [x] 後方参照 `\1` `\k<name>` — 数値/名前参照・可変幅消費・case-insensitive fold 対応
 - [x] 対話型テスター `tools/match.rb`
 - [x] 3 エンジン比較ベンチマーク `ruby-prototype/benchmark/bench_compare.rb`
 

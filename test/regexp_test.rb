@@ -281,10 +281,6 @@ class RegexpTest < Mtest::Test
     assert_compile_error('(?<=foo)', 'lookaround')
   end
 
-  def test_compile_error_back_ref
-    assert_compile_error('(a)\\1', 'back reference')
-  end
-
   def test_compile_error_atomic_group
     assert_compile_error('(?>a+)', 'atomic')
   end
@@ -556,5 +552,72 @@ class RegexpTest < Mtest::Test
     assert_equal 'Ä', md[0]
     assert_equal 1, md.byte_begin(0)   # ä is 2 bytes, Ä starts at byte 1
     assert_equal 3, md.byte_end(0)     # Ä ends at byte 3
+  end
+
+  # ========================================================================
+  # Back-references (\1, \k<name>)
+  # ========================================================================
+
+  def test_back_ref_single_char_match
+    md = match('(a)\\1', 'xaay')
+    assert_equal 'aa', md[0]
+    assert_equal 'a',  md[1]
+  end
+
+  def test_back_ref_single_char_no_match
+    assert_nil match('(a)\\1', 'xaby')
+  end
+
+  def test_back_ref_multi_char_match
+    md = match('(abc)\\1', 'xxabcabcyy')
+    assert_equal 'abcabc', md[0]
+    assert_equal 'abc',    md[1]
+  end
+
+  def test_back_ref_multi_char_no_match
+    assert_nil match('(abc)\\1', 'abcab')
+  end
+
+  def test_back_ref_with_continuation
+    md = match('(ab)\\1c', 'ababc')
+    assert_equal 'ababc', md[0]
+  end
+
+  def test_back_ref_with_continuation_no_match
+    assert_nil match('(ab)\\1c', 'abab')
+  end
+
+  def test_back_ref_empty_capture_matches_empty
+    md = match('(a?)\\1', 'b')
+    assert !md.nil?
+    assert_equal '', md[0]
+    assert_equal '', md[1]
+  end
+
+  def test_back_ref_capture_positions
+    md = match('(foo)\\1', 'xfoofoo')
+    assert_equal 'foofoo', md[0]
+    assert_equal 'foo',    md[1]
+    assert_equal 1, md.byte_begin(1)
+    assert_equal 4, md.byte_end(1)
+  end
+
+  def test_back_ref_named
+    md = match('(?<word>\\w+)\\k<word>', 'hellohello world')
+    assert_equal 'hellohello', md[0]
+  end
+
+  def test_back_ref_named_no_match
+    # "abcdef" has no repeated consecutive \w sequence, so no match expected.
+    assert_nil match('(?<word>\\w+)\\k<word>', 'abcdef')
+  end
+
+  def test_back_ref_case_insensitive_ascii
+    md = match('(abc)\\1', 'ABCabc', is_ignore_case: true)
+    assert_equal 'ABCabc', md[0]
+  end
+
+  def test_back_ref_case_insensitive_no_match
+    assert_nil match('(abc)\\1', 'ABCxyz', is_ignore_case: true)
   end
 end

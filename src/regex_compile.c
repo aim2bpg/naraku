@@ -333,6 +333,10 @@ typedef struct {
   size_t error_offset;
   size_t error_length;
   bool has_error_span;
+
+  // Capture name map entries (for resolving back-references):
+  const nk_capture_entry_t* capture_entries;
+  size_t capture_entries_len;
 } compiler_t;
 
 static nk_error_t emit(compiler_t* c, nk_vm_op_t op, uint32_t* out_index) {
@@ -1468,7 +1472,75 @@ compile_node_dispatch(compiler_t* c, const nk_node_t* node, uint32_t* out_initia
     case NK_NODE_TYPE_ALT:
       return compile_alt(c, node, out_initial, out_holes);
     case NK_NODE_TYPE_BACK_REF:
-      return NK_ERR_UNSUPPORTED_BACK_REF;
+    {
+      const nk_back_ref_node_t* back_ref = &node->back_ref;
+      size_t entry_index = back_ref->resolved_capture_name_map_entry_index;
+      size_t count = back_ref->resolved_capture_num_count;
+
+      if (count == 0 || entry_index == NK_CAPTURE_NAME_MAP_ENTRY_INDEX_UNRESOLVED) {
+        return NK_ERR_UNDEFINED_BACK_REF;
+      }
+
+      // `entry_index` means different things per target_kind:
+      //   CAPTURE_NUM: directly the 0-based capture index (capture_num - 1); no capture_entries lookup.
+      //   NAME:        an index into capture_entries[] (the named group map).
+      const nk_capture_entry_t* entry = NULL;
+      uint32_t single_cap_num = 0;
+      if (back_ref->target_kind == NK_REF_TARGET_KIND_CAPTURE_NUM) {
+        single_cap_num = back_ref->capture_num;
+      } else {
+        if (c->capture_entries == NULL || entry_index >= c->capture_entries_len) {
+          return NK_ERR_UNDEFINED_BACK_REF;
+        }
+        entry = &c->capture_entries[entry_index];
+      }
+
+      // For multiple same-name captures, build a SPLIT chain in reverse order
+      // (last-defined group has highest priority — resolves onigmo_bugs.md BR1).
+      uint32_t initial = NK_VM_STATE_NONE;
+      uint32_t prev_split = NK_VM_STATE_NONE;
+      for (size_t i = 0; i < count; i++) {
+        // Reverse: index 0 tries the last-defined capture group first.
+        uint32_t cap_num = (back_ref->target_kind == NK_REF_TARGET_KIND_CAPTURE_NUM)
+          ? single_cap_num
+          : entry->capture_nums[count - 1 - i];
+        bool is_last = (i == count - 1);
+
+        uint32_t br_idx;
+        nk_error_t br_err;
+        if (!is_last) {
+          uint32_t split_idx;
+          br_err = emit(c, NK_VM_OP_SPLIT, &split_idx);
+          if (br_err != NK_SUCCESS) return br_err;
+          if (initial == NK_VM_STATE_NONE) initial = split_idx;
+          if (prev_split != NK_VM_STATE_NONE) {
+            c->program->states[prev_split].split_next = split_idx;
+          }
+          prev_split = split_idx;
+
+          br_err = emit(c, NK_VM_OP_BACK_REF, &br_idx);
+          if (br_err != NK_SUCCESS) return br_err;
+          c->program->states[split_idx].next = br_idx;
+        } else {
+          br_err = emit(c, NK_VM_OP_BACK_REF, &br_idx);
+          if (br_err != NK_SUCCESS) return br_err;
+          if (initial == NK_VM_STATE_NONE) initial = br_idx;
+          if (prev_split != NK_VM_STATE_NONE) {
+            c->program->states[prev_split].split_next = br_idx;
+          }
+        }
+
+        c->program->states[br_idx].cap_num = cap_num;
+        c->program->states[br_idx].is_ignore_case = back_ref->is_ignore_case;
+        c->program->states[br_idx].fold_flags = back_ref->fold_flags;
+        br_err = hole_list_push(out_holes, br_idx, false);
+        if (br_err != NK_SUCCESS) return br_err;
+      }
+
+      *out_initial = initial;
+      c->program->has_back_refs = true;
+      return NK_SUCCESS;
+    }
     case NK_NODE_TYPE_CALL:
       return NK_ERR_UNSUPPORTED_SUBEXP_CALL;
     case NK_NODE_TYPE_ATOMIC:
@@ -1864,10 +1936,10 @@ static void compute_goto_masks(nk_program_t* program) {
   if (n > 63) {
     return;
   }
-  // Assertion and \K states depend on position; skip those programs.
+  // Assertion, \K, and BACK_REF states depend on position or captured content.
   for (uint32_t i = 0; i < n; i++) {
     nk_vm_op_t op = program->states[i].op;
-    if (op == NK_VM_OP_ASSERTION || op == NK_VM_OP_KEEP) {
+    if (op == NK_VM_OP_ASSERTION || op == NK_VM_OP_KEEP || op == NK_VM_OP_BACK_REF) {
       return;
     }
   }
@@ -1983,6 +2055,8 @@ nk_error_t nk_program_compile(
   const nk_encoding_t* enc,
   const nk_node_t* root_node,
   uint32_t num_capture_groups,
+  const nk_capture_entry_t* capture_entries,
+  size_t capture_entries_len,
   nk_program_t** out_program,
   size_t* out_error_offset,
   size_t* out_error_length
@@ -2020,6 +2094,7 @@ nk_error_t nk_program_compile(
   memset(program->first_byte_table, 0, sizeof(program->first_byte_table));
   program->is_pure_char_class_plus = false;
   program->pure_cc_index = 0u;
+  program->has_back_refs = false;
 
   compiler_t compiler = {
     .enc = enc,
@@ -2031,6 +2106,8 @@ nk_error_t nk_program_compile(
     .error_offset = 0,
     .error_length = 0,
     .has_error_span = false,
+    .capture_entries = capture_entries,
+    .capture_entries_len = capture_entries_len,
   };
 
   hole_list_t holes;
