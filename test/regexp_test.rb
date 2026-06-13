@@ -988,4 +988,84 @@ class RegexpTest < Mtest::Test
     assert_equal [1], nc['x']
     assert_equal [2], nc['y']
   end
+
+  # ========================================================================
+  # \h / \H — hex digit
+  # ========================================================================
+
+  def test_hex_digit_h_matches
+    md = match('\\h+', 'zff3z')
+    assert !md.nil?
+    assert_equal 'ff3', md[0]
+  end
+
+  def test_non_hex_digit_matches_non_hex
+    md = match('\\H+', 'zzff3')
+    assert !md.nil?
+    assert_equal 'zz', md[0]
+  end
+
+  def test_hex_digit_h_no_match
+    assert_nil match('\\h+', 'xyz')
+  end
+
+  def test_non_hex_digit_no_match_all_hex
+    assert_nil match('\\H+', 'ff3a0')
+  end
+
+  def test_hex_digit_h_uppercase
+    md = match('\\h+', 'zAF9z')
+    assert !md.nil?
+    assert_equal 'AF9', md[0]
+  end
+
+  def test_hex_digit_h_in_char_class
+    md = match('[\\h]+', 'x1f2z')
+    assert !md.nil?
+    assert_equal '1f2', md[0]
+  end
+
+  # ========================================================================
+  # (?x) extended mode
+  # ========================================================================
+
+  def test_extended_mode_ignores_spaces
+    md = match('a  b  c', 'xabcz', is_extended_mode: true)
+    assert !md.nil?
+    assert_equal 'abc', md[0]
+  end
+
+  def test_extended_mode_ignores_hash_comment
+    md = match("a # match a\nb # then b", 'xabz', is_extended_mode: true)
+    assert !md.nil?
+    assert_equal 'ab', md[0]
+  end
+
+  def test_extended_mode_inline_flag
+    md = match('(?x)a  b', 'xaby')
+    assert !md.nil?
+    assert_equal 'ab', md[0]
+  end
+
+  # ========================================================================
+  # (?#...) inline comment
+  # ========================================================================
+
+  def test_inline_comment_is_ignored
+    md = match('a(?#this is a comment)b', 'xaby')
+    assert !md.nil?
+    assert_equal 'ab', md[0]
+  end
+
+  def test_inline_comment_multiple
+    md = match('(?#start)a(?#middle)b(?#end)', 'ab')
+    assert !md.nil?
+    assert_equal 'ab', md[0]
+  end
+
+  def test_inline_comment_with_special_chars
+    md = match('\\d(?#digits)\\w', 'x1ay')
+    assert !md.nil?
+    assert_equal '1a', md[0]
+  end
 end
