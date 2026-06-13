@@ -328,10 +328,20 @@ static bool eval_assertion(const vm_t* vm, nk_assertion_type_t type) {
 static bool state_matches_code(const nk_program_t* program, const nk_vm_state_t* state, uint32_t code) {
   switch (state->op) {
     case NK_VM_OP_CODE:
-      if ((state->fold_flags & NK_FOLD_ASCII_ONLY) != 0 && code < 0x80u && state->code < 0x80u) {
-        uint32_t fc = (code >= 'A' && code <= 'Z') ? (code | 0x20u) : code;
-        uint32_t fp = (state->code >= 'A' && state->code <= 'Z') ? (state->code | 0x20u) : state->code;
-        return fc == fp;
+      if (state->is_ignore_case) {
+        if ((state->fold_flags & NK_FOLD_ASCII_ONLY) != 0) {
+          if (code < 0x80u && state->code < 0x80u) {
+            uint32_t fc = (code >= 'A' && code <= 'Z') ? (code | 0x20u) : code;
+            uint32_t fp = (state->code >= 'A' && state->code <= 'Z') ? (state->code | 0x20u) : state->code;
+            return fc == fp;
+          }
+        } else {
+          uint32_t fi[NK_ENC_MAX_FOLDED_CODES];
+          uint32_t fp[NK_ENC_MAX_FOLDED_CODES];
+          size_t fi_n = nk_enc_get_case_fold(program->enc, state->fold_flags, code, fi);
+          size_t fp_n = nk_enc_get_case_fold(program->enc, state->fold_flags, state->code, fp);
+          return fi_n == 1 && fp_n == 1 && fi[0] == fp[0];
+        }
       }
       return code == state->code;
     case NK_VM_OP_CHAR_CLASS:

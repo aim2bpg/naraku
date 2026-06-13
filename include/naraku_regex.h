@@ -64,9 +64,12 @@ typedef struct {
   uint32_t check_id;
   uint32_t next;
   uint32_t split_next;  // valid for `NK_VM_OP_SPLIT` and `NK_VM_OP_CHECK_EPSILON`
-  // Case folding flags for `NK_VM_OP_CODE`. `NK_FOLD_DEFAULT` means
-  // case-sensitive; `NK_FOLD_ASCII_ONLY` enables A-Z / a-z folding.
+  // Case folding for `NK_VM_OP_CODE`.  `is_ignore_case` enables folding;
+  // `fold_flags` controls which fold table to use:
+  //   NK_FOLD_DEFAULT    — simple 1-to-1 Unicode fold (e.g. Ä ↔ ä)
+  //   NK_FOLD_ASCII_ONLY — A-Z / a-z only, no encoding API call
   nk_fold_flag_t fold_flags;
+  bool is_ignore_case;
 } nk_vm_state_t;
 
 /**

@@ -441,8 +441,54 @@ class RegexpTest < Mtest::Test
     assert_nil match_a('s[s]', "\xC3\x9F")
   end
 
-  # Without explicit ascii_only, the default i flag (full fold) is not yet supported
-  def test_non_ascii_fold_raises_compile_error
-    assert_compile_error('hello', 'not supported', is_ignore_case: true)
+  # full fold (ß→ss etc.) is not yet supported
+  def test_full_fold_raises_compile_error
+    assert_compile_error('hello', 'not supported', is_ignore_case: true, fold_flags: [:full])
+  end
+
+  # ========================================================================
+  # Simple (1-to-1 Unicode) case folding — default i flag
+  # ========================================================================
+
+  def match_s(pattern, subject)
+    match(pattern, subject, is_ignore_case: true)
+  end
+
+  # ä (U+00E4) ↔ Ä (U+00C4): simple fold pair in Latin Extended-A
+  def test_simple_fold_literal_lower_to_upper
+    assert_equal 'Ä', match_s('ä', 'xÄy')[0]
+  end
+
+  def test_simple_fold_literal_upper_to_lower
+    assert_equal 'ä', match_s('Ä', 'xäy')[0]
+  end
+
+  def test_simple_fold_literal_no_match
+    assert_nil match_s('ä', 'xyz')
+  end
+
+  # ASCII letters still fold under simple fold
+  def test_simple_fold_ascii_letters
+    assert_equal 'HELLO', match_s('hello', 'HELLO')[0]
+  end
+
+  # Char class with simple fold: [ä] should also match Ä
+  def test_simple_fold_char_class
+    md = match_s('[äÄ]+', 'xÄäy')
+    assert_equal 'Ää', md[0]
+  end
+
+  # Non-ASCII chars without a case pair are unaffected
+  def test_simple_fold_no_pair_unchanged
+    assert_nil match_s('あ', 'い')
+    assert_equal 'あ', match_s('あ', 'xあy')[0]
+  end
+
+  # Capture: byte positions are correct for multi-byte fold match
+  def test_simple_fold_capture_positions
+    md = match_s('(ä)', 'xÄy')
+    assert_equal 'Ä', md[0]
+    assert_equal 1, md.byte_begin(0)   # ä is 2 bytes, Ä starts at byte 1
+    assert_equal 3, md.byte_end(0)     # Ä ends at byte 3
   end
 end
