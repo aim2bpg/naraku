@@ -3,6 +3,11 @@
 Naraku(奈落)の正規表現 VM(コンパイラ + 実行器)の設計ドキュメント。
 mruby 上で実際にマッチングが動く最小実装の確定済み設計と、その根拠を記録する。
 
+> **記録基点**: 本文書は **2026-06-13 時点** (コミット `bff93e9`) の実装を記録する。
+> 行数・テスト数は随時変わるため、最新値は `wc -l` / `bundle exec rake naraku:test_mruby` で確認すること。
+> ベンチマーク値は Cycle A〜M 完了後 (後方参照・先後読み・所有量指定子・`\R`・`(?>)` 実装前) の計測であり、
+> これらの機能を使わないパターンの値は現行でも有効。
+
 - **対象読者**: このプロジェクトの開発者・レビュアー。
   正規表現エンジンの内部構造を知らない読者でも読み進められるよう、
   §2 で基礎から説明する。
@@ -21,7 +26,7 @@ mruby 上で実際にマッチングが動く最小実装の確定済み設計�
 | Onigmo と何が違うのか | §5 |
 | なぜこの設計なのか(妥当性の根拠) | §6 |
 | VM の実装詳細(実装再開・レビュー用) | §7 |
-| mruby からどう使えるか | §8 |
+| mruby からどう使えるか / 機能別ハンズオン | §8 |
 | できないこと・今後の予定 | §9, §10 |
 
 図の凡例(以降のアーキテクチャ図で共通):
@@ -69,6 +74,11 @@ stateDiagram-v2
 S1 から先は「b でも c でも進める」= 道が分岐している。
 この**分岐をどう処理するか**が、正規表現エンジンの方式の分かれ目になる。
 
+NFA はもう一種類の「移動」— **ε 遷移(イプシロン遷移)**も持つ。
+文字を読まずに次の状態へジャンプできる特殊な遷移で、
+分岐・ループ・アンカー(`^` `$` など)の「文字を消費しない操作」を表現する。
+§7 の命令セット表で「消費 = **ε**」と書かれているのはこれを指す。
+
 ### 2.3 二大方式: バックトラッキング vs Pike VM
 
 | 観点 | バックトラッキング方式<br/>(Oniguruma / Onigmo / 多くのエンジン) | Pike VM 方式<br/>(RE2 / Rust regex / **Naraku**) |
@@ -80,8 +90,14 @@ S1 から先は「b でも c でも進める」= 道が分岐している。
 | 使うメモリ | 戻り先を覚えるスタック | 並走中の「スレッド」リスト(プログラムサイズに比例) |
 
 どちらが優れているという話ではなく**トレードオフ**である。
-Onigmo は機能の豊富さ(後方参照・先読きなど)を取り、
+Onigmo は機能の豊富さ(後方参照・先読みなど)を取り、
 Naraku は安全な実行時間を取った(理由は §6 参照)。
+
+> **DFA(決定性有限オートマトン)とは**: NFA の「分岐しない」バリアント。
+> 各状態から読める文字に対して**次状態が 1 つに決まる**ため実行が速いが、
+> NFA から DFA を構築すると状態数が指数的に増える場合がある。
+> Naraku の Ruby プロトタイプは **Lazy DFA** 方式(実行時に NFA 状態集合 → DFA 状態を
+> 遅延計算してキャッシュ)を採用しており、§5・§10 のベンチマークで比較対象として登場する。
 
 ### 2.4 ReDoS — バックトラッキングの弱点
 
@@ -118,14 +134,14 @@ Pike VM は同じ位置にいる重複した道を 1 つにまとめながら全
 flowchart TD
     subgraph support["開発支援"]
         tools["コード生成 tools/<br/>gperf + Ruby で Unicode テーブル生成<br/>→ src/.gen/ ヘッダ群"]
-        proto["Ruby プロトタイプ ruby-prototype/<br/>compiler.rb 549 行 + program.rb 1,280 行<br/>テスト 932 行 = C 移植の設計原本"]
+        proto["Ruby プロトタイプ ruby-prototype/<br/>dfa/compiler.rb 549 行 + dfa/program.rb 1,421 行<br/>テスト 996 行 = C 移植の設計原本"]
     end
 
     subgraph core["C コア層: src/ + include/ → build/libnaraku.a"]
         enc["エンコーディング層<br/>encoding/*.c 5 種 + encoding_ascii/unicode.c<br/>UTF-8 / Shift_JIS / ISO-8859-1 / US-ASCII / ASCII-8BIT"]
         parser["パーサー/レキサー<br/>parse.c 4,338 行(Onigmo 互換構文)"]
         ast["AST 構築・後処理<br/>node.c 385 行 / postprocess.c 832 行"]
-        comp["VM コンパイラ<br/>regex_compile.c 2,533 行"]
+        comp["VM コンパイラ<br/>regex_compile.c 2,614 行"]
         vm["Pike VM 実行器<br/>regex_vm.c 1,704 行"]
     end
 
@@ -170,7 +186,7 @@ flowchart TD
    行うため、ここが全層の土台になる。
 2. **次にパーサーと AST**: 構文の受理範囲とエラー報告(offset/length の
    span)は機能仕様そのものなので、Onigmo 互換の構文解析を先に固めた。
-   テスト 2,924 行で挙動が固定されている。
+   テスト 3,515 行で挙動が固定されている。
 3. **VM はまず Ruby プロトタイプで**: 実行エンジンは「優先度」「空ループ」
    「キャプチャの分岐コピー」など仕様の落とし穴が多い。C でいきなり書くと
    試行錯誤のコストが高いため、Ruby で先に正解を作った(§6 参照)。
@@ -217,33 +233,35 @@ flowchart TD
 
 ## 4. 実装ステータス
 
-### 4.1 このブランチ(`kansai-rubykaigi09`)で追加・変更したもの
+### 4.1 追加・変更したコンポーネント
 
-このブランチが作られた時点では、Naraku は**パーサー専用エンジン**だった。
+`4fa355b`(2026-06-11)の VM 実装以前、Naraku は**パーサー専用エンジン**だった。
 `Naraku::Parser.new(enc, pattern).parse` で AST を得ることはできたが、
 その先でマッチングを行う手段がなかった。
 
-このブランチで追加した変更の一覧:
+追加・変更の一覧:
 
 | 変更 | ファイル | 内容 |
 |---|---|---|
 | ✨ 公開 API ヘッダ | `include/naraku_regex.h` | `nk_program_compile` / `nk_program_search` ほか公開型定義 |
-| ✨ VM コンパイラ | `src/regex_compile.c` | AST → `nk_program_t` バイトコードコンパイラ(2,533 行) |
+| ✨ VM コンパイラ | `src/regex_compile.c` | AST → `nk_program_t` バイトコードコンパイラ(2,614 行) |
 | ✨ Pike VM 実行器 | `src/regex_vm.c` | Pike VM マッチング実行器(1,704 行) |
 | ✨ コンパイラ用エラーコード | `include/naraku_error.h`, `src/error.c` | `-600` 番台 `NK_ERR_UNSUPPORTED_*` ほか 10 種 |
 | ✨ mruby マッチ API | `mrbgems/mruby-naraku/src/mrb_naraku_program.c` | `Naraku::Program` C ブリッジ |
 | ✨ mruby Ruby ラッパー | `mrbgems/mruby-naraku/mrblib/naraku/regexp.rb` | `Naraku::Regexp` / `MatchData` / `CompileError` |
-| ✨ Mtest テスト | `test/regexp_test.rb` | 388 テストケース(マッチング全体を網羅) |
+| ✨ Mtest テスト | `test/regexp_test.rb` | 210 テストケース(マッチング全体を網羅) |
 | ✨ 名前付きキャプチャ | `mrblib/naraku/regexp.rb` | `md[:name]` / `md['name']` / `md.names` / `md.named_captures` |
 | 🐛 CF3 修正 | `src/regex_compile.c` | `[ß]/i` が `ss`/`SS`/`Ss` にマッチ — `compile_cc_with_multi_fold()` で multi-char fold SPLIT 代替を追加 |
 | 🐛 CF3 拡張 | `src/regex_compile.c` | `compile_char_type`(`\w`/`\d`)・`compile_char_prop`(`\p{...}`) も同ヘルパーを使用 |
+| ✨ `\R` 改行シーケンス | `src/regex_compile.c` | CRLF 優先 SPLIT チェーン — CR / LF / CRLF / VT / FF / NEL / LS / PS を網羅 |
+| ✨ `(?>...)` アトミックグループ | `src/regex_compile.c`, `src/regex_vm.c` | `NK_VM_OP_POSSESSIVE` を流用 — greedy サブプログラムにコンパイルし最大マッチにコミット |
 | ✨ 対話型テスター | `tools/match.rb` | `bin/mruby` で動く Rubular ライク CLI |
 | ✨ 3 エンジン比較ベンチマーク | `ruby-prototype/benchmark/bench_compare.rb` + `tools/bench_pike_vm.rb` | Onigmo / DFA / Pike VM の速度比較 |
 | 🐛 バグ修正 | `src/cprop.c` | `code_in_code_range` の `size_t` アンダーフロー修正(`\b` 誤判定の根本原因) |
 
-**ブランチ前後の能力差**:
+**VM 実装前後の能力差**:
 
-| 操作 | ブランチ前 | ブランチ後 |
+| 操作 | `165c1f5`(2026-06-07)以前 | `4fa355b`(2026-06-11)以降 |
 |---|---|---|
 | `Naraku::Parser.new(enc, pat).parse` | ✅ | ✅ |
 | `Naraku::Regexp.new(pat).match(str)` | ❌ | ✅ |
@@ -255,22 +273,22 @@ flowchart TD
 
 ### 4.2 全コンポーネント一覧
 
-| コンポーネント | 場所 | 規模 | テスト | ブランチ前 |
+| コンポーネント | 場所 | 規模 | テスト | `165c1f5`(2026-06-07)時点 |
 |---|---|---|---|---|
-| エンコーディング層(5 種) | `src/encoding/`, `src/encoding_*.c` | 約 1,000 行 + 生成テーブル | ✅ 約 900 行 | 🟩 既存 |
-| パーサー/レキサー | `src/parse.c` | 4,338 行 | ✅ 1,823 行 | 🟩 既存 |
-| AST・後処理 | `src/node.c`, `src/postprocess.c` | 1,217 行 | ✅ あり | 🟩 既存 |
-| Unicode コード生成 | `tools/gen_*.rb` | 約 400 行 | (生成物をテストで担保) | 🟩 既存 |
-| Ruby プロトタイプ(VM の原本) | `ruby-prototype/lib/naraku_ruby/` | 2,513 行 | ✅ 932 行 | 🟩 既存 |
-| mruby バインディング(Parser/Encoding/Node) | `mrbgems/mruby-naraku/` | C 1,826 行 + Ruby 284 行 | ✅(test/ 経由) | 🟩 既存 |
-| **VM コンパイラ** | `src/regex_compile.c` | 2,533 行 | ✅ `test/regexp_test.rb` | ✨ **追加** |
+| エンコーディング層(5 種) | `src/encoding/`, `src/encoding_*.c` | 約 1,000 行 + 生成テーブル | ✅ 約 900 行 | 🟩 |
+| パーサー/レキサー | `src/parse.c` | 4,338 行 | ✅ 1,823 行 | 🟩 |
+| AST・後処理 | `src/node.c`, `src/postprocess.c` | 1,217 行 | ✅ あり | 🟩 |
+| Unicode コード生成 | `tools/gen_*.rb` | 約 400 行 | (生成物をテストで担保) | 🟩 |
+| Ruby プロトタイプ(VM の原本) | `ruby-prototype/lib/naraku_ruby/` | 2,654 行 | ✅ 996 行 | 🟩 |
+| mruby バインディング(Parser/Encoding/Node) | `mrbgems/mruby-naraku/` | C 1,826 行 + Ruby 284 行 | ✅(test/ 経由) | 🟩 |
+| **VM コンパイラ** | `src/regex_compile.c` | 2,614 行 | ✅ `test/regexp_test.rb` | ✨ **追加** |
 | **Pike VM 実行器** | `src/regex_vm.c` | 1,704 行 | ✅ `test/regexp_test.rb` | ✨ **追加** |
 | コンパイラ用エラーコード | `naraku_error.h`, `error.c` | -600〜-610 追加 | ✅ `test/regexp_test.rb` | ✨ **追加** |
 | 公開 API ヘッダ | `include/naraku_regex.h` | 349 行 | — | ✨ **追加** |
-| mruby マッチ API | `mrb_naraku_program.c`, `regexp.rb` | C 181 行 + Ruby 169 行 | ✅ 388 テスト | ✨ **追加** |
+| mruby マッチ API | `mrb_naraku_program.c`, `regexp.rb` | C 181 行 + Ruby 208 行 | ✅ 210 テスト(regexp) + 473 テスト(全体) | ✨ **追加** |
 | 対話型テスター | `tools/match.rb` | 75 行 | — | ✨ **追加** |
 | 3 エンジン比較ベンチマーク | `benchmark/bench_compare.rb` + `tools/bench_pike_vm.rb` | 計 255 行 | — | ✨ **追加** |
-| `\b` バグ修正 | `src/cprop.c` | `code_in_code_range` 修正 | ✅(既存テストが通る) | 🐛 **修正** |
+| `\b` バグ修正 | `src/cprop.c` | `code_in_code_range` 修正 | ✅(回帰テスト通過) | 🐛 **修正** |
 
 ---
 
@@ -285,7 +303,7 @@ Naraku(奈落)は Oniguruma(鬼車)→ Onigmo(鬼雲)の系譜に連なる
 
 ### 5.2 機能比較
 
-| 機能 | Onigmo | Naraku(現在) | Naraku 将来版 |
+| 機能 | Onigmo | Naraku(`19e5ea4`, 2026-06-13) | Naraku 将来版 |
 |---|---|---|---|
 | リテラル・連接・選択 `\|` | ✅ | ✅ | ✅ |
 | `.`(任意の 1 文字) | ✅ | ✅ | ✅ |
@@ -298,9 +316,11 @@ Naraku(奈落)は Oniguruma(鬼車)→ Onigmo(鬼雲)の系譜に連なる
 | `/i`(ASCII-only / Simple / Full Unicode fold) | ✅ | ✅ | ✅ |
 | 後方参照 `\1` `\k<name>` | ✅ | ✅ | ✅ |
 | 先読み・後読み `(?=) (?!) (?<=) (?<!)` | ✅ | ✅ | ✅ |
-| アトミックグループ `(?>)`・不在 `(?~)`・条件分岐 | ✅ | ❌ 明示エラー | ⭕ 検討 |
+| アトミックグループ `(?>)` | ✅ | ✅ | ✅ |
+| 不在グループ `(?~)`・条件分岐 `(?(...)...)` | ✅ | ❌ 明示エラー | ⭕ 検討 |
 | 部分式呼び出し `\g<...>` | ✅ | ❌ 明示エラー | ⭕ 検討 |
-| `\R` `\X` その他 | ✅ | ❌ 明示エラー | ⭕ 予定 |
+| `\R` 改行シーケンス | ✅ | ✅ | ✅ |
+| `\X` 書記素クラスタ | ✅ | ❌ 明示エラー | ⭕ 予定 |
 | エンコーディング | 約 30 種 | 5 種 | 順次拡張 |
 | ReDoS 耐性 | ❌(タイムアウトで緩和) | ✅ 構造的に安全 | ✅ |
 
@@ -375,18 +395,19 @@ Naraku(奈落)は Oniguruma(鬼車)→ Onigmo(鬼雲)の系譜に連なる
 | D8 | 複雑度上限 | 状態数 2¹⁸ / ε id 64 | 無制限 |
 
 **D1: Pike VM を採る。** 最大の理由は移植リスクの最小化:設計原本である
-Ruby プロトタイプ(テスト 932 行で挙動固定)が Pike VM 方式であり、同方式で
+Ruby プロトタイプ(テスト 996 行で挙動固定)が Pike VM 方式であり、同方式で
 移植すればテスト資産と優先度セマンティクスをそのまま検証に使える。加えて
-ReDoS 耐性が「機能」として無料で付いてくる(§2.4)。トレードオフとして
-後方参照・先読みが素直に書けないが、これらは元々スコープ外であり、
-将来版で部分的バックトラッキングとのハイブリッド等を検討する。
+ReDoS 耐性が「機能」として無料で付いてくる(§2.4)。後方参照(`\1`/`\k<name>`)・
+先後読み(`(?=)`/`(?!)`/`(?<=)`/`(?<!)`)・所有量指定子・`\R`・`(?>)` は
+サブプログラム方式で実装済み(§7.3 参照)。`(?(cond)...)` 条件分岐や再帰呼び出し
+`\g<name>` など複雑な状態共有を要するものは、将来版でハイブリッド等を検討する。
 
 **D2: プロトタイプ先行。** 正規表現エンジンの難所はアルゴリズムの正しさ
 (greedy/lazy の優先順位、空マッチループの停止、分岐時のキャプチャ複製)で
 あり、C のメモリ管理と同時に格闘すると手戻りが大きい。Ruby で仕様の正解を
 固めたので、C 側は「答え合わせのできる移植」に専念できる。実際、
-`compiler.rb`(549 行)と `program.rb`(1,280 行)が
-`regex_compile.c` / `regex_vm.c` の 1:1 の下敷きになっている。
+`dfa/compiler.rb`(549 行)と `dfa/program.rb`(1,421 行)が
+`regex_compile.c` / `regex_vm.c` の設計原本になっている。
 
 **D3: mruby 先行。** mrbgems バインディング基盤(Parser/Encoding/Node、
 C 1,826 行)が既に完成しており、マッチ API を足すだけで「動くもの」に
@@ -423,6 +444,12 @@ C 1,826 行)が既に完成しており、マッチ API を足すだけで「動
 ---
 
 ## 7. VM 詳細設計
+
+| セクション | 内容 |
+|---|---|
+| §7.1 命令セット | `nk_vm_op_t` 全命令一覧と各フィールドの意味 |
+| §7.2 コンパイラ | AST → バイトコード変換: フラグメント/hole-patching・文字クラス・case fold |
+| §7.3 実行器 | Pike VM の動作: スレッド・ε 閉包・後方参照・先読み・所有量指定子 |
 
 ### 7.1 命令セット(`nk_vm_op_t`)
 
@@ -827,14 +854,362 @@ md2.named_captures   # => {"year"=>"2024", "month"=>"06", "day"=>"13"}
 
 - `Naraku::Program._compile(parser, node)` → C 側で
   `nk_program_compile(parser->enc, node, parser->num_capture_groups, ...)`。
-  失敗時は `Naraku::CompileError`(offset/length 付き、既存 `ParseError` と
+  失敗時は `Naraku::CompileError`(offset/length 付き、`ParseError` と
   同形式のメッセージ整形)
 - `program#_search(string, byte_start)` → マッチ時はバイトオフセットの
   Integer 配列、非マッチは nil
-- `mrb_data_type` + free hook で `nk_program_t` を解放(既存
-  `mrb_naraku_parser.c` のパターン踏襲)
+- `mrb_data_type` + free hook で `nk_program_t` を解放(`mrb_naraku_parser.c`
+  のパターン踏襲)
 - キャプチャ配列は flat Integer 配列 `[begin_0, end_0, begin_1, end_1, ...]`
   で渡す。`NK_REGION_POS_NONE`(SIZE_MAX)は nil に変換
+
+### 8.4 機能別 E2E ハンズオン
+
+```
+bin/mruby tools/match.rb PATTERN SUBJECT   # 1 ショット実行
+bin/mruby tools/match.rb                   # REPL モード(Ctrl-D で終了)
+```
+
+以下の例はすべて実際の出力をそのまま記載している。
+
+#### 基本マッチング・グループキャプチャ
+
+```
+$ bin/mruby tools/match.rb 'a(b|c)+d' 'xabcbd'
+  pattern : /a(b|c)+d/
+  subject : "xabcbd"
+  match   : "abcbd"  [1...6]
+  [1]         : "b"
+  pre     : "x"
+  post    : ""
+```
+
+#### 名前付きキャプチャ
+
+```
+$ bin/mruby tools/match.rb '(?<year>\d{4})-(?<month>\d{2})-(?<day>\d{2})' '2024-06-13'
+  pattern : /(?<year>\d{4})-(?<month>\d{2})-(?<day>\d{2})/
+  subject : "2024-06-13"
+  match   : "2024-06-13"  [0...10]
+  [1] :year   : "2024"
+  [2] :month  : "06"
+  [3] :day    : "13"
+  pre     : ""
+  post    : ""
+```
+
+`captures` / `names` / `named_captures` は `bin/mruby -e` で確認:
+
+```
+$ bin/mruby -e '
+  re = Naraku::Regexp.new("(?<y>\\d{4})-(?<m>\\d{2})")
+  md = re.match("2024-06")
+  p md.names           # => ["m", "y"]
+  p md.named_captures  # => {"m"=>"06", "y"=>"2024"}
+'
+["m", "y"]
+{"m" => "06", "y" => "2024"}
+```
+
+#### アンカー (`^` `$` `\A` `\z` `\b` `\G`)
+
+```
+$ bin/mruby tools/match.rb '^\d+$' '42'
+  pattern : /^\d+$/
+  subject : "42"
+  match   : "42"  [0...2]
+  pre     : ""
+  post    : ""
+
+$ bin/mruby tools/match.rb '^\d+$' 'abc'
+  pattern : /^\d+$/
+  subject : "abc"
+  result  : no match
+
+$ bin/mruby tools/match.rb '\Ahello' 'hello world'
+  pattern : /\Ahello/
+  subject : "hello world"
+  match   : "hello"  [0...5]
+  pre     : ""
+  post    : " world"
+
+$ bin/mruby tools/match.rb 'hello\z' 'say hello'
+  pattern : /hello\z/
+  subject : "say hello"
+  match   : "hello"  [4...9]
+  pre     : "say "
+  post    : ""
+
+$ bin/mruby tools/match.rb '\bword\b' 'a word here'
+  pattern : /\bword\b/
+  subject : "a word here"
+  match   : "word"  [2...6]
+  pre     : "a "
+  post    : " here"
+
+$ bin/mruby tools/match.rb '\Gsay' 'say hello'
+  pattern : /\Gsay/
+  subject : "say hello"
+  match   : "say"  [0...3]
+  pre     : ""
+  post    : " hello"
+```
+
+#### 文字クラス・文字型 (`[]`、`\w`、`\d`、`\h`、`\p{...}`、POSIX)
+
+```
+$ bin/mruby tools/match.rb '[a-zA-Z_]\w*' '  _foo123 '
+  pattern : /[a-zA-Z_]\w*/
+  subject : "  _foo123 "
+  match   : "_foo123"  [2...9]
+  pre     : "  "
+  post    : " "
+
+$ bin/mruby tools/match.rb '\d+' 'price: 42yen'
+  pattern : /\d+/
+  subject : "price: 42yen"
+  match   : "42"  [7...9]
+  pre     : "price: "
+  post    : "yen"
+
+# \h — 16 進数字 [0-9a-fA-F]
+$ bin/mruby tools/match.rb '#\h{6}' 'color: #ff8800;'
+  pattern : /#\h{6}/
+  subject : "color: #ff8800;"
+  match   : "#ff8800"  [7...14]
+  pre     : "color: "
+  post    : ";"
+
+# \p{Lu} — Unicode 大文字カテゴリ
+$ bin/mruby tools/match.rb '\p{Lu}+' 'hello WORLD'
+  pattern : /\p{Lu}+/
+  subject : "hello WORLD"
+  match   : "WORLD"  [6...11]
+  pre     : "hello "
+  post    : ""
+
+# POSIX クラス [[:digit:]]
+$ bin/mruby tools/match.rb '[[:digit:]]+' 'abc123def'
+  pattern : /[[:digit:]]+/
+  subject : "abc123def"
+  match   : "123"  [3...6]
+  pre     : "abc"
+  post    : "def"
+```
+
+#### 非捕捉グループ・拡張モード・コメント
+
+```
+# (?:...) — キャプチャしないグループ
+$ bin/mruby tools/match.rb '(?:foo|bar)+' 'foobarfoo!'
+  pattern : /(?:foo|bar)+/
+  subject : "foobarfoo!"
+  match   : "foobarfoo"  [0...9]
+  pre     : ""
+  post    : "!"
+
+# (?x) — 拡張モード: 空白とコメントを無視
+$ bin/mruby tools/match.rb '(?x) \d{4} - \d{2} - \d{2}' '2024-06-13'
+  pattern : /(?x) \d{4} - \d{2} - \d{2}/
+  subject : "2024-06-13"
+  match   : "2024-06-13"  [0...10]
+  pre     : ""
+  post    : ""
+
+# (?#...) — インラインコメント
+$ bin/mruby tools/match.rb '\d+(?#digits)' 'code: 42'
+  pattern : /\d+(?#digits)/
+  subject : "code: 42"
+  match   : "42"  [6...8]
+  pre     : "code: "
+  post    : ""
+```
+
+#### `\K` マッチ開始位置リセット
+
+```
+$ bin/mruby tools/match.rb 'foo\Kbar' 'foobar'
+  pattern : /foo\Kbar/
+  subject : "foobar"
+  match   : "bar"  [3...6]
+  pre     : "foo"
+  post    : ""
+```
+
+#### 先読み・後読み
+
+```
+$ bin/mruby tools/match.rb '(?=foo)' 'foobar'
+  pattern : /(?=foo)/
+  subject : "foobar"
+  match   : ""  [0...0]
+  pre     : ""
+  post    : "foobar"
+
+$ bin/mruby tools/match.rb '\d+(?=px)' 'width:42px;'
+  pattern : /\d+(?=px)/
+  subject : "width:42px;"
+  match   : "42"  [6...8]
+  pre     : "width:"
+  post    : "px;"
+
+$ bin/mruby tools/match.rb '(?<=foo)bar' 'foobar'
+  pattern : /(?<=foo)bar/
+  subject : "foobar"
+  match   : "bar"  [3...6]
+  pre     : "foo"
+  post    : ""
+
+$ bin/mruby tools/match.rb '(?<=\d{3})\w+' 'abc123def'
+  pattern : /(?<=\d{3})\w+/
+  subject : "abc123def"
+  match   : "def"  [6...9]
+  pre     : "abc123"
+  post    : ""
+```
+
+#### 後方参照 (`\1`、`\k<name>`)
+
+```
+$ bin/mruby tools/match.rb '(\w+)\k<1>' 'hellohello world'
+  pattern : /(\w+)\k<1>/
+  subject : "hellohello world"
+  match   : "hellohello"  [0...10]
+  [1]         : "hello"
+  pre     : ""
+  post    : " world"
+
+$ bin/mruby tools/match.rb '(?<word>\w+)\k<word>' 'hellohello world'
+  pattern : /(?<word>\w+)\k<word>/
+  subject : "hellohello world"
+  match   : "hellohello"  [0...10]
+  [1] :word   : "hello"
+  pre     : ""
+  post    : " world"
+```
+
+#### 所有量指定子 (`a*+`、`a++`、`a?+`、`a{m,n}+`)
+
+```
+# 一度 a を消費したらバックトラックしない → 直後の a とマッチしない
+$ bin/mruby tools/match.rb 'a*+a' 'aaa'
+  pattern : /a*+a/
+  subject : "aaa"
+  result  : no match
+
+$ bin/mruby tools/match.rb 'a++b' 'aaab'
+  pattern : /a++b/
+  subject : "aaab"
+  match   : "aaab"  [0...4]
+  pre     : ""
+  post    : ""
+```
+
+#### `(?>...)` アトミックグループ
+
+```
+# 非アトミック: (?:abc|ab)c → "ab" にフォールバックしてマッチ
+$ bin/mruby tools/match.rb '(?:abc|ab)c' 'abc'
+  pattern : /(?:abc|ab)c/
+  subject : "abc"
+  match   : "abc"  [0...3]
+  pre     : ""
+  post    : ""
+
+# アトミック: (?>abc|ab)c → "abc" にコミットしてフォールバックしないのでマッチしない
+$ bin/mruby tools/match.rb '(?>abc|ab)c' 'abc'
+  pattern : /(?>abc|ab)c/
+  subject : "abc"
+  result  : no match
+```
+
+#### `\R` 改行シーケンス
+
+```
+# CRLF を 1 単位として消費する
+$ bin/mruby tools/match.rb '\R' $'a\r\nb'
+  pattern : /\R/
+  subject : "a\r\nb"
+  match   : "\r\n"  [1...3]
+  pre     : "a"
+  post    : "b"
+
+$ bin/mruby tools/match.rb 'a\R+b' $'a\r\n\nb'
+  pattern : /a\R+b/
+  subject : "a\r\n\nb"
+  match   : "a\r\n\nb"  [0...5]
+  pre     : ""
+  post    : ""
+```
+
+#### `/i` フラグ (ケースフォールディング)
+
+`(?i)` インラインフラグで Simple fold(1 対 1 Unicode fold)が有効になる:
+
+```
+$ bin/mruby tools/match.rb '(?i)hello' 'Say HELLO World'
+  pattern : /(?i)hello/
+  subject : "Say HELLO World"
+  match   : "HELLO"  [4...9]
+  pre     : "Say "
+  post    : " World"
+```
+
+Full fold(`ß → ss` 等の 1 対多展開)は `Naraku::Regexp.new` のキーワード引数で指定する:
+
+```
+$ bin/mruby -e '
+  re = Naraku::Regexp.new("ss", Naraku::Encoding::UTF_8,
+                           is_ignore_case: true, fold_flags: [:full])
+  p re.match?("SS")   # => true
+  p re.match?("Ss")   # => true
+'
+true
+true
+
+# 文字クラスでも Full fold が有効(CF3 修正: §5.2 参照)
+$ bin/mruby -e '
+  re = Naraku::Regexp.new("[ss]", Naraku::Encoding::UTF_8,
+                           is_ignore_case: true, fold_flags: [:full])
+  p re.match?("SS")   # => true
+'
+true
+```
+
+#### Ruby API の使い方 (`match?`、`=~`、`captures`)
+
+```
+$ bin/mruby -e '
+  re = Naraku::Regexp.new("\\d+")
+  p re.match?("foo123")  # => true  (MatchData を生成しないため高速)
+  p re.match?("foobar")  # => false
+  p re =~ "foo123"       # => 3   (マッチ開始バイトオフセット)
+  p re =~ "foobar"       # => nil
+'
+true
+false
+3
+nil
+
+$ bin/mruby -e '
+  re = Naraku::Regexp.new("(\\d+)-(\\d+)")
+  md = re.match("2024-06")
+  p md.captures  # => ["2024", "06"]
+  p md.to_a      # => ["2024-06", "2024", "06"]
+'
+["2024", "06"]
+["2024-06", "2024", "06"]
+```
+
+#### 未対応機能の明示エラー
+
+```
+$ bin/mruby tools/match.rb '(?~a+)' 'test'
+  compile error: absence groups are not supported in this version (at span 0...6)
+
+$ bin/mruby tools/match.rb '(a)\g<1>' 'aa'
+  compile error: sub-expression calls are not supported in this version (at span 3...8)
+```
 
 ---
 
@@ -843,10 +1218,9 @@ md2.named_captures   # => {"year"=>"2024", "month"=>"06", "day"=>"13"}
 | 機能 | エラー |
 |---|---|
 | 部分式呼び出し `\g<...>` | `NK_ERR_UNSUPPORTED_SUBEXP_CALL` |
-| アトミックグループ `(?>)` | `NK_ERR_UNSUPPORTED_ATOMIC_GROUP` |
 | 不在グループ `(?~)` | `NK_ERR_UNSUPPORTED_ABSENCE_GROUP` |
 | 条件分岐 `(?(...)...)` | `NK_ERR_UNSUPPORTED_CONDITIONAL` |
-| `\R` `\X` その他 | `NK_ERR_UNSUPPORTED_FEATURE` |
+| `\X` 書記素クラスタ | `NK_ERR_UNSUPPORTED_FEATURE` |
 | プログラム上限超過(状態数 2¹⁸、ε id 64) | `NK_ERR_PATTERN_TOO_COMPLEX` |
 
 ---
@@ -974,7 +1348,9 @@ P6a(Ruby 実装 Lazy DFA)のみ YJIT/ZJIT の恩恵を受ける。P1〜P5・P6b�
 [Back-ref]  feat: back-reference \1 \k<name> VM execution (run-scan bug fix)
 [Lookaround] feat: lookahead/lookbehind (?=) (?!) (?<=) (?<!) sub-program VM
 [Possessive] feat: possessive quantifiers a*+ a++ a?+ a{m,n}+ sub-program VM
-[設計書]    docs: regex-vm.md                   ← 全体を総括
+[\R]        feat: implement \R (newline sequence) — CRLF-priority SPLIT chain
+[(?>)]      feat: implement (?>...) atomic groups via NK_VM_OP_POSSESSIVE reuse
+[設計書]    docs: naraku_vm.md                  ← 全体を総括
 ```
 
 ---
@@ -990,11 +1366,11 @@ P6a(Ruby 実装 Lazy DFA)のみ YJIT/ZJIT の恩恵を受ける。P1〜P5・P6b�
 - [x] エラーコード(-600 番台) + メッセージ
 - [x] 公開ヘッダ `include/naraku_regex.h`
 - [x] 設計ドキュメント(本書)
-- [x] `src/regex_compile.c` 実装(2,533 行)
+- [x] `src/regex_compile.c` 実装(2,614 行)
 - [x] `src/regex_compile.c` の厳格フラグ(`-Wall -Werror -Wconversion` 等)でのビルド検証
 - [x] `src/regex_vm.c`(`nk_program_search`)実装(1,704 行)
 - [x] mruby バインディング(`mrb_naraku_program.c` + `regexp.rb`)
-- [x] Mtest マッチングテスト(388 テスト — リテラル・量指定子・キャプチャ・文字クラス・アンカー・UTF-8・先後読み・所有量指定子・名前付きキャプチャ・char class multi-char fold)
+- [x] Mtest マッチングテスト(210 テスト / regexp_test.rb、473 テスト / mruby テスト全体 — リテラル・量指定子・キャプチャ・文字クラス・アンカー・UTF-8・先後読み・所有量指定子・名前付きキャプチャ・char class multi-char fold)
 - [x] ASan green(leak のみ、メモリ安全エラーなし)
 - [x] `/i` フラグ — ASCII-only fold(`NK_FOLD_ASCII_ONLY`)・Simple fold(`NK_FOLD_DEFAULT`)・Full fold(`NK_FOLD_FULL`)・Turkish/Azeri fold(`NK_FOLD_TURKISH_AZERI`)全対応
 - [x] CF3 修正 — `compile_cc_with_multi_fold()` で文字クラス内 multi-char fold を SPLIT 代替に展開(`[ß]/i` が `ss` にマッチ)
@@ -1003,23 +1379,9 @@ P6a(Ruby 実装 Lazy DFA)のみ YJIT/ZJIT の恩恵を受ける。P1〜P5・P6b�
 - [x] 後方参照 `\1` `\k<name>` — 数値/名前参照・可変幅消費・case-insensitive fold 対応
 - [x] 先読み・後読み `(?=) (?!) (?<=) (?<!)` — サブプログラム方式・Pike VM ε 閉包で実行
 - [x] 所有量指定子 `a*+` `a++` `a?+` `a{m,n}+` — greedy サブプログラム方式・`poss_pending` 側リストで leftmost-first を保証
+- [x] `\R` 改行シーケンス — CRLF 優先 SPLIT チェーン (CR / LF / CRLF / VT / FF / NEL / LS / PS)
+- [x] `(?>...)` アトミックグループ — `NK_VM_OP_POSSESSIVE` 流用 (greedy サブプログラム方式と同一機構)
 - [x] 対話型テスター `tools/match.rb`
 - [x] 3 エンジン比較ベンチマーク `ruby-prototype/benchmark/bench_compare.rb`
 
-**E2E 動作確認**:
-```
-$ bin/mruby tools/match.rb 'a(b|c)+d' 'xabcbd'
-  pattern : a(b|c)+d
-  subject : xabcbd
-  match   : "abcbd"  [1...6]
-  [1]     : "b"
-  pre     : "x"
-  post    : ""
-
-$ bin/mruby tools/match.rb '(?=foo)' 'foobar'
-  pattern : (?=foo)
-  subject : foobar
-  match   : ""  [0...0]
-  pre     : ""
-  post    : "foobar"
-```
+E2E 実行例は §8.4 を参照。
