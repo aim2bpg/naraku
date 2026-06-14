@@ -38,12 +38,15 @@ System packages required (Ubuntu/Debian):
 sudo apt-get install -y \
   build-essential bison clang clang-format gperf \
   libssl-dev libreadline-dev zlib1g-dev \
-  libffi-dev libyaml-dev libgmp-dev
+  libffi-dev libyaml-dev libgmp-dev \
+  lcov
 ```
 
 **`gperf` is required** for generating Unicode character property lookup tables. Omitting it causes a silent build failure during `naraku:codegen`.
 
 **`clang` is required** for `naraku:build_mruby_asan` (the AddressSanitizer build), which links with `LD=clang`. Without it, the task fails with `clang: not found`.
+
+**`lcov` is required** for the C coverage tasks (`naraku:coverage_c`). It is installed by `setup.sh`.
 
 Ruby is managed via **rbenv**. The required version is in `.ruby-version`.
 
@@ -101,6 +104,10 @@ bundle exec rake ruby_prototype:test   # Run Ruby prototype tests (no C build ne
 
 bundle exec rake lint                  # RuboCop lint
 bundle exec rake format                # clang-format + RuboCop autocorrect
+
+# Coverage measurement (requires lcov system package):
+bundle exec rake naraku:coverage_c     # C layer: build (gcov) → test → lcov HTML in coverage/c_html/
+bundle exec rake ruby_prototype:coverage  # Ruby prototype: SimpleCov line coverage report in coverage/
 ```
 
 ## Development process

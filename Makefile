@@ -40,6 +40,24 @@ build/static/encoding_unicode.o: src/.gen/cprop_range_unicode.gen.h src/.gen/cas
 build/static/encoding/iso_8859_1.o: src/encoding/.gen/cprop_range_iso_8859_1.gen.h src/encoding/.gen/case_map_iso_8859_1.gen.h
 build/static/encoding/shift_jis.o: src/encoding/.gen/cprop_range_shift_jis.gen.h src/encoding/.gen/case_map_shift_jis.gen.h
 
+# Coverage build (separate directory, --coverage -O0, does not overwrite normal build).
+COVERAGE_OBJECTS := $(subst src/,build/coverage/static/,$(SOURCES:.c=.o))
+
+build/coverage/libnaraku.a: $(COVERAGE_OBJECTS)
+	$(ECHO) "building $@ with $(AR)"
+	$(Q) $(AR) $(ARFLAGS) $@ $(COVERAGE_OBJECTS)
+
+build/coverage/static/%.o: src/%.c Makefile $(HEADERS)
+	$(ECHO) "compiling (coverage) $@"
+	$(Q) $(MAKEDIRS) $(@D)
+	$(Q) $(CC) $(CPPFLAGS) --coverage -O0 -g -std=c99 -Wall -Werror -Wextra -Wpedantic -Wundef -Wconversion -Wno-missing-braces -fPIC -fvisibility=hidden -Wimplicit-fallthrough -c -o $@ $<
+
+build/coverage/static/cprop.o: src/.gen/name2cprop.gen.h
+build/coverage/static/encoding_ascii.o: src/.gen/cprop_range_ascii.gen.h src/.gen/case_map_ascii.gen.h
+build/coverage/static/encoding_unicode.o: src/.gen/cprop_range_unicode.gen.h src/.gen/case_map_unicode.gen.h
+build/coverage/static/encoding/iso_8859_1.o: src/encoding/.gen/cprop_range_iso_8859_1.gen.h src/encoding/.gen/case_map_iso_8859_1.gen.h
+build/coverage/static/encoding/shift_jis.o: src/encoding/.gen/cprop_range_shift_jis.gen.h src/encoding/.gen/case_map_shift_jis.gen.h
+
 .PHONY: format
 format:
 	$(ECHO) "formatting C files"
@@ -48,4 +66,9 @@ format:
 .PHONY: clean
 clean:
 	$(ECHO) "cleaning build artifacts"
-	$(Q) $(RMALL) build
+	$(Q) $(RMALL) build/static build/libnaraku.a
+
+.PHONY: clean_coverage
+clean_coverage:
+	$(ECHO) "cleaning coverage build artifacts"
+	$(Q) $(RMALL) build/coverage

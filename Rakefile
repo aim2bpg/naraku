@@ -75,6 +75,37 @@ GENERATED_HEADER_RULES.each do |target, rule|
   end
 end
 
+ASAN_ENV = {
+  'CFLAGS' => '-g -fsanitize=address',
+  'LD' => 'clang',
+  'LDFLAGS' => '-fsanitize=address',
+}.freeze
+
+def generate_c_coverage_report
+  root = File.expand_path('.')
+  mkdir_p 'coverage'
+  mkdir_p 'coverage/gcov_tmp'
+  sh <<~SH.strip
+    lcov --capture \
+      --directory build/coverage/static \
+      --directory submodules/mruby/build/coverage/mrbgems/mruby-naraku \
+      --base-directory #{root} \
+      --tempdir coverage/gcov_tmp \
+      --rc geninfo_unexecuted_blocks=1 \
+      --output-file coverage/naraku_c_raw.info
+  SH
+  sh <<~SH.strip
+    lcov \
+      --extract coverage/naraku_c_raw.info \
+      '#{root}/src/*' \
+      '#{root}/mrbgems/mruby-naraku/src/*' \
+      --output-file coverage/naraku_c.info
+  SH
+  sh "genhtml coverage/naraku_c.info --output-directory coverage/c_html --title 'Naraku C Coverage'"
+  sh 'lcov --summary coverage/naraku_c.info'
+  puts "\nHTML report: coverage/c_html/index.html"
+end
+
 namespace :naraku do
   desc 'Generate Unicode/cprop headers'
   task codegen: GENERATED_HEADERS
@@ -89,16 +120,28 @@ namespace :naraku do
     sh "cd submodules/mruby && rake MRUBY_CONFIG=#{MRUBY_CONFIG}"
   end
 
+  desc 'Build naraku C files with gcov instrumentation (into build/coverage/)'
+  task build_lib_coverage: :codegen do
+    sh 'make build/coverage/libnaraku.a'
+  end
+
+  desc 'Build mruby with gcov instrumentation (coverage named build, separate from host build)'
+  task build_mruby_coverage: :build_lib_coverage do
+    sh(
+      { 'NARAKU_BUILDDIR' => File.expand_path('build/coverage') },
+      "cd submodules/mruby && rake MRUBY_CONFIG=#{File.expand_path('build_config_coverage.rb')}"
+    )
+  end
+
+  desc 'Run C-layer coverage: build (gcov) → test → lcov HTML report in coverage/c_html/'
+  task coverage_c: :build_mruby_coverage do
+    sh "#{File.expand_path('submodules/mruby/build/coverage/bin/mruby')} test/test_run.rb"
+    generate_c_coverage_report
+  end
+
   desc 'Build mruby integration with ASan'
   task build_mruby_asan: [:clean_all] do
-    sh(
-      {
-        'CFLAGS' => '-g -fsanitize=address',
-        'LD' => 'clang',
-        'LDFLAGS' => '-fsanitize=address',
-      },
-      'rake naraku:build_lib naraku:build_mruby'
-    )
+    sh(ASAN_ENV, 'rake naraku:build_lib naraku:build_mruby')
   end
 
   task :ensure_mruby do
@@ -134,6 +177,23 @@ namespace :naraku do
   task clean_all: %i[clean clean_mruby]
 end
 
+def ruby_prototype_coverage_script(test_files)
+  requires = test_files.sort.map { |f| "require '#{File.expand_path(f)}'" }.join("\n  ")
+  <<~RUBY
+    require 'simplecov'
+    SimpleCov.start do
+      add_filter '/test/'
+      add_filter 'mruby-scripts'
+      track_files 'ruby-prototype/lib/**/*.rb'
+      root '#{__dir__}'
+    end
+    require 'minitest/autorun'
+    require 'minitest/reporters'
+    Minitest::Reporters.use!
+    #{requires}
+  RUBY
+end
+
 BENCHMARK_DIR = 'ruby-prototype/benchmark'
 BENCHMARK_RESULTS_DIR = "#{BENCHMARK_DIR}/results".freeze
 
@@ -151,6 +211,12 @@ namespace :ruby_prototype do
     t.libs << 'ruby-prototype/test'
     t.libs << 'ruby-prototype/lib'
     t.test_globs = ['ruby-prototype/test/**/*_test.rb']
+  end
+
+  desc 'Run ruby-prototype tests with line coverage (SimpleCov, single process)'
+  task :coverage do
+    test_files = Dir['ruby-prototype/test/**/*_test.rb']
+    ruby "-Iruby-prototype/test -Iruby-prototype/lib -e #{ruby_prototype_coverage_script(test_files).shellescape}"
   end
 
   namespace :benchmark do

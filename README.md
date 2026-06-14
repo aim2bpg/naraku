@@ -40,10 +40,32 @@ projects or checkouts.
 
 ### Manual setup
 
-Install system dependencies:
+Run the setup script (works without Dev Container):
 
 ```sh
-sudo apt-get install -y build-essential bison clang gperf
+bash .devcontainer/setup.sh
+```
+
+This installs system packages, rbenv, Ruby, mruby submodule, gems, and
+downloads the Unicode Character Database automatically.
+
+Alternatively, do it step by step:
+
+```sh
+# System packages (Ubuntu/Debian)
+sudo apt-get install -y \
+  build-essential bison clang clang-format gperf \
+  libssl-dev libreadline-dev zlib1g-dev \
+  libffi-dev libyaml-dev libgmp-dev lcov
+
+# Initialize mruby submodule
+git submodule update --init
+
+# Ruby gems
+bundle install
+
+# Download Unicode Character Database
+ruby tools/download_ucd.rb 17.0.0
 ```
 
 Install git hooks (runs lint automatically on commit):
