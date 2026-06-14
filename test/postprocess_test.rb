@@ -149,4 +149,39 @@ class PostprocessTest < Mtest::Test
     assert_postprocess_error('\g<a>(a)', 'invalid sub-expression call', offset: 0, length: 5)
     assert_postprocess_error('\g<2>(a)', 'undefined sub-expression call', offset: 0, length: 5)
   end
+
+  def test_undefined_named_back_ref_truly_absent
+    # 'b' is never defined → find_capture_entry_index fails in resolve_back_ref
+    assert_postprocess_error('(?<a>x)\k<b>', 'undefined back reference', offset: 7, length: 5)
+  end
+
+  def test_undefined_numeric_back_ref_out_of_range
+    # only 1 group, \2 is out of range → is_valid_numeric_capture_ref fails
+    assert_postprocess_error('(a)\2', 'undefined back reference', offset: 3, length: 2)
+  end
+
+  def test_undefined_named_conditional_ref_truly_absent
+    # 'b' is never defined → find_capture_entry_index fails in resolve_conditional
+    assert_postprocess_error('(?<a>x)(?(<b>)c|d)', 'undefined conditional reference', offset: 7, length: 11)
+  end
+
+  def test_undefined_numeric_conditional_ref_out_of_range
+    # only 1 group, (?(2) is out of range
+    assert_postprocess_error('(a)(?(2)c|d)', 'undefined conditional reference', offset: 3, length: 9)
+  end
+
+  def test_resolve_refs_error_propagates_through_alt
+    # alt branch with undefined back-ref → error propagation through alt children loop
+    assert_postprocess_error('(?<a>x)|\k<b>', 'undefined back reference', offset: 8, length: 5)
+  end
+
+  def test_rehash_triggered_by_many_named_captures
+    # 12 unique names exceed the 70% rehash threshold of the initial 16-bucket map
+    pattern = (1..12).map { |i| "(?<name#{i}>#{i})" }.join
+    parser = Naraku::Parser.new(Naraku::Encoding::UTF_8, pattern)
+    root = parser.parse
+    parser.postprocess(root)
+    assert_equal 12, parser.num_capture_groups
+    assert_equal true, parser.has_named_captures
+  end
 end

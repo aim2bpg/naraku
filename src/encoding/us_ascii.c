@@ -13,15 +13,7 @@ static int8_t us_ascii_scan_mbc_width(
 }
 
 static nk_error_t
-us_ascii_encode_mbc(const nk_encoding_t* enc NARAKU_ARG_UNUSED, uint32_t code, size_t* out_width, uint8_t* out_bytes) {
-  if (code < 128) {
-    *out_width = 1;
-    if (out_bytes != NULL) {
-      *out_bytes = (uint8_t)code;
-    }
-    return NK_SUCCESS;
-  }
-
+us_ascii_encode_mbc(const nk_encoding_t* enc NARAKU_ARG_UNUSED, uint32_t code NARAKU_ARG_UNUSED, size_t* out_width NARAKU_ARG_UNUSED, uint8_t* out_bytes NARAKU_ARG_UNUSED) {
   return NK_ERR_CODE_POINT_OUT_OF_RANGE;
 }
 

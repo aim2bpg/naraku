@@ -3,14 +3,24 @@ class RegexpTest < Mtest::Test
     Naraku::Regexp.new(pattern, **parser_options).match(subject, byte_start)
   end
 
-  def assert_compile_error(pattern, error_substr, **parser_options)
+  def assert_compile_error(pattern, error_substr, enc = Naraku::Encoding::UTF_8, **parser_options)
     begin
-      Naraku::Regexp.new(pattern, **parser_options)
+      Naraku::Regexp.new(pattern, enc, **parser_options)
     rescue Naraku::CompileError => e
       assert e.message.include?(error_substr), "expected #{e.message.inspect} to include #{error_substr.inspect}"
       return
     end
     assert false, "expected Naraku::CompileError for #{pattern.inspect}"
+  end
+
+  def assert_parse_error(pattern, error_substr, enc = Naraku::Encoding::UTF_8, **parser_options)
+    begin
+      Naraku::Regexp.new(pattern, enc, **parser_options)
+    rescue Naraku::ParseError => e
+      assert e.message.include?(error_substr), "expected #{e.message.inspect} to include #{error_substr.inspect}"
+      return
+    end
+    assert false, "expected Naraku::ParseError for #{pattern.inspect}"
   end
 
   # ========================================================================
@@ -168,6 +178,60 @@ class RegexpTest < Mtest::Test
   end
 
   # ========================================================================
+  # CC1: POSIX character classes
+  # Onigmo bug: 20-char lookahead heuristic causes O(n²) parse + confusing errors.
+  # Naraku: linear parse, unknown names always raise ParseError.
+  # ========================================================================
+
+  def test_posix_class_alpha_digit
+    # CC1: valid POSIX classes parse and match correctly
+    md = match('[[:alpha:]][[:digit:]]+', 'abc x5z')
+    assert !md.nil?
+    assert_equal 'x5', md[0]
+  end
+
+  def test_posix_class_unknown_raises_parse_error
+    # CC1: unknown POSIX class name must raise ParseError (not a fallback)
+    assert_parse_error('[[:unknownclass:]]', 'invalid POSIX character class name')
+  end
+
+  # ========================================================================
+  # \h / \H — hex digit
+  # ========================================================================
+
+  def test_hex_digit_h_matches
+    md = match('\\h+', 'zff3z')
+    assert !md.nil?
+    assert_equal 'ff3', md[0]
+  end
+
+  def test_non_hex_digit_matches_non_hex
+    md = match('\\H+', 'zzff3')
+    assert !md.nil?
+    assert_equal 'zz', md[0]
+  end
+
+  def test_hex_digit_h_no_match
+    assert_nil match('\\h+', 'xyz')
+  end
+
+  def test_non_hex_digit_no_match_all_hex
+    assert_nil match('\\H+', 'ff3a0')
+  end
+
+  def test_hex_digit_h_uppercase
+    md = match('\\h+', 'zAF9z')
+    assert !md.nil?
+    assert_equal 'AF9', md[0]
+  end
+
+  def test_hex_digit_h_in_char_class
+    md = match('[\\h]+', 'x1f2z')
+    assert !md.nil?
+    assert_equal '1f2', md[0]
+  end
+
+  # ========================================================================
   # Dot
   # ========================================================================
 
@@ -279,6 +343,56 @@ class RegexpTest < Mtest::Test
 
   def test_compile_error_subexp_call
     assert_compile_error('(a)\\g<1>', 'sub-expression')
+  end
+
+  # GC1 regression: \X must raise CompileError until dedicated VM instruction exists.
+  # Onigmo expands \X to the UAX#29 regex (no error). Naraku rejects it explicitly.
+  def test_compile_error_grapheme_cluster
+    assert_compile_error('\\X', 'unsupported feature')
+  end
+
+  # ========================================================================
+  # (?x) extended mode
+  # ========================================================================
+
+  def test_extended_mode_ignores_spaces
+    md = match('a  b  c', 'xabcz', is_extended_mode: true)
+    assert !md.nil?
+    assert_equal 'abc', md[0]
+  end
+
+  def test_extended_mode_ignores_hash_comment
+    md = match("a # match a\nb # then b", 'xabz', is_extended_mode: true)
+    assert !md.nil?
+    assert_equal 'ab', md[0]
+  end
+
+  def test_extended_mode_inline_flag
+    md = match('(?x)a  b', 'xaby')
+    assert !md.nil?
+    assert_equal 'ab', md[0]
+  end
+
+  # ========================================================================
+  # (?#...) inline comment
+  # ========================================================================
+
+  def test_inline_comment_is_ignored
+    md = match('a(?#this is a comment)b', 'xaby')
+    assert !md.nil?
+    assert_equal 'ab', md[0]
+  end
+
+  def test_inline_comment_multiple
+    md = match('(?#start)a(?#middle)b(?#end)', 'ab')
+    assert !md.nil?
+    assert_equal 'ab', md[0]
+  end
+
+  def test_inline_comment_with_special_chars
+    md = match('\\d(?#digits)\\w', 'x1ay')
+    assert !md.nil?
+    assert_equal '1a', md[0]
   end
 
   # ========================================================================
@@ -632,6 +746,14 @@ class RegexpTest < Mtest::Test
     assert_equal "\xC3\x9F", match_f('\\p{Lu}', "\xC3\x9F")[0]
   end
 
+  # CF6 regression: char class must NOT be treated as literal for multi-char fold.
+  # Onigmo bug: [s]s /Full fold matches ß (single-element class treated as literal s).
+  # Naraku fix: [s]s and s[s] are both nil — char class stays a char class.
+  def test_full_fold_cf6_char_class_not_treated_as_literal
+    assert_nil match_f('[s]s', "\xC3\x9F") # ß (U+00DF)
+    assert_nil match_f('s[s]', "\xC3\x9F")
+  end
+
   # ========================================================================
   # Simple (1-to-1 Unicode) case folding — default i flag
   # ========================================================================
@@ -676,6 +798,25 @@ class RegexpTest < Mtest::Test
     assert_equal 'Ä', md[0]
     assert_equal 1, md.byte_begin(0)   # ä is 2 bytes, Ä starts at byte 1
     assert_equal 3, md.byte_end(0)     # Ä ends at byte 3
+  end
+
+  # ========================================================================
+  # CF7: case folding + \w + set intersection (Kelvin Sign U+212A)
+  # ========================================================================
+
+  # [k&&\w]/i — single-char class {k} intersected with \w.
+  # Both Onigmo and Naraku correctly include Kelvin Sign in the expansion.
+  def test_simple_fold_cf7_single_char_w_intersection_kelvin
+    kelvin = "\xe2\x84\xaa" # K (U+212A KELVIN SIGN)
+    assert !match_s('[k&&\w]', kelvin).nil?
+  end
+
+  # [a-z&&\w]/i — range-based class intersected with \w.
+  # Onigmo bug: asc_cc suppressed by \w → Kelvin excluded (false).
+  # Naraku fix: Kelvin correctly included (true).
+  def test_simple_fold_cf7_range_w_intersection_kelvin
+    kelvin = "\xe2\x84\xaa" # K (U+212A KELVIN SIGN)
+    assert !match_s('[a-z&&\w]', kelvin).nil?
   end
 
   # ========================================================================
@@ -743,6 +884,37 @@ class RegexpTest < Mtest::Test
 
   def test_back_ref_case_insensitive_no_match
     assert_nil match('(abc)\\1', 'ABCxyz', is_ignore_case: true)
+  end
+
+  # CF2 regression: Full fold + backreference.
+  # Onigmo bug: /(ß)\1/i =~ "ssß" returns nil (multi-char fold not handled in backref).
+  # Naraku fix: backref matching respects full case fold — "ssß" matches "(ß)\1".
+  def test_back_ref_full_fold_cf2_eszett
+    md = match("(\xC3\x9F)\\1", "ss\xC3\x9F", is_ignore_case: true, fold_flags: [:full])
+    assert !md.nil?
+    assert_equal "ss\xC3\x9F", md[0]
+  end
+
+  def test_back_ref_full_fold_cf2_eszett_literal_still_works
+    # ßß/i matching ssß works in Onigmo too; Naraku must also pass it
+    md = match("\xC3\x9F\xC3\x9F", "ss\xC3\x9F", is_ignore_case: true, fold_flags: [:full])
+    assert !md.nil?
+  end
+
+  # CF3 regression: char class + Full fold + backref causing ReDoS in Onigmo.
+  # Onigmo: /(x)[abcß]+\1/i on "x"+"ss"*30 causes exponential backtracking.
+  # Naraku (Pike VM): O(n×m) time — guaranteed to finish instantly.
+  def test_full_fold_cf3_redos_safe
+    pattern = "(x)[abc\xC3\x9F]+\\1"
+    subject = "x#{'ss' * 30}"
+    assert_nil match(pattern, subject, is_ignore_case: true, fold_flags: [:full])
+  end
+
+  # CP1 regression: capture + lookahead empty-string loop caused infinite loop in Onigmo.
+  # /((?=(a)))*/ =~ "a" hangs in Onigmo. Naraku terminates.
+  def test_capture_lookahead_empty_loop_cp1_terminates
+    md = match('((?=(a)))*', 'a')
+    assert !md.nil?
   end
 
   # ========================================================================
@@ -837,6 +1009,39 @@ class RegexpTest < Mtest::Test
     assert_equal '', md[0]
     assert_equal 2, md.byte_begin(0)
     assert_equal 2, md.byte_end(0)
+  end
+
+  # LB1 regression: Onigmo rejects variable-length lookbehind (only fixed-width allowed).
+  # Naraku supports unlimited lookbehind.
+  def test_lookbehind_variable_length
+    md = match('(?<=a+)b', 'aaab')
+    assert !md.nil?
+    assert_equal 'b', md[0]
+  end
+
+  def test_lookbehind_variable_length_no_match
+    assert_nil match('(?<=a+)b', 'b')
+  end
+
+  def test_lookbehind_alternation_different_lengths
+    # Onigmo: error unless all alternates have equal fixed length
+    # Naraku: works — each alternate may have different length
+    md = match('(?<=foo|ba)r', 'foor')
+    assert !md.nil?
+    assert_equal 'r', md[0]
+
+    md2 = match('(?<=foo|ba)r', 'bar')
+    assert !md2.nil?
+    assert_equal 'r', md2[0]
+  end
+
+  # CF1 regression: lookbehind + Full fold failed in Onigmo.
+  # /(?<=ß)/i =~ "ß" returns nil in Onigmo (fixed-length check fails after fold expansion).
+  # Naraku: unlimited lookbehind correctly handles folded lookbehind.
+  def test_lookbehind_full_fold_cf1
+    md = match("(?<=\xC3\x9F)", "\xC3\x9F", is_ignore_case: true, fold_flags: [:full])
+    assert !md.nil?
+    assert_equal '', md[0]
   end
 
   # ========================================================================
@@ -1095,82 +1300,114 @@ class RegexpTest < Mtest::Test
   end
 
   # ========================================================================
-  # \h / \H — hex digit
+  # ST2: invalid byte sequence handling at match time
+  # Onigmo: behavior depends on encoding; Naraku raises on invalid UTF-8 bytes.
   # ========================================================================
 
-  def test_hex_digit_h_matches
-    md = match('\\h+', 'zff3z')
-    assert !md.nil?
-    assert_equal 'ff3', md[0]
-  end
-
-  def test_non_hex_digit_matches_non_hex
-    md = match('\\H+', 'zzff3')
-    assert !md.nil?
-    assert_equal 'zz', md[0]
-  end
-
-  def test_hex_digit_h_no_match
-    assert_nil match('\\h+', 'xyz')
-  end
-
-  def test_non_hex_digit_no_match_all_hex
-    assert_nil match('\\H+', 'ff3a0')
-  end
-
-  def test_hex_digit_h_uppercase
-    md = match('\\h+', 'zAF9z')
-    assert !md.nil?
-    assert_equal 'AF9', md[0]
-  end
-
-  def test_hex_digit_h_in_char_class
-    md = match('[\\h]+', 'x1f2z')
-    assert !md.nil?
-    assert_equal '1f2', md[0]
+  def test_invalid_utf8_raises_at_match_time
+    re = Naraku::Regexp.new('.')
+    raised = false
+    begin
+      re.match("\xff\xfe")
+    rescue StandardError => e
+      raised = true
+      assert e.message.include?('invalid') || e.message.include?('byte'), e.message
+    end
+    assert raised, 'expected an error for invalid UTF-8 bytes'
   end
 
   # ========================================================================
-  # (?x) extended mode
+  # Parse-time byte sequence errors (coverage: parse.c lines ~104, 109, 112)
   # ========================================================================
 
-  def test_extended_mode_ignores_spaces
-    md = match('a  b  c', 'xabcz', is_extended_mode: true)
-    assert !md.nil?
-    assert_equal 'abc', md[0]
+  def test_invalid_byte_sequence_in_us_ascii_pattern
+    # Raw UTF-8 bytes are invalid in US_ASCII encoding
+    assert_parse_error("\xC3\xA9", 'invalid byte sequence', Naraku::Encoding::US_ASCII)
   end
 
-  def test_extended_mode_ignores_hash_comment
-    md = match("a # match a\nb # then b", 'xabz', is_extended_mode: true)
-    assert !md.nil?
-    assert_equal 'ab', md[0]
-  end
-
-  def test_extended_mode_inline_flag
-    md = match('(?x)a  b', 'xaby')
-    assert !md.nil?
-    assert_equal 'ab', md[0]
+  def test_incomplete_byte_sequence_in_utf8_pattern
+    # Lone lead byte 0xC3 with no continuation byte
+    assert_parse_error("\xC3", 'incomplete byte sequence')
   end
 
   # ========================================================================
-  # (?#...) inline comment
+  # Unicode escape parse errors (coverage: parse.c lines ~454, 493, 510, 526,
+  #                              537, 547, 557, 565, 604)
   # ========================================================================
 
-  def test_inline_comment_is_ignored
-    md = match('a(?#this is a comment)b', 'xaby')
-    assert !md.nil?
-    assert_equal 'ab', md[0]
+  def test_unicode_escape_empty_braces_raises_parse_error
+    # \u{} — no hex digits inside braces
+    assert_parse_error('\\u{}', 'empty Unicode')
   end
 
-  def test_inline_comment_multiple
-    md = match('(?#start)a(?#middle)b(?#end)', 'ab')
-    assert !md.nil?
-    assert_equal 'ab', md[0]
+  def test_unicode_escape_unclosed_brace_raises_parse_error
+    # \u{41 — hex digits but no closing }
+    assert_parse_error('\\u{41', 'unclosed Unicode')
   end
 
-  def test_inline_comment_with_special_chars
-    md = match('\\d(?#digits)\\w', 'x1ay')
-    assert !md.nil?
-    assert_equal '1a', md[0]
+  def test_unicode_escape_code_point_out_of_range_raises_parse_error
+    # \u{1FFFFF} — code point beyond U+10FFFF
+    assert_parse_error('\\u{1FFFFF}', 'out of range')
+  end
+
+  def test_unicode_escape_bare_u_raises_parse_error
+    # \u with no { following — treated as unclosed brace
+    assert_parse_error('\\u', 'unclosed Unicode')
+  end
+
+  # ========================================================================
+  # Group structure errors (coverage: parse.c lines ~3983, ~3363)
+  # ========================================================================
+
+  def test_unmatched_close_paren_raises_parse_error
+    assert_parse_error(')', 'unmatched close parenthesis')
+  end
+
+  def test_unterminated_group_raises_parse_error
+    assert_parse_error('(abc', 'unterminated group')
+  end
+
+  def test_too_many_capture_groups_raises_parse_error
+    # Force limit to 2 and use 3 groups
+    assert_parse_error('(a)(b)(c)', 'too many capture groups', max_capture_num_limit: 2)
+  end
+
+  # ========================================================================
+  # Single-byte encoding coverage
+  # (encoding_ascii.c: nk_enc_sb_scan_mbc_width, sb_encode_mbc, sb_decode_mbc)
+  # (encoding/us_ascii.c: us_ascii_encode_mbc success path)
+  # ========================================================================
+
+  def test_us_ascii_literal_pattern_matches
+    # Covers us_ascii_encode_mbc (code < 128 path)
+    re = Naraku::Regexp.new('abc', Naraku::Encoding::US_ASCII)
+    assert_equal 'abc', re.match('xabcx')[0]
+  end
+
+  def test_ascii_8bit_literal_pattern_matches
+    # Covers nk_enc_sb_scan_mbc_width and nk_enc_sb_decode_mbc (via regex_compile.c)
+    re = Naraku::Regexp.new('hello', Naraku::Encoding::ASCII_8BIT)
+    assert_equal 'hello', re.match('say hello')[0]
+  end
+
+  def test_ascii_8bit_high_byte_literal_matches
+    # Covers nk_enc_sb_encode_mbc for code 0xE9 (Latin é)
+    re = Naraku::Regexp.new("\xE9", Naraku::Encoding::ASCII_8BIT)
+    m = re.match("caf\xE9")
+    assert m, 'expected match for high byte 0xE9 in ASCII_8BIT pattern'
+    assert_equal [233], m[0].bytes.to_a
+  end
+
+  def test_ascii_8bit_unsupported_char_prop_raises_compile_error
+    # Covers nk_enc_ascii_get_cprop_code_range NK_ERR_UNSUPPORTED_CHAR_PROPERTY path
+    assert_compile_error('\\p{Lu}', 'unsupported', Naraku::Encoding::ASCII_8BIT)
+  end
+
+  def test_us_ascii_escape_seq_creates_code_node_and_encodes
+    # \n → TK_CODE(10); nk_enc_encode_mbc inline shortcut handles code < 128 directly
+    re = Naraku::Regexp.new('a\\nb', Naraku::Encoding::US_ASCII)
+    m = re.match("a\nb")
+    assert m, 'expected match'
+    assert_equal [97, 10, 98], m[0].bytes.to_a
   end
 end
