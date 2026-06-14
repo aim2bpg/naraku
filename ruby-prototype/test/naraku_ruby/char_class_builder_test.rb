@@ -187,5 +187,25 @@ module NarakuRuby
       assert_equal item[:span_offset], error.offset
       assert_equal item[:span_length], error.length
     end
+
+    def test_build_error_with_nil_offset_has_no_span_in_message
+      err = NarakuRuby::CharClassBuildError.new('test message', offset: nil, length: 0)
+      assert_equal 'test message', err.message
+      assert_nil err.offset
+    end
+
+    def test_build_ignore_case_posix_class_skips_ascii_tracking
+      node = NarakuRuby.parse('[[:digit:]]', is_ignore_case: true)[:node]
+      char_class, expanded_strings = NarakuRuby::CharClassBuilder.new(node).build
+      assert_equal true, char_class.include?('0'.ord)
+      assert_equal Set.new, expanded_strings
+    end
+
+    def test_build_ignore_case_char_prop_skips_ascii_tracking
+      node = NarakuRuby.parse('[\\p{Lu}]', is_ignore_case: true)[:node]
+      char_class, = NarakuRuby::CharClassBuilder.new(node).build
+      assert_equal true, char_class.include?('A'.ord)
+      assert_equal true, char_class.include?('a'.ord)
+    end
   end
 end

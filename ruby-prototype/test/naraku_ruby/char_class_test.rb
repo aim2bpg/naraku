@@ -92,6 +92,16 @@ module NarakuRuby
       assert_raises(ArgumentError) { char_class.negate(10, 1) }
     end
 
+    def test_union_raises_for_non_charclass_argument
+      cc = CharClass.new([0x41..0x43])
+      assert_raises(ArgumentError) { cc.union([0x41]) }
+    end
+
+    def test_intersect_raises_for_non_charclass_argument
+      cc = CharClass.new([0x41..0x43])
+      assert_raises(ArgumentError) { cc.intersect([0x41]) }
+    end
+
     def test_case_fold_unfolds_single_codepoint_equivalence
       char_class = NarakuRuby::CharClass.new([0x61..0x61]) # 'a'
       folded_class, expanded_strings = char_class.case_fold

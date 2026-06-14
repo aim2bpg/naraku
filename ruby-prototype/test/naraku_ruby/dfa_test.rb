@@ -288,55 +288,6 @@ module NarakuRuby
       assert_includes error.message, 'invalid byte sequence in UTF-8'
     end
 
-    private
-
-    def assert_match_data_like_ruby(pattern, string, regexp_options: 0, parser_options: {})
-      string = [string] if string.is_a?(String)
-
-      ruby_regexp = Regexp.new(pattern, regexp_options)
-      dfa_program = NarakuRuby::DFA.compile(pattern, **parser_options)
-      string.each do |s|
-        ruby_match = ruby_regexp.match(s)
-        dfa_match, dfa_match_p = assert_match_consistency(dfa_program, s, pattern)
-
-        if ruby_match.nil?
-          assert_nil dfa_match, "pattern=#{pattern.inspect} string=#{s.inspect}"
-          assert_equal false, dfa_match_p, "pattern=#{pattern.inspect} string=#{s.inspect}"
-          next
-        end
-
-        refute_nil dfa_match, "pattern=#{pattern.inspect} string=#{s.inspect}"
-        assert_equal true, dfa_match_p, "pattern=#{pattern.inspect} string=#{s.inspect}"
-        assert_equal ruby_match[0], dfa_match[0], "pattern=#{pattern.inspect} string=#{s.inspect}"
-        assert_equal ruby_match.captures, dfa_match.captures, "pattern=#{pattern.inspect} string=#{s.inspect}"
-
-        ruby_match_pos = ruby_match.length.times.map { |i| ruby_match.begin(i)..ruby_match.end(i) }
-        dfa_match_pos = dfa_match.length.times.map { |i| dfa_match.begin(i)..dfa_match.end(i) }
-
-        assert_equal ruby_match_pos, dfa_match_pos, "pattern=#{pattern.inspect} string=#{s.inspect}"
-      end
-    end
-
-    def assert_unsupported(pattern, parser_options: {})
-      assert_raises(NarakuRuby::DFA::CompileError) do
-        NarakuRuby::DFA.compile(pattern, **parser_options)
-      end
-    end
-
-    def assert_match(pattern, string, parser_options: {})
-      dfa_program = NarakuRuby::DFA.compile(pattern, postprocess: true, **parser_options)
-      dfa_match, dfa_match_p = assert_match_consistency(dfa_program, string, pattern)
-      refute_nil dfa_match, "expected pattern #{pattern.inspect} to match string #{string.inspect}"
-      assert dfa_match_p, "expected pattern #{pattern.inspect} to match string #{string.inspect}"
-    end
-
-    def refute_match(pattern, string, parser_options: {})
-      dfa_program = NarakuRuby::DFA.compile(pattern, postprocess: true, **parser_options)
-      dfa_match, dfa_match_p = assert_match_consistency(dfa_program, string, pattern)
-      assert_nil dfa_match, "expected pattern #{pattern.inspect} to not match string #{string.inspect}"
-      refute dfa_match_p, "expected pattern #{pattern.inspect} to not match string #{string.inspect}"
-    end
-
     def test_match_data_to_a
       md = NarakuRuby::DFA.match('(a)(b)', 'xabz')
       refute_nil md
@@ -391,6 +342,124 @@ module NarakuRuby
       md = NarakuRuby::DFA.match('a+', 'xaaay')
       refute_nil md
       assert_equal 'xaaay', md.string
+    end
+
+    def test_show_states_covers_all_state_type_to_s_arms
+      # show_states calls State#to_s for every state. Different patterns generate different state types.
+      patterns = [
+        'a',         # :code, :jump, :split, :match
+        '.',         # :dot
+        '[ab]',      # :char_class
+        '\b',        # :assertion
+        '(a)',       # :cap_begin, :cap_end
+        'a|b|c',     # :split with 3 children (covers compiler.rb lines 443-445)
+        '(a*)*b',    # :check_visited, :mark_epsilon, :check_epsilon
+      ]
+      patterns.each do |pat|
+        program = NarakuRuby::DFA.compile(pat)
+        assert_nil program.show_states, "show_states should return nil for #{pat.inspect}"
+      end
+    end
+
+    def test_three_way_alternation_matches_all_branches
+      # 'a|b|c' with 3 children exercises the additional split in compile_alt (compiler.rb 443-445)
+      assert_match_data_like_ruby('a|b|c', ['', 'a', 'b', 'c', 'x', 'abc'])
+    end
+
+    def test_match_predicate_uses_no_assertion_no_lazydfa_ascii_path
+      # full_dfa: true + char_class → NOT full_dfa_compatible, no lazy DFA, no assertions.
+      # ASCII string → run_without_caps_ascii_no_assertion (program.rb line 470)
+      program = NarakuRuby::DFA.compile('[ab]+', full_dfa: true)
+      assert_equal true, program.match?('aabb')
+      assert_equal false, program.match?('xyz')
+    end
+
+    def test_match_predicate_uses_no_assertion_no_lazydfa_utf8_path
+      # Same setup but non-ASCII string → run_without_caps_utf8_no_assertion (program.rb line 472)
+      program = NarakuRuby::DFA.compile('[ab]+', full_dfa: true)
+      assert_equal true, program.match?("a\xC3\xA9")   # 'aé' — non-ASCII, 'a' matches
+      assert_equal false, program.match?("\xC3\xA9")   # 'é' — no [ab] match
+    end
+
+    def test_char_class_with_two_multi_char_fold_expansions
+      # [ßﬁ] with full fold: ß→ss AND ﬁ→fi; two expanded_strings in compile_char_class_with_fold.
+      # When two expanded strings exist, the else branch in compiler.rb (lines 248-251) is reached.
+      fi_ligature = "\xEF\xAC\x81" # ﬁ U+FB01 LATIN SMALL LIGATURE FI
+      eszett = "\xC3\x9F" # ß U+00DF
+      program = NarakuRuby::DFA.compile("[#{eszett}#{fi_ligature}]+",
+                                        is_ignore_case: true, fold_flags: [:full])
+      refute_nil program.match?('ssfi')
+      refute_nil program.match?('ss')
+      refute_nil program.match?('fi')
+    end
+
+    def test_quantifier_zero_zero_compiles_to_epsilon
+      # {0,0} → min=max=0 → compile_epsilon branch (compiler.rb line 302)
+      assert_match_data_like_ruby('a{0,0}b', %w[b xbz ab])
+    end
+
+    def test_keep_operator_resets_match_start
+      m = NarakuRuby::DFA.match('a\Kb', 'xaby')
+      assert_equal 'b', m.to_s
+    end
+
+    def test_begin_of_matching_assertion
+      assert NarakuRuby::DFA.match?('\Ga', 'abc', 0)
+      refute NarakuRuby::DFA.match?('\Ga', 'abc', 1)
+    end
+
+    def test_4byte_utf8_pattern_matches_emoji
+      m = NarakuRuby::DFA.match('😀', 'x😀y')
+      assert_equal '😀', m.to_s
+    end
+
+    private
+
+    def assert_match_data_like_ruby(pattern, string, regexp_options: 0, parser_options: {})
+      string = [string] if string.is_a?(String)
+
+      ruby_regexp = Regexp.new(pattern, regexp_options)
+      dfa_program = NarakuRuby::DFA.compile(pattern, **parser_options)
+      string.each do |s|
+        ruby_match = ruby_regexp.match(s)
+        dfa_match, dfa_match_p = assert_match_consistency(dfa_program, s, pattern)
+
+        if ruby_match.nil?
+          assert_nil dfa_match, "pattern=#{pattern.inspect} string=#{s.inspect}"
+          assert_equal false, dfa_match_p, "pattern=#{pattern.inspect} string=#{s.inspect}"
+          next
+        end
+
+        refute_nil dfa_match, "pattern=#{pattern.inspect} string=#{s.inspect}"
+        assert_equal true, dfa_match_p, "pattern=#{pattern.inspect} string=#{s.inspect}"
+        assert_equal ruby_match[0], dfa_match[0], "pattern=#{pattern.inspect} string=#{s.inspect}"
+        assert_equal ruby_match.captures, dfa_match.captures, "pattern=#{pattern.inspect} string=#{s.inspect}"
+
+        ruby_match_pos = ruby_match.length.times.map { |i| ruby_match.begin(i)..ruby_match.end(i) }
+        dfa_match_pos = dfa_match.length.times.map { |i| dfa_match.begin(i)..dfa_match.end(i) }
+
+        assert_equal ruby_match_pos, dfa_match_pos, "pattern=#{pattern.inspect} string=#{s.inspect}"
+      end
+    end
+
+    def assert_unsupported(pattern, parser_options: {})
+      assert_raises(NarakuRuby::DFA::CompileError) do
+        NarakuRuby::DFA.compile(pattern, **parser_options)
+      end
+    end
+
+    def assert_match(pattern, string, parser_options: {})
+      dfa_program = NarakuRuby::DFA.compile(pattern, postprocess: true, **parser_options)
+      dfa_match, dfa_match_p = assert_match_consistency(dfa_program, string, pattern)
+      refute_nil dfa_match, "expected pattern #{pattern.inspect} to match string #{string.inspect}"
+      assert dfa_match_p, "expected pattern #{pattern.inspect} to match string #{string.inspect}"
+    end
+
+    def refute_match(pattern, string, parser_options: {})
+      dfa_program = NarakuRuby::DFA.compile(pattern, postprocess: true, **parser_options)
+      dfa_match, dfa_match_p = assert_match_consistency(dfa_program, string, pattern)
+      assert_nil dfa_match, "expected pattern #{pattern.inspect} to not match string #{string.inspect}"
+      refute dfa_match_p, "expected pattern #{pattern.inspect} to not match string #{string.inspect}"
     end
 
     def assert_match_consistency(dfa_program, string, pattern, pos: 0)
