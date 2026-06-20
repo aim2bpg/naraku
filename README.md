@@ -90,6 +90,12 @@ Build mruby integration:
 bundle exec rake naraku:build_mruby
 ```
 
+Build the CRuby native extension (`ext/naraku/`, used to benchmark against Onigmo under the same CRuby runtime):
+
+```sh
+bundle exec rake naraku:build_cruby_ext
+```
+
 ### Build with AddressSanitizer
 
 ```sh

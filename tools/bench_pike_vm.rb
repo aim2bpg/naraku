@@ -3,51 +3,10 @@
 #   RESULT  <label>  <ips>
 #   SKIP    <label>  <reason>
 
-WARMUP_SEC  = 1.0
-MEASURE_SEC = 3.0
-
-CASES = [
-  {
-    label: 'literal: Watson',
-    pattern: 'Watson',
-    inputs: (['Watson'] * 1000) + (['Moriarty'] * 1000),
-  },
-  {
-    label: 'alternation: foo|bar|baz',
-    pattern: 'foo|bar|baz',
-    inputs: (['foo'] * 500) + (['bar'] * 500) + (['qux'] * 1000),
-  },
-  {
-    label: 'repetition: a+b',
-    pattern: 'a+b',
-    inputs: (["#{'a' * 100}b"] * 1000) + (['x' * 100] * 500),
-  },
-  {
-    label: 'ambiguous: (a|a)+b',
-    pattern: '(a|a)+b',
-    inputs: (["#{'a' * 100}b"] * 1000) + (['x' * 100] * 500),
-  },
-  {
-    label: 'char_class: [a-zA-Z0-9]+',
-    pattern: '[a-zA-Z0-9]+',
-    inputs: (['abc123XYZ'] * 1000) + (['!!!'] * 500),
-  },
-  {
-    label: 'bounded: \\d{4}-\\d{2}-\\d{2}',
-    pattern: '\d{4}-\d{2}-\d{2}',
-    inputs: (['2024-01-15'] * 1000) + (['not-a-date'] * 500),
-  },
-  {
-    label: 'pathological: (?:a?){30}a{30}',
-    pattern: '(?:a?){30}a{30}',
-    inputs: (['a' * 30] * 1000) + (["#{'a' * 30}b"] * 500),
-  },
-  {
-    label: 'unicode: ジョバンニ|カムパネルラ',
-    pattern: 'ジョバンニ|カムパネルラ',
-    inputs: (['ジョバンニ'] * 700) + (['カムパネルラ'] * 700) + (['銀河鉄道'] * 400),
-  },
-].freeze
+# mruby has no built-in `require`/`load` and no `__dir__`; eval the shared
+# CASES file in place (same pattern as test/test_run.rb's custom `require`).
+bench_cases_path = File.expand_path('../ruby-prototype/benchmark/bench_cases.rb', File.dirname(__FILE__))
+eval File.read(bench_cases_path), nil, bench_cases_path, 1 # rubocop:disable Security/Eval
 
 def measure(label, re, inputs)
   t0 = Time.now

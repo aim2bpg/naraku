@@ -1,6 +1,13 @@
 # frozen_string_literal: true
 
-# Comparison benchmark: Onigmo (CRuby) vs NarakuRuby::DFA (CRuby) vs Naraku Pike VM (mruby)
+# Comparison benchmark: Onigmo (CRuby) vs NarakuRuby::DFA (CRuby) vs
+# Naraku::Regexp (CRuby native ext, ext/naraku/) vs Naraku Pike VM (mruby)
+#
+# The CRuby native extension runs the exact same C core (src/regex_compile.c,
+# src/regex_vm.c, ...) as the mruby Pike VM column, but under CRuby (+YJIT),
+# removing the mruby-vs-CRuby runtime handicap from the comparison. Build it
+# first with `bundle exec rake naraku:build_cruby_ext`; if missing, that
+# column reports n/a rather than failing the whole benchmark.
 #
 # Usage:
 #   bundle exec ruby ruby-prototype/benchmark/bench_compare.rb
@@ -12,52 +19,18 @@ require 'naraku_ruby'
 PROJECT_ROOT = File.expand_path('../..', __dir__)
 MRUBY_BIN    = File.join(PROJECT_ROOT, 'bin/mruby')
 PIKE_SCRIPT  = File.join(PROJECT_ROOT, 'tools/bench_pike_vm.rb')
+CEXT_DIR     = File.join(PROJECT_ROOT, 'ext/naraku')
 
-WARMUP_SEC  = 1.0
-MEASURE_SEC = 3.0
+naraku_cext_available =
+  begin
+    $LOAD_PATH.unshift CEXT_DIR
+    require 'naraku_cext'
+    true
+  rescue LoadError
+    false
+  end
 
-CASES = [
-  {
-    label: 'literal: Watson',
-    pattern: 'Watson',
-    inputs: (['Watson'] * 1000) + (['Moriarty'] * 1000),
-  },
-  {
-    label: 'alternation: foo|bar|baz',
-    pattern: 'foo|bar|baz',
-    inputs: (['foo'] * 500) + (['bar'] * 500) + (['qux'] * 1000),
-  },
-  {
-    label: 'repetition: a+b',
-    pattern: 'a+b',
-    inputs: (["#{'a' * 100}b"] * 1000) + (['x' * 100] * 500),
-  },
-  {
-    label: 'ambiguous: (a|a)+b',
-    pattern: '(a|a)+b',
-    inputs: (["#{'a' * 100}b"] * 1000) + (['x' * 100] * 500),
-  },
-  {
-    label: 'char_class: [a-zA-Z0-9]+',
-    pattern: '[a-zA-Z0-9]+',
-    inputs: (['abc123XYZ'] * 1000) + (['!!!'] * 500),
-  },
-  {
-    label: 'bounded: \\d{4}-\\d{2}-\\d{2}',
-    pattern: '\d{4}-\d{2}-\d{2}',
-    inputs: (['2024-01-15'] * 1000) + (['not-a-date'] * 500),
-  },
-  {
-    label: 'pathological: (?:a?){30}a{30}',
-    pattern: '(?:a?){30}a{30}',
-    inputs: (['a' * 30] * 1000) + (["#{'a' * 30}b"] * 500),
-  },
-  {
-    label: 'unicode: ジョバンニ|カムパネルラ',
-    pattern: 'ジョバンニ|カムパネルラ',
-    inputs: (['ジョバンニ'] * 700) + (['カムパネルラ'] * 700) + (['銀河鉄道'] * 400),
-  },
-].freeze
+require_relative 'bench_cases'
 
 # Simple timing loop: returns iterations-per-second
 def time_bench(inputs, &)
@@ -115,7 +88,17 @@ CASES.each do |c|
     nil
   end
 
-  crb_results[c[:label]] = { onigmo: onigmo_ips, dfa: dfa_ips }
+  cext_ips =
+    if naraku_cext_available
+      begin
+        cext_re = Naraku::Regexp.new(c[:pattern])
+        time_bench(c[:inputs]) { |s| cext_re.match?(s) }
+      rescue StandardError
+        nil
+      end
+    end
+
+  crb_results[c[:label]] = { onigmo: onigmo_ips, dfa: dfa_ips, cext: cext_ips }
   puts 'done'
 end
 
@@ -146,12 +129,12 @@ col_w   = 34
 num_w   = 10
 ratio_w = 7
 
-hr = '-' * (col_w + (num_w * 3) + (ratio_w * 2) + 10)
+hr = '-' * (col_w + (num_w * 4) + (ratio_w * 3) + 12)
 
 puts
 puts hr
-puts format("%-#{col_w}s  %#{num_w}s  %#{num_w}s  %#{num_w}s  %#{ratio_w}s  %#{ratio_w}s",
-            'Pattern', 'Onigmo(C)', 'LazyDFA(Rb)', 'PikeVM(mrb)', 'DFA/Ong', 'VM/Ong')
+puts format("%-#{col_w}s  %#{num_w}s  %#{num_w}s  %#{num_w}s  %#{num_w}s  %#{ratio_w}s  %#{ratio_w}s  %#{ratio_w}s",
+            'Pattern', 'Onigmo(C)', 'LazyDFA(Rb)', 'NarakuCExt(C)', 'PikeVM(mrb)', 'DFA/Ong', 'CExt/Ong', 'VM/Ong')
 puts hr
 
 CASES.each do |c|
@@ -159,14 +142,17 @@ CASES.each do |c|
   cr     = crb_results[lbl] || {}
   ong    = cr[:onigmo]
   dfa    = cr[:dfa]
+  cext   = cr[:cext]
   pike   = pike_results[lbl]
 
-  puts format("%-#{col_w}s  %s  %s  %s  %s  %s",
+  puts format("%-#{col_w}s  %s  %s  %s  %s  %s  %s  %s",
               lbl[0, col_w],
               format_ips(ong),
               format_ips(dfa),
+              format_ips(cext),
               format_ips(pike),
               ratio_label(dfa, ong),
+              ratio_label(cext, ong),
               ratio_label(pike, ong))
 end
 

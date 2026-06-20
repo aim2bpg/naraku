@@ -52,6 +52,9 @@ ruby tools/download_ucd.rb 17.0.0
 # --- Build mruby ---
 bundle exec rake naraku:build_mruby
 
+# --- Build CRuby native extension (benchmarking only) ---
+bundle exec rake naraku:build_cruby_ext
+
 # --- gh CLI ---
 if ! command -v gh &>/dev/null; then
   curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \

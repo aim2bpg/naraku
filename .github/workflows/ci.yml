@@ -85,3 +85,7 @@ jobs:
         if: steps.mruby-cache.outputs.cache-hit != 'true'
       - run: bundle exec rake naraku:test_mruby
       - run: bundle exec rake ruby_prototype:test
+
+      - run: bundle exec rake naraku:build_cruby_ext
+      - name: Smoke-test ext/naraku/ (CRuby native extension)
+        run: ruby -e "require_relative 'ext/naraku/naraku_cext'; raise 'fail' unless Naraku::Regexp.new('a+b').match?('aaab')"

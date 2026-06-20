@@ -120,6 +120,9 @@ namespace :naraku do
     sh "cd submodules/mruby && rake MRUBY_CONFIG=#{MRUBY_CONFIG}"
   end
 
+  desc 'Build CRuby native extension (ext/naraku/) for benchmarking against Onigmo under CRuby'
+  task(build_cruby_ext: :build_lib) { sh 'cd ext/naraku && ruby extconf.rb && make' }
+
   desc 'Build naraku C files with gcov instrumentation (into build/coverage/)'
   task build_lib_coverage: :codegen do
     sh 'make build/coverage/libnaraku.a'
@@ -173,8 +176,11 @@ namespace :naraku do
     sh 'cd submodules/mruby && rake clean'
   end
 
-  desc 'Clean C and mruby build artifacts'
-  task clean_all: %i[clean clean_mruby]
+  desc 'Clean CRuby native extension (ext/naraku/) build artifacts'
+  task(:clean_cruby_ext) { rm_f Dir.glob('ext/naraku/{Makefile,*.o,*.so,mkmf.log}') }
+
+  desc 'Clean C, mruby, and CRuby ext build artifacts'
+  task clean_all: %i[clean clean_mruby clean_cruby_ext]
 end
 
 def ruby_prototype_coverage_script(test_files)

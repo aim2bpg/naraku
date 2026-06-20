@@ -21,6 +21,7 @@ src/                        Core C implementation
 mrbgems/mruby-naraku/       mruby binding layer
   src/mrb_naraku*.c         C bridge
   mrblib/naraku/*.rb        mruby wrapper classes
+ext/naraku/                 CRuby native extension (benchmarking only)
 ruby-prototype/             Ruby-side VM/compiler prototyping
   lib/naraku_ruby/          CRuby helper and DFA prototype
   lib/mruby-scripts/        Scripts executed by mruby
@@ -97,6 +98,7 @@ Credentials are stored in `~/.config/gh/hosts.yml`, which is bind-mounted from t
 bundle exec rake -T                    # List all tasks
 
 bundle exec rake naraku:build_mruby    # Build mruby integration (full C + mruby build)
+bundle exec rake naraku:build_cruby_ext # Build ext/naraku/ (CRuby native ext, for benchmarking against Onigmo)
 bundle exec rake naraku:test_mruby     # Run mruby parser/encoding tests
 bundle exec rake naraku:test_mruby_verbose  # Verbose test output
 
