@@ -718,6 +718,36 @@ static nk_error_t program_add_char_class(compiler_t* c, cc_set_t* cc, uint32_t* 
     }
   }
 
+  // Cycle O: precompute contiguous ASCII run boundaries for the SIMD scan
+  // helper (`ascii_class_run_length` in regex_vm.c). Classes with more than
+  // NK_CC_SIMD_MAX_RANGES runs leave simd_range_count at 0, which always
+  // falls back to the scalar ascii_lookup scan — correct, just not vectorised.
+  vm_cc->simd_range_count = 0u;
+  {
+    bool simd_overflow = false;
+    uint32_t b = 0u;
+    while (b < 128u) {
+      if (vm_cc->ascii_lookup[b] == 0u) {
+        b++;
+        continue;
+      }
+      uint32_t run_lo = b;
+      while (b < 128u && vm_cc->ascii_lookup[b] != 0u) {
+        b++;
+      }
+      if (vm_cc->simd_range_count >= (uint8_t)NK_CC_SIMD_MAX_RANGES) {
+        simd_overflow = true;
+        continue;
+      }
+      vm_cc->simd_ranges[vm_cc->simd_range_count][0] = (uint8_t)run_lo;
+      vm_cc->simd_ranges[vm_cc->simd_range_count][1] = (uint8_t)(b - 1u);
+      vm_cc->simd_range_count++;
+    }
+    if (simd_overflow) {
+      vm_cc->simd_range_count = 0u;
+    }
+  }
+
   *out_index = (uint32_t)program->char_classes_len;
   program->char_classes_len++;
   cc_free(cc);
@@ -2158,18 +2188,18 @@ static bool node_starts_with_string_anchor(const nk_node_t* node) {
 // ============================================================================
 
 // DFS through epsilon-only transitions starting from `start_idx`.
-// Returns a bitmask of consuming-state indices reached, with NK_BITSET_MATCH_BIT
+// Returns a bitmask of consuming-state indices reached, with NK_BITSET128_MATCH_BIT
 // set if any MATCH state is reachable.  ASSERTION and KEEP states are treated
 // as transparent epsilons (they must have been screened out before calling).
 // For CHECK_EPSILON we follow only `next` (body-not-empty branch); SPLIT
 // follows both branches.
-static uint64_t
+static nk_bitset128_t
 compute_epsilon_mask(const nk_vm_state_t* states, uint32_t num_states, uint32_t start_idx, uint8_t* visited) {
   if (start_idx == NK_VM_STATE_NONE || start_idx >= num_states) {
-    return 0;
+    return NK_BITSET128_ZERO;
   }
 
-  uint64_t result = 0;
+  nk_bitset128_t result = NK_BITSET128_ZERO;
   uint32_t stack[256];
   size_t top = 0;
   stack[top++] = start_idx;
@@ -2186,10 +2216,10 @@ compute_epsilon_mask(const nk_vm_state_t* states, uint32_t num_states, uint32_t 
       case NK_VM_OP_CODE:
       case NK_VM_OP_CHAR_CLASS:
       case NK_VM_OP_DOT:
-        result |= (uint64_t)1u << idx;
+        result = nk_bitset128_set_bit(result, idx);
         break;
       case NK_VM_OP_MATCH:
-        result |= NK_BITSET_MATCH_BIT;
+        result = nk_bitset128_or(result, NK_BITSET128_MATCH_BIT);
         break;
       case NK_VM_OP_SPLIT:
         if (s->split_next != NK_VM_STATE_NONE) {
@@ -2225,8 +2255,8 @@ compute_epsilon_mask(const nk_vm_state_t* states, uint32_t num_states, uint32_t 
 static void compute_goto_masks(nk_program_t* program) {
   uint32_t n = (uint32_t)program->states_len;
 
-  // Only applicable for small programs (bit 63 is reserved for MATCH).
-  if (n > 63) {
+  // Only applicable for small programs (bit 127 is reserved for MATCH).
+  if (n > 127) {
     return;
   }
   // Assertion, \K, and BACK_REF states depend on position or captured content.
@@ -2238,7 +2268,7 @@ static void compute_goto_masks(nk_program_t* program) {
     }
   }
 
-  program->goto_mask = (uint64_t*)calloc(n, sizeof(uint64_t));
+  program->goto_mask = (nk_bitset128_t*)calloc(n, sizeof(nk_bitset128_t));
   if (program->goto_mask == NULL) {
     return;
   }
@@ -2265,7 +2295,16 @@ static void compute_goto_masks(nk_program_t* program) {
 
   free(visited);
 
-  program->lazy_dfa = (nk_lazy_dfa_t*)calloc(1u, sizeof(nk_lazy_dfa_t));
+  // Prefer the narrow (24-byte slot) cache whenever the program fits in 63
+  // states: it has the same hit behaviour as the wide cache but a much
+  // smaller memory footprint (24KB vs 40KB for 1024 slots), which matters
+  // for L1d cache residency on the hot per-byte lookup path. Only programs
+  // that actually need states 64-127 pay for the wide cache.
+  if (n <= 63) {
+    program->lazy_dfa_narrow = (nk_lazy_dfa_narrow_t*)calloc(1u, sizeof(nk_lazy_dfa_narrow_t));
+  } else {
+    program->lazy_dfa = (nk_lazy_dfa_t*)calloc(1u, sizeof(nk_lazy_dfa_t));
+  }
   // calloc zeroes all bytes, so all slots start with occupied==0 (empty).
 }
 
@@ -2289,8 +2328,8 @@ static void compute_first_byte_table(nk_program_t* program) {
   }
 
   uint32_t n = (uint32_t)program->states_len;
-  uint64_t imask = program->initial_mask & ~NK_BITSET_MATCH_BIT;
-  if (imask == 0u) {
+  nk_bitset128_t imask = nk_bitset128_andnot(program->initial_mask, NK_BITSET128_MATCH_BIT);
+  if (nk_bitset128_is_zero(imask)) {
     return;
   }
 
@@ -2300,7 +2339,7 @@ static void compute_first_byte_table(nk_program_t* program) {
   bool has_any = false;
 
   for (uint32_t idx = 0; idx < n && can_jump; idx++) {
-    if (!(imask & ((uint64_t)1u << idx))) {
+    if (!nk_bitset128_test_bit(imask, idx)) {
       continue;
     }
     const nk_vm_state_t* s = &program->states[idx];
@@ -2382,8 +2421,9 @@ nk_error_t nk_program_compile(
   program->alt_literal_lens = NULL;
   program->alt_literal_count = 0u;
   program->goto_mask = NULL;
-  program->initial_mask = 0;
+  program->initial_mask = NK_BITSET128_ZERO;
   program->lazy_dfa = NULL;
+  program->lazy_dfa_narrow = NULL;
   program->first_byte_table_valid = false;
   memset(program->first_byte_table, 0, sizeof(program->first_byte_table));
   program->is_pure_char_class_plus = false;
@@ -2578,6 +2618,7 @@ void nk_program_free(nk_program_t* program) {
   }
   free(program->goto_mask);
   free(program->lazy_dfa);
+  free(program->lazy_dfa_narrow);
   for (size_t i = 0; i < program->sub_programs_len; i++) {
     nk_program_free(program->sub_programs[i]);
   }

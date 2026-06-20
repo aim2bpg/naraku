@@ -7,6 +7,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+#if defined(__SSE2__)
+#include <emmintrin.h>
+#endif
+
 // A sentinel code point meaning "no character here" (before the subject,
 // or at/after its end).
 #define VM_NO_CHAR UINT32_MAX
@@ -40,6 +44,68 @@ static const uint8_t* vm_memmem(const uint8_t* haystack, size_t hlen, const uint
     p++;
   }
   return NULL;
+}
+
+#if defined(__SSE2__)
+// Returns the number of leading bytes at `p` (capped at `limit`) that fall
+// within one of `ranges[0..range_count)` (inclusive ASCII byte ranges).
+// Scans 16 bytes per iteration using SSE2 unsigned min/max range tests
+// (`_mm_min_epu8`/`_mm_max_epu8`, baseline SSE2 — no `-march` flag needed).
+// Stops SIMD scanning at the first chunk containing a non-member byte and
+// lets the scalar tail loop below pin down the exact boundary; this keeps
+// the function simple (no bit-scan of the comparison mask is needed).
+static size_t simd_ascii_range_run(const uint8_t* p, size_t limit, const uint8_t ranges[][2], uint8_t range_count) {
+  size_t i = 0;
+  while (i + 16u <= limit) {
+    __m128i bytes = _mm_loadu_si128((const __m128i*)(p + i));
+    __m128i in_any = _mm_setzero_si128();
+    for (uint8_t r = 0; r < range_count; r++) {
+      __m128i lo_v = _mm_set1_epi8((char)ranges[r][0]);
+      __m128i hi_v = _mm_set1_epi8((char)ranges[r][1]);
+      __m128i clamped = _mm_max_epu8(_mm_min_epu8(bytes, hi_v), lo_v);
+      in_any = _mm_or_si128(in_any, _mm_cmpeq_epi8(clamped, bytes));
+    }
+    if ((unsigned)_mm_movemask_epi8(in_any) != 0xFFFFu) {
+      break;  // a non-member byte is in this chunk; fall through to the scalar tail.
+    }
+    i += 16u;
+  }
+  while (i < limit) {
+    uint8_t byte = p[i];
+    bool member = false;
+    for (uint8_t r = 0; r < range_count; r++) {
+      if (byte >= ranges[r][0] && byte <= ranges[r][1]) {
+        member = true;
+        break;
+      }
+    }
+    if (!member) {
+      break;
+    }
+    i++;
+  }
+  return i;
+}
+#endif
+
+// Returns the number of leading bytes at `p` (capped at `limit`) that are
+// members of `cc`'s ASCII subset (equivalent to repeatedly testing
+// `cc->ascii_lookup[byte] != 0`). Uses the SSE2 range scan above when `cc`
+// qualifies (`simd_range_count > 0` — set at compile time in
+// `program_add_char_class` for classes that decompose into a handful of
+// contiguous byte ranges, e.g. `\d`, `\w`, `[a-zA-Z0-9]`); falls back to the
+// plain scalar loop otherwise, which is always correct.
+static size_t ascii_class_run_length(const nk_vm_char_class_t* cc, const uint8_t* p, size_t limit) {
+#if defined(__SSE2__)
+  if (cc->simd_range_count > 0u) {
+    return simd_ascii_range_run(p, limit, cc->simd_ranges, cc->simd_range_count);
+  }
+#endif
+  size_t i = 0;
+  while (i < limit && cc->ascii_lookup[p[i]] != 0u) {
+    i++;
+  }
+  return i;
 }
 
 // The code point of `\n`.
@@ -836,6 +902,21 @@ static void next_token(vm_t* vm) {
 //
 // Fast Thompson NFA bitset path (no_caps boolean match, small programs):
 //
+// This section is `match?`'s hot path: each NFA state set is packed into a
+// 128-bit bitmask (`nk_bitset128_t`) instead of a thread list, so there is no
+// per-character allocation and no capture-boundary bookkeeping.
+//
+// Two lazy-DFA transition caches exist below (`bitset_transition_cached_narrow`
+// and `bitset_transition_cached`) because one cache-slot layout can't serve
+// both small and large state counts well — see nk_lazy_dfa_slot_narrow_t in
+// naraku_regex.h for the cache-locality reason.
+//
+// `search_impl_bitset` additionally detects, after each cache lookup, when a
+// repeated byte leaves the active-state set unchanged (a fixed point) and
+// scans the rest of that run directly, skipping the cache entirely for
+// patterns like `a+b` — see docs/ja/naraku_vm.md §10.3 for why this must
+// happen after the lookup rather than before it.
+//
 // ============================================================================
 
 // Return the index of the lowest set bit in `lsb` (which must be a power of
@@ -858,18 +939,82 @@ static uint32_t bitset_lsb_index(uint64_t lsb) {
 
 // Compute the next active-state bitmask by advancing `active` over `curr_code`.
 // Does NOT add the initial mask (the caller handles non-anchored re-injection).
-static uint64_t bitset_transition(const nk_program_t* program, uint64_t active, uint32_t curr_code) {
-  uint64_t next = 0;
-  uint64_t bits = active;
+static nk_bitset128_t bitset_transition(const nk_program_t* program, nk_bitset128_t active, uint32_t curr_code) {
+  nk_bitset128_t next = NK_BITSET128_ZERO;
+
+  uint64_t bits = active.lo;
   while (bits != 0) {
     uint64_t lsb = bits & (uint64_t)(-(int64_t)bits);
     bits ^= lsb;
     uint32_t idx = bitset_lsb_index(lsb);
     if (state_matches_code(program, &program->states[idx], curr_code)) {
-      next |= program->goto_mask[idx];
+      next = nk_bitset128_or(next, program->goto_mask[idx]);
+    }
+  }
+  bits = active.hi;
+  while (bits != 0) {
+    uint64_t lsb = bits & (uint64_t)(-(int64_t)bits);
+    bits ^= lsb;
+    uint32_t idx = 64u + bitset_lsb_index(lsb);
+    if (state_matches_code(program, &program->states[idx], curr_code)) {
+      next = nk_bitset128_or(next, program->goto_mask[idx]);
     }
   }
   return next;
+}
+
+// Bit 63 of a narrow-cache `next_key` is repurposed to record the MATCH bit
+// (`nk_bitset128_t::hi`'s only possible non-zero bit for a <=63-state
+// program). Real state indices for such programs are always <= 62, so bit 63
+// of the `.lo` word is otherwise unused and safe to borrow here.
+#define NK_NARROW_MATCH_BIT ((uint64_t)1u << 63)
+
+// Narrow-cache variant of bitset_transition_cached, used when
+// program->lazy_dfa_narrow != NULL (states_len <= 63). Same hashing/probing
+// logic as the wide path below, keyed on a single uint64_t instead of
+// nk_bitset128_t. See nk_lazy_dfa_slot_narrow_t in naraku_regex.h for why
+// this smaller layout exists. Deliberately not merged with the wide path via
+// a shared macro/helper: the whole point is each one's key type matches its
+// slot's memory layout exactly, and abstracting that away would either lose
+// the size win or hurt readability.
+//
+// `active` passed in here never has its MATCH bit set (callers return as
+// soon as they observe it — see search_impl_bitset), but the cached `next`
+// value can, so the MATCH bit is folded into bit 63 of `next_key` on store
+// and unfolded back into `.hi` on a cache hit.
+static nk_bitset128_t
+bitset_transition_cached_narrow(const nk_program_t* program, nk_bitset128_t active, uint32_t curr_code) {
+  nk_lazy_dfa_narrow_t* ld = program->lazy_dfa_narrow;
+  uint8_t cbyte = (uint8_t)curr_code;
+
+  if (ld->fill >= (NK_LAZY_DFA_SLOTS * 3u / 4u)) {
+    memset(ld->slots, 0, sizeof(ld->slots));
+    ld->fill = 0u;
+  }
+
+  uint64_t h64 = (active.lo * 11400714819323198485ULL) ^ (uint64_t)cbyte;
+  uint32_t h = (uint32_t)(h64 & (uint64_t)(NK_LAZY_DFA_SLOTS - 1u));
+
+  for (uint32_t probe = 0; probe < NK_LAZY_DFA_SLOTS; probe++) {
+    nk_lazy_dfa_slot_narrow_t* slot = &ld->slots[(h + probe) & (NK_LAZY_DFA_SLOTS - 1u)];
+    if (!slot->occupied) {
+      nk_bitset128_t next = bitset_transition(program, active, curr_code);
+      slot->state_key = active.lo;
+      slot->next_key = next.lo | (nk_bitset128_has_match_bit(next) ? NK_NARROW_MATCH_BIT : 0u);
+      slot->char_byte = cbyte;
+      slot->occupied = 1;
+      ld->fill++;
+      return next;
+    }
+    if (slot->state_key == active.lo && slot->char_byte == cbyte) {
+      nk_bitset128_t next;
+      next.hi = (slot->next_key & NK_NARROW_MATCH_BIT) ? NK_NARROW_MATCH_BIT : 0u;
+      next.lo = slot->next_key & ~NK_NARROW_MATCH_BIT;
+      return next;  // Cache hit.
+    }
+  }
+  // Unreachable after the 75%-full reset guard; kept as a safety fallback.
+  return bitset_transition(program, active, curr_code);
 }
 
 // Compute `transition(active, curr_code)` using the lazy DFA cache when the
@@ -877,12 +1022,20 @@ static uint64_t bitset_transition(const nk_program_t* program, uint64_t active, 
 // stores the result for future calls.  Non-ASCII characters always bypass the
 // cache (UTF-8 continuation bytes are filtered at the call site).
 //
-// The cache lives in `program->lazy_dfa`, which is mutable even when accessed
-// via a `const nk_program_t*` pointer: the pointer field itself is read-only,
-// but the heap allocation it points to is not.
-static uint64_t bitset_transition_cached(const nk_program_t* program, uint64_t active, uint32_t curr_code) {
+// The cache lives in `program->lazy_dfa`/`lazy_dfa_narrow`, which are mutable
+// even when accessed via a `const nk_program_t*` pointer: the pointer field
+// itself is read-only, but the heap allocation it points to is not.
+static nk_bitset128_t bitset_transition_cached(const nk_program_t* program, nk_bitset128_t active, uint32_t curr_code) {
+  if (curr_code >= 128u) {
+    return bitset_transition(program, active, curr_code);
+  }
+
+  if (program->lazy_dfa_narrow != NULL) {
+    return bitset_transition_cached_narrow(program, active, curr_code);
+  }
+
   nk_lazy_dfa_t* ld = program->lazy_dfa;
-  if (ld == NULL || curr_code >= 128u) {
+  if (ld == NULL) {
     return bitset_transition(program, active, curr_code);
   }
 
@@ -895,13 +1048,15 @@ static uint64_t bitset_transition_cached(const nk_program_t* program, uint64_t a
   }
 
   // Fibonacci hash of the (state_set, char) pair for good slot distribution.
-  uint32_t h = (uint32_t)((active * 11400714819323198485ULL ^ (uint64_t)cbyte) & (uint64_t)(NK_LAZY_DFA_SLOTS - 1u));
+  // Both words of the 128-bit key are mixed in so lo/hi collisions don't alias.
+  uint64_t mixed = (active.lo * 11400714819323198485ULL) ^ (active.hi * 14029467366897019727ULL) ^ (uint64_t)cbyte;
+  uint32_t h = (uint32_t)(mixed & (uint64_t)(NK_LAZY_DFA_SLOTS - 1u));
 
   for (uint32_t probe = 0; probe < NK_LAZY_DFA_SLOTS; probe++) {
     nk_lazy_dfa_slot_t* slot = &ld->slots[(h + probe) & (NK_LAZY_DFA_SLOTS - 1u)];
     if (!slot->occupied) {
       // Cache miss: compute, store, and return.
-      uint64_t next = bitset_transition(program, active, curr_code);
+      nk_bitset128_t next = bitset_transition(program, active, curr_code);
       slot->state_key = active;
       slot->next_key = next;
       slot->char_byte = cbyte;
@@ -909,7 +1064,7 @@ static uint64_t bitset_transition_cached(const nk_program_t* program, uint64_t a
       ld->fill++;
       return next;
     }
-    if (slot->state_key == active && slot->char_byte == cbyte) {
+    if (nk_bitset128_eq(slot->state_key, active) && slot->char_byte == cbyte) {
       return slot->next_key;  // Cache hit.
     }
   }
@@ -925,12 +1080,12 @@ static nk_error_t search_impl_bitset(
 ) {
   const nk_encoding_t* enc = program->enc;
 
-  uint64_t start_active = program->initial_mask & ~NK_BITSET_MATCH_BIT;
-  uint64_t active = start_active;
-  if (program->initial_mask & NK_BITSET_MATCH_BIT) {
+  nk_bitset128_t start_active = nk_bitset128_andnot(program->initial_mask, NK_BITSET128_MATCH_BIT);
+  nk_bitset128_t active = start_active;
+  if (nk_bitset128_has_match_bit(program->initial_mask)) {
     return NK_SUCCESS;  // empty pattern matches at start
   }
-  if (active == 0 && program->is_anchored) {
+  if (nk_bitset128_is_zero(active) && program->is_anchored) {
     return NK_NO_MATCH;
   }
 
@@ -947,8 +1102,8 @@ static nk_error_t search_impl_bitset(
     // current byte cannot begin a match, scan forward to the next candidate.
     // This replaces O(N) per-position closures with a fast byte scan for
     // patterns like `\d{n}` on non-matching inputs (e.g., `not-a-date`).
-    if (!program->is_anchored && program->first_byte_table_valid && active == start_active && curr_code < 128u &&
-        program->first_byte_table[(uint8_t)curr_code] == 0u) {
+    if (!program->is_anchored && program->first_byte_table_valid && nk_bitset128_eq(active, start_active) &&
+        curr_code < 128u && program->first_byte_table[(uint8_t)curr_code] == 0u) {
       const uint8_t* p = subject_bytes + pos + 1u;
       while (p < subject_bytes_end && *p < 128u && program->first_byte_table[*p] == 0u) {
         p++;
@@ -961,15 +1116,42 @@ static nk_error_t search_impl_bitset(
       curr_width = 1u;
     }
 
-    uint64_t next = bitset_transition_cached(program, active, curr_code);
+    nk_bitset128_t next = bitset_transition_cached(program, active, curr_code);
 
-    if (next & NK_BITSET_MATCH_BIT) {
+    if (nk_bitset128_has_match_bit(next)) {
       return NK_SUCCESS;
     }
 
     if (!program->is_anchored) {
       // Re-inject threads for the next start position.
-      next |= start_active;
+      next = nk_bitset128_or(next, start_active);
+    }
+
+    // Single-byte repetition shortcut: `next` is already computed above (no
+    // extra bit-scan), so checking whether it is a fixed point (next ==
+    // active) is just two uint64_t comparisons. When it holds, consuming the
+    // same byte again is guaranteed to reproduce the same active set
+    // (bitset_transition is a pure function of (active, byte)), so the run
+    // can be scanned directly instead of paying one lazy-DFA cache lookup
+    // per repeated byte. ASCII-only (curr_width == 1) to keep the scan a
+    // plain byte comparison. Safe even under case folding: it only ever
+    // extends the run by the exact byte already observed, never claims
+    // fold-equivalent bytes also continue it, so it cannot under- or
+    // over-match. Design rationale for why this check must come after the
+    // cache lookup rather than before: docs/ja/naraku_vm.md §10.3.
+    if (curr_code < 128u && nk_bitset128_eq(next, active)) {
+      uint8_t run_byte = (uint8_t)curr_code;
+      size_t subject_len = (size_t)(subject_bytes_end - subject_bytes);
+      size_t scan = pos + curr_width;
+      while (scan < subject_len && subject_bytes[scan] == run_byte) {
+        scan++;
+      }
+      pos = scan;
+      err = decode_char(enc, subject_bytes + pos, subject_bytes_end, &curr_code, &curr_width);
+      if (err != NK_SUCCESS) {
+        return err;
+      }
+      continue;
     }
 
     active = next;
@@ -1234,10 +1416,7 @@ static nk_error_t search_impl(
         if (cc->ascii_lookup[*p] != 0u) {
           if (out_region != NULL && out_region->caps != NULL) {
             size_t ms = (size_t)(p - subject_bytes);
-            const uint8_t* q = p + 1;
-            while (q < subject_bytes_end && *q < 128u && cc->ascii_lookup[*q] != 0u) {
-              q++;
-            }
+            const uint8_t* q = p + 1 + ascii_class_run_length(cc, p + 1, (size_t)(subject_bytes_end - (p + 1)));
             out_region->caps[0] = ms;
             out_region->caps[1] = (size_t)(q - subject_bytes);
             for (size_t i = 2; i < 2u * out_region->num_caps; i++) {
@@ -1393,13 +1572,7 @@ static nk_error_t search_impl(
                cc_next_op != NK_VM_OP_BACK_REF && cc_next_op != NK_VM_OP_POSSESSIVE);
           }
           if (cc_can_scan) {
-            scan = pos + 1;
-            // Use the flat ascii_lookup table (0xFF for members, 0 otherwise) so
-            // this inner loop reduces to a single load per byte — the compiler
-            // can auto-vectorise it with SSE2/AVX when compiled with -march=native.
-            while (scan < subject_len && cc->ascii_lookup[subject_bytes[scan]] != 0u) {
-              scan++;
-            }
+            scan = pos + 1 + ascii_class_run_length(cc, subject_bytes + pos + 1, subject_len - pos - 1);
           }
         }
       } else if (scan_state->op == NK_VM_OP_CODE && state_matches_code(program, scan_state, curr_code)) {

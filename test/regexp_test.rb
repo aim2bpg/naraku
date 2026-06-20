@@ -1410,4 +1410,91 @@ class RegexpTest < Mtest::Test
     assert m, 'expected match'
     assert_equal [97, 10, 98], m[0].bytes.to_a
   end
+
+  def test_bitset_widening_handles_mid_range_state_count
+    # (?:a?){30}a{30} compiles to ~90 NFA states, which exceeds the old 63-state
+    # bitset limit. Regression test for the 64-127 state bitset path enabled by
+    # widening goto_mask/initial_mask to nk_bitset128_t (Cycle N).
+    re = Naraku::Regexp.new('(?:a?){30}a{30}')
+    assert re.match?('a' * 30), 'expected match for exactly 30 a chars'
+    assert re.match?("#{'a' * 30}b"), 'expected match for 30 a chars followed by other text'
+    assert !re.match?('a' * 29), 'expected no match for only 29 a chars'
+  end
+
+  def test_bitset_128_fallback_beyond_127_states_still_correct
+    # (?:a?){90}a{90} compiles to far more than 127 NFA states, so goto_mask
+    # stays NULL and the general thread-list executor handles it. Regression
+    # test ensuring that fallback boundary is still correct after raising the
+    # bitset limit from 63 to 127.
+    re = Naraku::Regexp.new('(?:a?){90}a{90}')
+    assert re.match?('a' * 90), 'expected match for exactly 90 a chars'
+    assert !re.match?('a' * 89), 'expected no match for only 89 a chars'
+  end
+
+  def test_simd_ascii_run_scan_exact_16_byte_chunk_boundary
+    # Cycle O: the SIMD run scan processes 16 bytes per chunk. Place the
+    # non-member byte exactly at offsets 15, 16, and 17 to exercise the
+    # chunk/tail boundary (run length == chunk size, one less, one more).
+    md = match('\\d+', "#{'1' * 15}x")
+    assert_equal '1' * 15, md[0]
+
+    md = match('\\d+', "#{'1' * 16}x")
+    assert_equal '1' * 16, md[0]
+
+    md = match('\\d+', "#{'1' * 17}x")
+    assert_equal '1' * 17, md[0]
+  end
+
+  def test_simd_ascii_run_scan_spans_multiple_chunks
+    # A run much longer than one 16-byte SIMD chunk, for a char class with
+    # multiple ASCII ranges ([a-zA-Z0-9] decomposes into 3 simd_ranges).
+    md = match('[a-zA-Z0-9]+', "#{'aB3' * 20}!!!")
+    assert_equal 'aB3' * 20, md[0]
+  end
+
+  def test_simd_ascii_run_scan_falls_back_for_many_disjoint_ranges
+    # More than NK_CC_SIMD_MAX_RANGES (4) contiguous ASCII runs disables the
+    # SIMD path (simd_range_count reset to 0 in program_add_char_class);
+    # the scalar ascii_lookup scan must still produce correct results.
+    md = match('[ace gik mo]+', 'aceg ikmo aceg ikmoXX')
+    assert !md.nil?
+    assert_equal 'aceg ikmo aceg ikmo', md[0]
+  end
+
+  def test_simd_ascii_run_scan_stops_before_multibyte_char
+    # The run scan must stop cleanly at a UTF-8 continuation byte boundary
+    # rather than reading past it as if it were an ASCII class member.
+    md = match('\\w+', "#{'a' * 16}ジ")
+    assert_equal 'a' * 16, md[0]
+  end
+
+  def test_bitset_fixed_point_run_scan_matches_and_non_matches
+    # search_impl_bitset's single-byte repetition shortcut (fixed point:
+    # next == active) targets patterns like a+b that don't qualify for the
+    # is_pure_char_class_plus bypass. match? (no_caps) is what dispatches to
+    # search_impl_bitset, so exercise it directly via match?.
+    re = Naraku::Regexp.new('a+b')
+    assert re.match?('aaab'), 'expected match for a run of a followed by b'
+    assert re.match?('ab'), 'expected match for a single a followed by b'
+    assert !re.match?('aaa'), 'expected no match without a trailing b'
+    assert !re.match?('bbb'), 'expected no match without any leading a'
+  end
+
+  def test_bitset_fixed_point_run_scan_respects_case_fold
+    # The run scan only ever extends a run using the exact byte already
+    # observed (no fold-equivalence claims), so a case-insensitive pattern
+    # must still match mixed-case runs correctly via the slower per-byte path
+    # once the fast run stops at a differently-cased byte.
+    re = Naraku::Regexp.new('a+b', is_ignore_case: true)
+    assert re.match?('AaAb'), 'expected case-insensitive match across mixed-case run'
+  end
+
+  def test_bitset_fixed_point_run_scan_with_anchor
+    # Anchored patterns skip the start_active re-injection in
+    # search_impl_bitset; the fixed-point run scan must still produce correct
+    # results in that branch.
+    re = Naraku::Regexp.new('\\Aa+b')
+    assert re.match?('aaab'), 'expected anchored match for a run of a followed by b'
+    assert !re.match?('xaaab'), 'expected no anchored match when a leading char precedes the run'
+  end
 end

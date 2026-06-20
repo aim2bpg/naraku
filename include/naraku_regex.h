@@ -83,6 +83,9 @@ typedef struct {
   uint32_t possessive_prog_idx;
 } nk_vm_state_t;
 
+/** Max number of contiguous ASCII byte ranges the SIMD run-scan fast path supports. */
+#define NK_CC_SIMD_MAX_RANGES 4u
+
 /**
  * Structure representing a compiled character class.
  *
@@ -94,39 +97,133 @@ typedef struct {
  * 0x80–0xFF are always 0 (they are never in an ASCII char class).  This flat
  * table makes the consecutive-run inner loop a single load instead of a
  * two-step bit extraction, enabling auto-vectorisation by the compiler.
+ *
+ * `simd_range_count`/`simd_ranges` drive the SIMD-accelerated ASCII run scan
+ * (see `ascii_class_run_length` in regex_vm.c). Set at compile time when the
+ * ASCII members of this class decompose into at most `NK_CC_SIMD_MAX_RANGES`
+ * contiguous byte ranges (true for `\d`, `\w`, `[a-zA-Z0-9]`, and similar).
+ * `simd_range_count == 0` means the class doesn't qualify; callers always
+ * fall back to the scalar `ascii_lookup` scan.
  */
 typedef struct {
   size_t ranges_len;
   uint32_t* ranges;
   uint64_t ascii_bits[2];
   uint8_t ascii_lookup[256];
+  uint8_t simd_range_count;
+  uint8_t simd_ranges[NK_CC_SIMD_MAX_RANGES][2];  // [i][0] = lo, [i][1] = hi (inclusive, ASCII only)
 } nk_vm_char_class_t;
 
 /**
- * One slot in the lazy DFA transition cache.
+ * 128-bit bitset used by the Thompson NFA "bitset" fast path (`nk_program_t::goto_mask`
+ * below). Bit `i` (0-indexed) lives in `lo` for `i < 64`, in `hi` for `i >= 64`.
+ *
+ * Implemented as a struct of two `uint64_t` rather than the GCC/Clang `__uint128_t`
+ * extension: `__uint128_t` is rejected under `-std=c99 -Wpedantic`, which this
+ * project builds with (see CLAUDE.md "Compiler flags").
+ */
+typedef struct {
+  uint64_t lo;
+  uint64_t hi;
+} nk_bitset128_t;
+
+#define NK_BITSET128_ZERO ((nk_bitset128_t){0, 0})
+
+/** Bit 127 of a 128-bit bitset signals that a MATCH state is reachable. */
+#define NK_BITSET128_MATCH_BIT ((nk_bitset128_t){0, (uint64_t)1u << 63})
+
+static inline nk_bitset128_t nk_bitset128_or(nk_bitset128_t a, nk_bitset128_t b) {
+  return (nk_bitset128_t){a.lo | b.lo, a.hi | b.hi};
+}
+
+static inline nk_bitset128_t nk_bitset128_and(nk_bitset128_t a, nk_bitset128_t b) {
+  return (nk_bitset128_t){a.lo & b.lo, a.hi & b.hi};
+}
+
+/** Returns `a & ~b`. */
+static inline nk_bitset128_t nk_bitset128_andnot(nk_bitset128_t a, nk_bitset128_t b) {
+  return (nk_bitset128_t){a.lo & ~b.lo, a.hi & ~b.hi};
+}
+
+static inline bool nk_bitset128_is_zero(nk_bitset128_t a) {
+  return a.lo == 0 && a.hi == 0;
+}
+
+static inline bool nk_bitset128_eq(nk_bitset128_t a, nk_bitset128_t b) {
+  return a.lo == b.lo && a.hi == b.hi;
+}
+
+static inline bool nk_bitset128_has_match_bit(nk_bitset128_t a) {
+  return (a.hi & ((uint64_t)1u << 63)) != 0;
+}
+
+/** Sets bit `idx` (0-127) and returns the result. */
+static inline nk_bitset128_t nk_bitset128_set_bit(nk_bitset128_t a, uint32_t idx) {
+  if (idx < 64u) {
+    a.lo |= (uint64_t)1u << idx;
+  } else {
+    a.hi |= (uint64_t)1u << (idx - 64u);
+  }
+  return a;
+}
+
+/** Tests bit `idx` (0-127). */
+static inline bool nk_bitset128_test_bit(nk_bitset128_t a, uint32_t idx) {
+  if (idx < 64u) {
+    return (a.lo & ((uint64_t)1u << idx)) != 0;
+  }
+  return (a.hi & ((uint64_t)1u << (idx - 64u))) != 0;
+}
+
+/**
+ * One slot in the lazy DFA transition cache (wide variant — used when a
+ * program needs the full 64–127 state range; see `nk_lazy_dfa_slot_narrow_t`
+ * below for the ≤63-state variant).
  *
  * Slots are open-addressed with linear probing.  An empty slot has
  * `occupied == 0` (guaranteed by `calloc`).  The lookup key is the pair
  * (state_key, char_byte); `next_key` is the cached result.
  */
 typedef struct {
-  uint64_t state_key;  // NFA active-state bitmask (key)
+  nk_bitset128_t state_key;  // NFA active-state bitmask (key)
+  nk_bitset128_t next_key;   // resulting NFA bitmask after consuming char_byte
+  uint8_t char_byte;         // ASCII byte 0–127
+  uint8_t occupied;          // 0 = empty, 1 = in use
+  uint8_t pad[6];            // explicit padding for alignment
+} nk_lazy_dfa_slot_t;
+
+/**
+ * One slot in the lazy DFA transition cache (narrow variant — used when a
+ * program's state count fits in 63 states, i.e. `nk_bitset128_t::hi` is
+ * always 0). Same layout Naraku used before the bitset was widened to 128
+ * bits: 24 bytes instead of 40, so `NK_LAZY_DFA_SLOTS` of them fit in 24KB
+ * rather than 40KB — small enough to stay resident in a typical 32KB L1d
+ * cache. Storing the full 128-bit key here would be correct but wasteful
+ * (the high word is always 0), and the larger 1024-slot array no longer
+ * fits in L1d, which measurably regressed already-good small patterns
+ * (`ambiguous`, `bounded`, `repetition`) when the bitset was widened.
+ */
+typedef struct {
+  uint64_t state_key;  // NFA active-state bitmask (key); only the low 63 bits are ever used
   uint64_t next_key;   // resulting NFA bitmask after consuming char_byte
   uint8_t char_byte;   // ASCII byte 0–127
   uint8_t occupied;    // 0 = empty, 1 = in use
   uint8_t pad[6];      // explicit padding to keep the struct 24 bytes
-} nk_lazy_dfa_slot_t;
+} nk_lazy_dfa_slot_narrow_t;
 
 /** Number of slots in the lazy DFA cache (must be a power of two). */
 #define NK_LAZY_DFA_SLOTS 1024u
 
 /**
- * Lazy DFA transition cache for bitset-compatible programs.
+ * Lazy DFA transition cache for bitset-compatible programs that need states
+ * 64–127 (i.e. `nk_bitset128_t::hi` may be non-zero). See
+ * `nk_lazy_dfa_narrow_t` for the ≤63-state variant, which is preferred
+ * whenever it applies because of its smaller cache-line footprint.
  *
  * Caches (NFA-state-bitmask, ASCII-byte) → next-NFA-state-bitmask entries
  * computed during `search_impl_bitset`.  Amortises the inner bit-scan loop
  * for repeated (state-set, character) pairs across calls on the same program.
- * Non-NULL only when `goto_mask != NULL`.
+ * Non-NULL only when `goto_mask != NULL` and the program needs states beyond 63.
  *
  * `fill` counts occupied slots.  When `fill` reaches 75% of `NK_LAZY_DFA_SLOTS`
  * the cache is wiped and rebuilt from scratch to prevent probe-chain
@@ -136,6 +233,17 @@ typedef struct {
   nk_lazy_dfa_slot_t slots[NK_LAZY_DFA_SLOTS];
   uint32_t fill;
 } nk_lazy_dfa_t;
+
+/**
+ * Lazy DFA transition cache for bitset-compatible programs whose state count
+ * fits in 63 states. Preferred over `nk_lazy_dfa_t` whenever applicable —
+ * see `nk_lazy_dfa_slot_narrow_t` for why. `fill`/75%-reset semantics match
+ * `nk_lazy_dfa_t` exactly.
+ */
+typedef struct {
+  nk_lazy_dfa_slot_narrow_t slots[NK_LAZY_DFA_SLOTS];
+  uint32_t fill;
+} nk_lazy_dfa_narrow_t;
 
 /**
  * Structure representing a compiled regex VM program.
@@ -180,12 +288,15 @@ typedef struct nk_program {
   size_t alt_literal_count;
   // Thompson NFA bitset for fast boolean match? on small assertion-free programs.
   // Bit i in goto_mask[j] means "after consuming a char from consuming state j,
-  // state i may be active". Bit 63 (NK_BITSET_MATCH_BIT) signals MATCH reachable.
-  // NULL when states_len > 63 or any ASSERTION / KEEP state exists.
-  uint64_t* goto_mask;    // [states_len] (only indices of consuming states are used)
-  uint64_t initial_mask;  // epsilon closure from initial_state (consuming bits + MATCH bit)
-  // Lazy DFA cache: populated by search_impl_bitset.  NULL when goto_mask is NULL.
+  // state i may be active". Bit 127 (NK_BITSET128_MATCH_BIT) signals MATCH reachable.
+  // NULL when states_len > 127 or any ASSERTION / KEEP state exists.
+  nk_bitset128_t* goto_mask;    // [states_len] (only indices of consuming states are used)
+  nk_bitset128_t initial_mask;  // epsilon closure from initial_state (consuming bits + MATCH bit)
+  // Lazy DFA cache: populated by search_impl_bitset. Exactly one of these is
+  // non-NULL when goto_mask != NULL (narrow for states_len <= 63, wide for
+  // 64-127); both are NULL when goto_mask is NULL.
   nk_lazy_dfa_t* lazy_dfa;
+  nk_lazy_dfa_narrow_t* lazy_dfa_narrow;
   // First-byte table for jump optimization in search_impl_bitset.
   // When valid, first_byte_table[b] != 0 means ASCII byte b can be the first byte
   // consumed from the initial NFA state.  Positions where first_byte_table[byte] == 0
@@ -207,9 +318,6 @@ typedef struct nk_program {
   struct nk_program** sub_programs;
   size_t sub_programs_len;
 } nk_program_t;
-
-/** Bit 63 of a bitset mask signals that a MATCH state is reachable. */
-#define NK_BITSET_MATCH_BIT ((uint64_t)1u << 63)
 
 /**
  * The maximum number of VM states in a compiled program.
