@@ -3,6 +3,7 @@
  */
 
 #include <naraku_regex.h>
+#include <naraku_regex_internal.h>
 
 #include <stdlib.h>
 #include <string.h>
@@ -2348,16 +2349,21 @@ static void compute_first_byte_table(nk_program_t* program) {
       // Non-ASCII CODE states are safe: the jump is guarded by `curr_code < 128`
       // so non-ASCII code points never trigger the scan.
       if (s->code < 128u) {
-        table[(uint8_t)s->code] = 1u;
-        has_any = true;
-        // ASCII-only fold: the case-folded counterpart is also a valid first byte.
-        if ((s->fold_flags & NK_FOLD_ASCII_ONLY) != 0) {
-          uint8_t b = (uint8_t)s->code;
-          uint8_t folded = (b >= 'A' && b <= 'Z')   ? (uint8_t)(b | 0x20u)
-                           : (b >= 'a' && b <= 'z') ? (uint8_t)(b & ~0x20u)
-                                                    : b;
-          if (folded != b) {
-            table[folded] = 1u;
+        // Register every ASCII byte that state_matches_code() would actually
+        // accept here — not just the literal byte plus a hand-rolled
+        // ASCII-only fold swap. The previous version only special-cased
+        // NK_FOLD_ASCII_ONLY, so a case-insensitive state using the default
+        // (simple Unicode) or full fold never got its case-swapped
+        // counterpart registered: e.g. `/a/i` (default fold) left `table['A']
+        // == 0`, so search_impl_bitset's first-byte jump treated any
+        // all-uppercase subject as unable to start a match and returned
+        // NK_NO_MATCH even though `match?` should have succeeded. Delegating
+        // to state_matches_code keeps this table in sync with the actual
+        // runtime matching rule for every fold_flags variant.
+        for (uint32_t b = 0u; b < 128u; b++) {
+          if (state_matches_code(program, s, b)) {
+            table[(uint8_t)b] = 1u;
+            has_any = true;
           }
         }
       }

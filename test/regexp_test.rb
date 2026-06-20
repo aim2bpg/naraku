@@ -1480,6 +1480,25 @@ class RegexpTest < Mtest::Test
     assert !re.match?('bbb'), 'expected no match without any leading a'
   end
 
+  def test_first_byte_table_handles_default_fold_match_p
+    # Regression test for a pre-existing bug (predates this session, found
+    # while testing the run-scan shortcut above): compute_first_byte_table
+    # only registered a state's case-swapped counterpart byte when
+    # fold_flags was NK_FOLD_ASCII_ONLY. Under the *default* simple-Unicode
+    # fold (is_ignore_case: true with no fold_flags), `table['A']` was never
+    # set for a state matching 'a', so search_impl_bitset's first-byte jump
+    # (only reachable via match?, which dispatches to search_impl_bitset)
+    # incorrectly treated any all-uppercase subject as unable to start a
+    # match. match (the capturing path, which never uses search_impl_bitset)
+    # was unaffected, which is why this had gone unnoticed.
+    re = Naraku::Regexp.new('a', is_ignore_case: true)
+    assert re.match?('A'), 'expected match? to find the case-folded literal'
+    assert re.match('A'), 'expected match to find the case-folded literal'
+
+    re2 = Naraku::Regexp.new('a+b', is_ignore_case: true)
+    assert re2.match?('AAB'), 'expected match? on an all-uppercase repeated run'
+  end
+
   def test_bitset_fixed_point_run_scan_respects_case_fold
     # The run scan only ever extends a run using the exact byte already
     # observed (no fold-equivalence claims), so a case-insensitive pattern
@@ -1487,6 +1506,7 @@ class RegexpTest < Mtest::Test
     # once the fast run stops at a differently-cased byte.
     re = Naraku::Regexp.new('a+b', is_ignore_case: true)
     assert re.match?('AaAb'), 'expected case-insensitive match across mixed-case run'
+    assert re.match?('AAAB'), 'expected case-insensitive match for all-uppercase run'
   end
 
   def test_bitset_fixed_point_run_scan_with_anchor

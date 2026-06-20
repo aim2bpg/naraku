@@ -3,6 +3,7 @@
  */
 
 #include <naraku_regex.h>
+#include <naraku_regex_internal.h>
 
 #include <stdlib.h>
 #include <string.h>
@@ -416,8 +417,9 @@ static bool eval_assertion(const vm_t* vm, nk_assertion_type_t type) {
 }
 
 // Whether the consuming state at the head of a thread matches `code`.
-// `code` is never `VM_NO_CHAR` here.
-static bool state_matches_code(const nk_program_t* program, const nk_vm_state_t* state, uint32_t code) {
+// `code` is never `VM_NO_CHAR` here. Declared in naraku_regex_internal.h —
+// shared with src/regex_compile.c (compute_first_byte_table).
+bool state_matches_code(const nk_program_t* program, const nk_vm_state_t* state, uint32_t code) {
   switch (state->op) {
     case NK_VM_OP_CODE:
       if (state->is_ignore_case) {
