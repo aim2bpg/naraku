@@ -916,7 +916,7 @@ static void next_token(vm_t* vm) {
 // `search_impl_bitset` additionally detects, after each cache lookup, when a
 // repeated byte leaves the active-state set unchanged (a fixed point) and
 // scans the rest of that run directly, skipping the cache entirely for
-// patterns like `a+b` — see docs/ja/naraku_vm.md §10.3 for why this must
+// patterns like `a+b` — see docs/ja/naraku_vm.md §6.3 for why this must
 // happen after the lookup rather than before it.
 //
 // ============================================================================
@@ -1140,7 +1140,7 @@ static nk_error_t search_impl_bitset(
     // extends the run by the exact byte already observed, never claims
     // fold-equivalent bytes also continue it, so it cannot under- or
     // over-match. Design rationale for why this check must come after the
-    // cache lookup rather than before: docs/ja/naraku_vm.md §10.3.
+    // cache lookup rather than before: docs/ja/naraku_vm.md §6.3.
     if (curr_code < 128u && nk_bitset128_eq(next, active)) {
       uint8_t run_byte = (uint8_t)curr_code;
       size_t subject_len = (size_t)(subject_bytes_end - subject_bytes);

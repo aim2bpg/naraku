@@ -56,7 +56,7 @@ CASES = [
   {
     # Long-input variant of char_class: with short (~10 byte) inputs, per-call
     # Ruby-level overhead dominates the measured time and masks engine-level
-    # differences (see docs/ja/naraku_vm.md §10.3's batches/sec caveat). A
+    # differences (see docs/ja/naraku_vm.md §6.3's batches/sec caveat). A
     # long subject amortises that overhead so the SIMD ASCII run scan
     # (Cycle O) shows up in the batches/sec number instead of being swamped
     # by call dispatch noise.
