@@ -980,7 +980,7 @@ module NarakuRuby
         lines << '  end'
         lines << 'end'
 
-        @full_dfa_eval_matcher = eval(lines.join("\n"), binding, __FILE__, __LINE__)
+        @full_dfa_eval_matcher = eval(lines.join("\n"), binding, __FILE__, __LINE__) # rubocop:disable Security/Eval
       end
 
       def add_full_dfa_state(state_key_to_index, state_sets, transitions, other_transitions, matching, queue, states, code_size)

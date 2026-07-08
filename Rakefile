@@ -134,6 +134,17 @@ namespace :naraku do
   task clean_all: %i[clean clean_mruby]
 end
 
+BENCHMARK_DIR = 'ruby-prototype/benchmark'
+BENCHMARK_RESULTS_DIR = "#{BENCHMARK_DIR}/results".freeze
+
+BENCHMARK_RUBY_FLAGS = {
+  'plain' => [],
+  'yjit' => ['--yjit'],
+  'zjit' => ['--zjit'],
+}.freeze
+
+BENCHMARK_SUITES = %w[synthetic corpus].freeze
+
 namespace :ruby_prototype do
   desc 'Run ruby-prototype tests'
   Minitest::TestTask.create(:test) do |t|
@@ -141,17 +152,6 @@ namespace :ruby_prototype do
     t.libs << 'ruby-prototype/lib'
     t.test_globs = ['ruby-prototype/test/**/*_test.rb']
   end
-
-  BENCHMARK_DIR = 'ruby-prototype/benchmark'
-  BENCHMARK_RESULTS_DIR = "#{BENCHMARK_DIR}/results".freeze
-
-  BENCHMARK_RUBY_FLAGS = {
-    'plain' => [],
-    'yjit' => ['--yjit'],
-    'zjit' => ['--zjit'],
-  }.freeze
-
-  BENCHMARK_SUITES = %w[synthetic corpus].freeze
 
   namespace :benchmark do
     # ── JIT モードごとの単独タスク ─────────────────────────────
