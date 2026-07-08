@@ -91,6 +91,7 @@ def gen_source(cat, debug:)
     .gsub(%r{/\*FALLTHROUGH\*/}, 'NARAKU_FALLTHROUGH;')
     .gsub('{-1}', '{-1, 0}')
     .gsub('offsetof', '(int32_t)offsetof')
+    .gsub('register unsigned int hval = len;', 'register unsigned int hval = (unsigned int)len;')
 end
 
 opt = OptionParser.new
