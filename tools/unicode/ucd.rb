@@ -518,7 +518,7 @@ module Unicode
     def load_file(version, type, file)
       data_path = path_for(version, type, file)
 
-      File.read(data_path).each_line(chomp: true) do |line|
+      File.read(data_path, encoding: 'UTF-8').each_line(chomp: true) do |line|
         next if line.start_with?('#') || line.strip.empty?
 
         line = line.gsub(/#.*\z/, '').split(';', -1).map(&:strip)
